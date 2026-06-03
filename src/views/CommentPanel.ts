@@ -1,7 +1,14 @@
-import { ItemView, MarkdownView, TFile, WorkspaceLeaf } from 'obsidian';
+import { ItemView, MarkdownView, Menu, TFile, WorkspaceLeaf } from 'obsidian';
 import type { Annotation, CommentEntry } from '../types.ts';
 import { COMMENT_TYPE_META } from '../types.ts';
-import { parseAnnotations, appendReply, buildAnnotationMarkup } from '../parser.ts';
+import {
+  parseAnnotations,
+  appendReply,
+  buildAnnotationMarkup,
+  deleteAnnotation,
+  deleteCommentEntry,
+} from '../parser.ts';
+import { HistoryModal } from './HistoryModal.ts';
 import type InlineCommentsPlugin from '../../main.ts';
 
 export const VIEW_TYPE_COMMENTS = 'ilc-comments-panel';
@@ -9,7 +16,7 @@ export const VIEW_TYPE_COMMENTS = 'ilc-comments-panel';
 interface DraftState {
   highlightText:  string;
   selectedType:   string;
-  typeChanged:    boolean; // user explicitly clicked a type chip
+  typeChanged:    boolean;
   wantsAIReply:   boolean;
   onPost:         (markup: string) => void;
 }
@@ -19,7 +26,6 @@ export class CommentPanel extends ItemView {
   private activeAnnotationId: string | null = null;
   private cardEls: Map<string, HTMLElement> = new Map();
 
-  // Two separate zones so refresh() never touches the draft area
   private draftZone!: HTMLElement;
   private cardsZone!: HTMLElement;
 
@@ -27,7 +33,6 @@ export class CommentPanel extends ItemView {
   private draftInputEl: HTMLTextAreaElement | null = null;
   private clickAwayHandler: ((e: MouseEvent) => void) | null = null;
 
-  // Track which file we're showing so we cancel draft on file change
   private currentFilePath: string | null = null;
 
   constructor(leaf: WorkspaceLeaf, private plugin: InlineCommentsPlugin) {
@@ -42,13 +47,11 @@ export class CommentPanel extends ItemView {
     const container = this.containerEl.children[1] as HTMLElement;
     container.addClass('ilc-panel');
 
-    // Two fixed zones — draft zone comes first and is never cleared by refresh()
     this.draftZone = container.createEl('div', { cls: 'ilc-draft-zone' });
     this.cardsZone = container.createEl('div', { cls: 'ilc-cards-zone' });
 
     await this.refresh();
 
-    // active-leaf-change: refresh cards but do NOT cancel draft
     this.registerEvent(
       this.app.workspace.on('active-leaf-change', () => this.refresh()),
     );
@@ -70,7 +73,6 @@ export class CommentPanel extends ItemView {
   showDraftCard(highlightText: string, onPost: (markup: string) => void): void {
     this.cancelDraft();
 
-    // Default to first available type
     const defaultType = this.plugin.settings.commentTypes[0]?.id ?? 'note';
     this.draft = {
       highlightText,
@@ -81,13 +83,10 @@ export class CommentPanel extends ItemView {
     };
 
     this.renderDraftCardEl();
-
     setTimeout(() => this.draftInputEl?.focus(), 60);
 
-    // Click-away: dismiss only when nothing useful was done
     this.clickAwayHandler = (e: MouseEvent) => {
       if (this.draftZone.contains(e.target as Node)) return;
-      // Only auto-dismiss if empty input AND no type was explicitly selected
       if (!this.draftInputEl?.value.trim() && !this.draft?.typeChanged) {
         this.cancelDraft();
       }
@@ -110,7 +109,7 @@ export class CommentPanel extends ItemView {
     }
   }
 
-  // ── Refresh: only touches cardsZone ─────────────────────────────────────────
+  // ── Refresh ──────────────────────────────────────────────────────────────────
 
   async refresh(): Promise<void> {
     if (!this.cardsZone) return;
@@ -131,6 +130,7 @@ export class CommentPanel extends ItemView {
         cls: 'ilc-empty',
         text: '请打开一篇 Markdown 笔记',
       });
+      this.renderPanelFooter();
       return;
     }
 
@@ -142,16 +142,28 @@ export class CommentPanel extends ItemView {
         cls: 'ilc-empty',
         text: '暂无评论。选中文字后按 ⌘⇧K 添加。',
       });
-      return;
     }
 
     for (const ann of this.annotations) {
       const card = this.renderCard(this.cardsZone, ann, file);
       this.cardEls.set(ann.id, card);
     }
+
+    this.renderPanelFooter();
   }
 
-  // ── Draft card ───────────────────────────────────────────────────────────────
+  private renderPanelFooter(): void {
+    const footer = this.cardsZone.createEl('div', { cls: 'ilc-panel-footer' });
+    const histBtn = footer.createEl('button', {
+      cls: 'ilc-history-link',
+      text: '🕐 删除历史',
+    });
+    histBtn.addEventListener('click', () => {
+      new HistoryModal(this.app, this.plugin).open();
+    });
+  }
+
+  // ── Draft card ────────────────────────────────────────────────────────────────
 
   private renderDraftCardEl(): void {
     this.draftZone.empty();
@@ -162,14 +174,14 @@ export class CommentPanel extends ItemView {
       cls: `ilc-card ilc-card-draft ilc-card-${d.selectedType}`,
     });
 
-    // ── Preview ──
+    // Preview
     const previewBar = card.createEl('div', { cls: 'ilc-draft-preview' });
     previewBar.createEl('span', {
       cls: 'ilc-draft-preview-text',
       text: d.highlightText.slice(0, 50) + (d.highlightText.length > 50 ? '…' : ''),
     });
 
-    // ── Type chips ──
+    // Type chips
     const typeRow = card.createEl('div', { cls: 'ilc-draft-type-row' });
     let activeBtn: HTMLElement | null = null;
 
@@ -207,7 +219,7 @@ export class CommentPanel extends ItemView {
       });
     }
 
-    // ── Author row ──
+    // Author row
     const authorRow = card.createEl('div', { cls: 'ilc-draft-author-row' });
     const avatar = authorRow.createEl('div', { cls: 'ilc-draft-avatar' });
     avatar.textContent = this.plugin.settings.authorName.charAt(0).toUpperCase();
@@ -215,14 +227,13 @@ export class CommentPanel extends ItemView {
       cls: 'ilc-draft-author-name',
       text: this.plugin.settings.authorName,
     });
-    // Selected type badge
     const selectedMeta = types.find((t) => t.id === d.selectedType);
     const typeBadge = authorRow.createEl('span', {
       cls: 'ilc-draft-type-badge',
       text: selectedMeta ? selectedMeta.emoji + ' ' + selectedMeta.label : d.selectedType,
     });
 
-    // ── Input ──
+    // Input
     const inputWrapper = card.createEl('div', { cls: 'ilc-draft-input-wrapper' });
     const input = inputWrapper.createEl('textarea', {
       cls: 'ilc-draft-input',
@@ -230,12 +241,11 @@ export class CommentPanel extends ItemView {
     });
     this.draftInputEl = input;
 
-    // ── Actions (hidden until type selected or input has content) ──
+    // Actions
     const actionRow = card.createEl('div', { cls: 'ilc-draft-actions ilc-hidden' });
 
     // AI reply toggle
-    const hasAgents = this.plugin.settings.aiAgents.length > 0;
-    if (hasAgents) {
+    if (this.plugin.settings.aiAgents.length > 0) {
       const toggleRow = card.createEl('div', { cls: 'ilc-draft-ai-toggle' });
       const checkbox = toggleRow.createEl('input', {
         attr: { type: 'checkbox', id: 'ilc-ai-toggle' },
@@ -244,43 +254,23 @@ export class CommentPanel extends ItemView {
         attr: { for: 'ilc-ai-toggle' },
         text: `请 ${this.plugin.getDefaultAIAgentName()} 回应`,
       });
-      checkbox.addEventListener('change', () => {
-        d.wantsAIReply = checkbox.checked;
-      });
+      checkbox.addEventListener('change', () => { d.wantsAIReply = checkbox.checked; });
     }
 
     const cancelBtn = actionRow.createEl('button', { cls: 'ilc-draft-cancel', text: 'Cancel' });
     const postBtn   = actionRow.createEl('button', { cls: 'ilc-draft-post mod-cta', text: 'Post' });
 
-    input.addEventListener('input', () => {
-      updateActions();
-    });
-
+    input.addEventListener('input', () => { updateActions(); });
     input.addEventListener('keydown', (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        e.preventDefault();
-        this.submitDraft(input.value);
-      }
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        this.cancelDraft();
-      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); this.submitDraft(input.value); }
+      if (e.key === 'Escape') { e.preventDefault(); this.cancelDraft(); }
     });
-
-    cancelBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.cancelDraft();
-    });
-
-    postBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.submitDraft(input.value);
-    });
+    cancelBtn.addEventListener('click', (e) => { e.stopPropagation(); this.cancelDraft(); });
+    postBtn.addEventListener('click', (e) => { e.stopPropagation(); this.submitDraft(input.value); });
   }
 
   private submitDraft(inputValue: string): void {
     if (!this.draft) return;
-    // Allow empty text — a selected type alone is a valid reaction
     if (!this.draft.typeChanged && !inputValue.trim()) return;
 
     const today = new Date().toISOString().split('T')[0];
@@ -293,7 +283,6 @@ export class CommentPanel extends ItemView {
       },
     ];
 
-    // Append pending entry if AI response requested
     if (this.draft.wantsAIReply) {
       entries.push({
         author: this.plugin.getDefaultAIAgentName(),
@@ -318,7 +307,7 @@ export class CommentPanel extends ItemView {
     this.draft = null;
   }
 
-  // ── Annotation cards ─────────────────────────────────────────────────────────
+  // ── Annotation cards ──────────────────────────────────────────────────────────
 
   private renderCard(container: HTMLElement, ann: Annotation, file: TFile): HTMLElement {
     const card = container.createEl('div', { cls: 'ilc-card' });
@@ -331,87 +320,89 @@ export class CommentPanel extends ItemView {
       this.jumpToAnnotation(ann);
     });
 
-    // Preview
+    // Preview with card-level ⋯ menu
     const preview = card.createEl('div', { cls: 'ilc-card-preview' });
     preview.createEl('span', {
       cls: 'ilc-card-preview-text',
       text: ann.highlightText.slice(0, 60) + (ann.highlightText.length > 60 ? '…' : ''),
     });
+    const cardMoreBtn = preview.createEl('button', {
+      cls: 'ilc-more-btn',
+      attr: { title: '更多操作', 'aria-label': '更多操作' },
+    });
+    cardMoreBtn.textContent = '⋯';
+    cardMoreBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const menu = new Menu();
+      menu.addItem((item) =>
+        item
+          .setTitle('删除整条评论')
+          .setIcon('trash-2')
+          .onClick(() => this.deleteWholeAnnotation(ann, file)),
+      );
+      menu.showAtMouseEvent(e);
+    });
 
-    // Thread
+    // Thread — pass ann + index + file for per-entry menus
     const thread = card.createEl('div', { cls: 'ilc-thread' });
-    for (const comment of ann.comments) {
-      this.renderCommentEntry(thread, comment);
-    }
+    ann.comments.forEach((comment, i) => {
+      this.renderCommentEntry(thread, comment, ann, i, file);
+    });
 
     // Reply
-    const replyRow   = card.createEl('div', { cls: 'ilc-reply-row' });
-    const replyBtn   = replyRow.createEl('button', { cls: 'ilc-reply-btn', text: '+ 回复' });
-    const inputRow   = card.createEl('div', { cls: 'ilc-reply-input-row ilc-hidden' });
-    const input      = inputRow.createEl('textarea', {
+    const replyRow  = card.createEl('div', { cls: 'ilc-reply-row' });
+    const replyBtn  = replyRow.createEl('button', { cls: 'ilc-reply-btn', text: '+ 回复' });
+    const inputRow  = card.createEl('div', { cls: 'ilc-reply-input-row ilc-hidden' });
+    const input     = inputRow.createEl('textarea', {
       cls: 'ilc-reply-input',
       attr: { placeholder: '写下回复…', rows: '2' },
     });
-    const submitBtn  = inputRow.createEl('button', { cls: 'ilc-reply-submit mod-cta', text: '发送' });
-    const cancelBtn  = inputRow.createEl('button', { cls: 'ilc-reply-cancel', text: '取消' });
+    const submitBtn = inputRow.createEl('button', { cls: 'ilc-reply-submit mod-cta', text: '发送' });
+    const cancelBtn = inputRow.createEl('button', { cls: 'ilc-reply-cancel', text: '取消' });
 
-    replyBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      replyRow.addClass('ilc-hidden');
-      inputRow.removeClass('ilc-hidden');
-      input.focus();
-    });
-    cancelBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      inputRow.addClass('ilc-hidden');
-      replyRow.removeClass('ilc-hidden');
-      input.value = '';
-    });
+    replyBtn.addEventListener('click', (e) => { e.stopPropagation(); replyRow.addClass('ilc-hidden'); inputRow.removeClass('ilc-hidden'); input.focus(); });
+    cancelBtn.addEventListener('click', (e) => { e.stopPropagation(); inputRow.addClass('ilc-hidden'); replyRow.removeClass('ilc-hidden'); input.value = ''; });
     submitBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const text = input.value.trim();
       if (!text) return;
       const today = new Date().toISOString().split('T')[0];
-      const reply: CommentEntry = {
-        author: this.plugin.settings.authorName,
-        date:   today,
-        type:   'reply',
-        text,
-      };
+      const reply: CommentEntry = { author: this.plugin.settings.authorName, date: today, type: 'reply', text };
       const currentContent = await this.app.vault.read(file);
-      const newContent = appendReply(currentContent, ann.from, reply);
-      await this.app.vault.modify(file, newContent);
+      await this.app.vault.modify(file, appendReply(currentContent, ann.from, reply));
     });
 
     return card;
   }
 
-  private renderCommentEntry(container: HTMLElement, comment: CommentEntry): void {
-    // Look up type meta from settings first, then built-in fallback
-    const typeConfig = this.plugin.settings.commentTypes.find((t) => t.id === comment.type);
+  private renderCommentEntry(
+    container: HTMLElement,
+    comment: CommentEntry,
+    ann: Annotation,
+    entryIndex: number,
+    file: TFile,
+  ): void {
+    const typeConfig  = this.plugin.settings.commentTypes.find((t) => t.id === comment.type);
     const builtinMeta = COMMENT_TYPE_META[comment.type];
     const emoji = typeConfig?.emoji ?? builtinMeta?.emoji ?? '💬';
-    const label = typeConfig?.label ?? builtinMeta?.label ?? comment.type;
 
-    const entry = container.createEl('div', {
-      cls: `ilc-entry ilc-entry-${comment.type}`,
-    });
+    const entry = container.createEl('div', { cls: `ilc-entry ilc-entry-${comment.type}` });
 
     // pending: special rendering
     if (comment.type === 'pending') {
       entry.addClass('ilc-entry-pending');
-      const pendingRow = entry.createEl('div', { cls: 'ilc-pending-row' });
-      pendingRow.createEl('span', { cls: 'ilc-pending-spinner', text: '⏳' });
-      pendingRow.createEl('span', {
-        cls: 'ilc-pending-label',
-        text: `等待 ${comment.author} 回应…`,
-      });
+      const row = entry.createEl('div', { cls: 'ilc-pending-row' });
+      row.createEl('span', { cls: 'ilc-pending-spinner', text: '⏳' });
+      row.createEl('span', { cls: 'ilc-pending-label', text: `等待 ${comment.author} 回应…` });
+      // Allow deleting pending entries too
+      const moreBtn = row.createEl('button', { cls: 'ilc-more-btn ilc-entry-more-btn', text: '⋯', attr: { title: '删除' } });
+      moreBtn.addEventListener('click', (e) => { e.stopPropagation(); this.showEntryMenu(e, ann, entryIndex, file); });
       return;
     }
 
     const header = entry.createEl('div', { cls: 'ilc-entry-header' });
 
-    // Author avatar — check AI agent config first
+    // Avatar
     const agentConfig = this.plugin.getAIAgent(comment.author);
     const avatarEl = header.createEl('div', { cls: 'ilc-entry-avatar' });
     if (agentConfig) {
@@ -426,11 +417,63 @@ export class CommentPanel extends ItemView {
     header.createEl('span', { cls: 'ilc-entry-emoji',  text: emoji });
     header.createEl('span', { cls: 'ilc-entry-date',   text: comment.date });
 
-    // Body (omit if empty — pure reaction)
+    // ⋯ button (appears on hover)
+    const moreBtn = header.createEl('button', { cls: 'ilc-more-btn ilc-entry-more-btn', text: '⋯', attr: { title: '更多操作' } });
+    moreBtn.addEventListener('click', (e) => { e.stopPropagation(); this.showEntryMenu(e, ann, entryIndex, file); });
+
     if (comment.text) {
       entry.createEl('div', { cls: 'ilc-entry-body', text: comment.text });
     }
   }
+
+  // ── Delete helpers ────────────────────────────────────────────────────────────
+
+  private showEntryMenu(e: MouseEvent, ann: Annotation, entryIndex: number, file: TFile): void {
+    const menu = new Menu();
+    const isLast = ann.comments.length === 1;
+    menu.addItem((item) =>
+      item
+        .setTitle(isLast ? '删除整条评论' : '删除此条')
+        .setIcon('trash-2')
+        .onClick(() => this.deleteEntry(ann, entryIndex, file)),
+    );
+    if (!isLast) {
+      menu.addSeparator();
+      menu.addItem((item) =>
+        item
+          .setTitle('删除整条评论')
+          .setIcon('trash-2')
+          .onClick(() => this.deleteWholeAnnotation(ann, file)),
+      );
+    }
+    menu.showAtMouseEvent(e);
+  }
+
+  private async deleteWholeAnnotation(ann: Annotation, file: TFile): Promise<void> {
+    await this.plugin.saveDeletedComment({
+      filePath:          file.path,
+      highlightText:     ann.highlightText,
+      entries:           ann.comments,
+      wasFullAnnotation: true,
+    });
+    const content = await this.app.vault.read(file);
+    await this.app.vault.modify(file, deleteAnnotation(content, ann.from));
+  }
+
+  private async deleteEntry(ann: Annotation, entryIndex: number, file: TFile): Promise<void> {
+    const entry = ann.comments[entryIndex];
+    if (!entry) return;
+    await this.plugin.saveDeletedComment({
+      filePath:          file.path,
+      highlightText:     ann.highlightText,
+      entries:           [entry],
+      wasFullAnnotation: ann.comments.length === 1,
+    });
+    const content = await this.app.vault.read(file);
+    await this.app.vault.modify(file, deleteCommentEntry(content, ann.from, entryIndex));
+  }
+
+  // ── Navigation ────────────────────────────────────────────────────────────────
 
   private jumpToAnnotation(ann: Annotation): void {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);

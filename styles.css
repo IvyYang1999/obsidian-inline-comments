@@ -438,6 +438,173 @@
 }
 .ilc-draft-post:hover { opacity: 0.88; }
 
+/* ─── More (⋯) button ────────────────────────────────────────────────────────── */
+.ilc-more-btn {
+  flex-shrink: 0;
+  opacity: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 15px;
+  padding: 0 4px;
+  border-radius: 4px;
+  line-height: 1.2;
+  transition: opacity 0.12s, background 0.1s;
+  margin-left: auto;
+}
+/* Show on hover of parent container */
+.ilc-card-preview:hover .ilc-more-btn,
+.ilc-entry-header:hover .ilc-entry-more-btn,
+.ilc-pending-row:hover .ilc-entry-more-btn {
+  opacity: 1;
+}
+.ilc-more-btn:hover {
+  opacity: 1 !important;
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* Keep card preview as flex so button can sit at the right */
+.ilc-card-preview {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+.ilc-card-preview-text {
+  flex: 1;
+}
+
+/* ─── Panel footer (history link) ───────────────────────────────────────────── */
+.ilc-panel-footer {
+  padding: 8px 12px 12px;
+  text-align: center;
+}
+.ilc-history-link {
+  background: none;
+  border: none;
+  font-size: 12px;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 4px;
+  transition: color 0.1s, background 0.1s;
+}
+.ilc-history-link:hover {
+  color: var(--text-muted);
+  background: var(--background-modifier-hover);
+}
+
+/* ─── History modal ──────────────────────────────────────────────────────────── */
+.ilc-history-modal {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.ilc-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.ilc-history-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.ilc-history-clear-btn {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.ilc-history-clear-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-error);
+}
+.ilc-history-empty {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 24px;
+}
+.ilc-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ilc-history-item {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--background-primary);
+}
+.ilc-history-item-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--background-secondary);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.ilc-history-item-file {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+.ilc-history-item-time {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-left: auto;
+  white-space: nowrap;
+}
+.ilc-history-item-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+.ilc-history-item-highlight {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.ilc-history-item-entries {
+  padding: 6px 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ilc-history-entry-row {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 12px;
+}
+.ilc-history-entry-author {
+  font-weight: 600;
+  color: var(--text-normal);
+}
+.ilc-history-entry-type {
+  font-size: 11px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+.ilc-history-entry-text {
+  color: var(--text-normal);
+  flex: 1;
+}
+
 /* ─── Settings tab ───────────────────────────────────────────────────────────── */
 .ilc-settings-list {
   border: 1px solid var(--background-modifier-border);

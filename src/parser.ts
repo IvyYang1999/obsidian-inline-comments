@@ -109,3 +109,55 @@ export function appendReply(
 function escapeBody(text: string): string {
   return text.replace(/<</, '‹‹').replace(/>>/, '››');
 }
+
+/**
+ * Remove an entire annotation from the document,
+ * leaving only the plain highlighted text in its place.
+ */
+export function deleteAnnotation(content: string, annotationFrom: number): string {
+  FULL_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = FULL_RE.exec(content)) !== null) {
+    if (m.index === annotationFrom) {
+      return content.slice(0, m.index) + m[1] + content.slice(m.index + m[0].length);
+    }
+  }
+  return content;
+}
+
+/**
+ * Remove one comment entry block (by zero-based index) from an annotation.
+ * If the deleted entry was the last one, the whole annotation is converted
+ * back to plain text.
+ */
+export function deleteCommentEntry(
+  content: string,
+  annotationFrom: number,
+  entryIndex: number,
+): string {
+  FULL_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = FULL_RE.exec(content)) !== null) {
+    if (m.index !== annotationFrom) continue;
+
+    // Collect individual {>>...<<} blocks using a local regex to avoid state issues
+    const blocks: string[] = [];
+    const blockRe = /\{>>[\s\S]+?<<\}/g;
+    let bm: RegExpExecArray | null;
+    while ((bm = blockRe.exec(m[2])) !== null) {
+      blocks.push(bm[0]);
+    }
+
+    if (entryIndex < 0 || entryIndex >= blocks.length) return content;
+    blocks.splice(entryIndex, 1);
+
+    if (blocks.length === 0) {
+      // Last entry removed → restore plain text
+      return content.slice(0, m.index) + m[1] + content.slice(m.index + m[0].length);
+    }
+
+    const newAnnotation = `{==${m[1]}==}${blocks.join('')}`;
+    return content.slice(0, m.index) + newAnnotation + content.slice(m.index + m[0].length);
+  }
+  return content;
+}

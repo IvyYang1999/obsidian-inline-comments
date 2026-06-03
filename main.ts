@@ -1,7 +1,8 @@
 import { MarkdownView, Plugin, PluginSettingTab, App, Setting, Notice } from 'obsidian';
 import { buildCommentExtension, type ICommentHost } from './src/editor/cmExtension.ts';
 import { CommentPanel, VIEW_TYPE_COMMENTS } from './src/views/CommentPanel.ts';
-import type { CommentTypeConfig, AIAgentConfig } from './src/types.ts';
+import { HistoryModal } from './src/views/HistoryModal.ts';
+import type { CommentTypeConfig, AIAgentConfig, DeletedRecord } from './src/types.ts';
 import { BUILTIN_TYPE_IDS, typeBgColor } from './src/types.ts';
 
 // ─── Default type chips ────────────────────────────────────────────────────────
@@ -80,6 +81,15 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       },
     });
 
+    // Command: open deletion history
+    this.addCommand({
+      id: 'open-comment-history',
+      name: '查看评论删除历史',
+      callback: () => {
+        new HistoryModal(this.app, this).open();
+      },
+    });
+
     // Ribbon icon
     this.addRibbonIcon('message-square', '评论面板', async () => {
       await this.activatePanel();
@@ -111,6 +121,50 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     return this.settings.aiAgents.find(
       (a) => a.name.toLowerCase() === name.toLowerCase(),
     );
+  }
+
+  // ── History ────────────────────────────────────────────────────────────────
+
+  private get historyPath(): string {
+    return `${this.manifest.dir}/history.json`;
+  }
+
+  async saveDeletedComment(
+    record: Omit<DeletedRecord, 'id' | 'deletedAt'>,
+  ): Promise<void> {
+    const full: DeletedRecord = {
+      ...record,
+      id: `del-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      deletedAt: new Date().toISOString(),
+    };
+    const history = await this.loadDeletedHistory();
+    history.unshift(full);
+    if (history.length > 500) history.splice(500);
+    try {
+      await this.app.vault.adapter.write(
+        this.historyPath,
+        JSON.stringify(history, null, 2),
+      );
+    } catch (e) {
+      console.error('ILC: failed to save history', e);
+    }
+  }
+
+  async loadDeletedHistory(): Promise<DeletedRecord[]> {
+    try {
+      const raw = await this.app.vault.adapter.read(this.historyPath);
+      return JSON.parse(raw) as DeletedRecord[];
+    } catch {
+      return [];
+    }
+  }
+
+  async clearDeletedHistory(): Promise<void> {
+    try {
+      await this.app.vault.adapter.write(this.historyPath, '[]');
+    } catch (e) {
+      console.error('ILC: failed to clear history', e);
+    }
   }
 
   /** Name of the default AI agent to request responses from */

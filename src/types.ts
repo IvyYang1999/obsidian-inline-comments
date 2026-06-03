@@ -63,3 +63,14 @@ export const COMMENT_TYPE_META: Record<string, { label: string; emoji: string }>
 export const BUILTIN_TYPE_IDS = new Set([
   'agree', 'disagree', 'question', 'important', 'note', 'reply', 'pending',
 ]);
+
+// ─── Deletion history ─────────────────────────────────────────────────────────
+
+export interface DeletedRecord {
+  id:                string;   // unique, e.g. "del-1717000000000-abc12"
+  deletedAt:         string;   // ISO timestamp
+  filePath:          string;   // vault-relative path
+  highlightText:     string;   // the {==...==} text
+  entries:           CommentEntry[];
+  wasFullAnnotation: boolean;  // true if whole thread was deleted
+}
