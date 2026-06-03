@@ -1,0 +1,23 @@
+{
+  "name": "obsidian-inline-comments",
+  "version": "0.1.0",
+  "description": "Feishu-style inline comments embedded in Markdown",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@codemirror/state": "^6.4.1",
+    "@codemirror/view": "^6.26.3",
+    "@types/node": "^20.14.9",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "0.21.5",
+    "obsidian": "latest",
+    "tslib": "2.6.3",
+    "typescript": "5.5.3"
+  }
+}

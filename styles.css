@@ -1,0 +1,263 @@
+/* ─── CSS variables ─────────────────────────────────────────────────────────── */
+:root {
+  --ilc-agree:     rgba(76, 175, 80, 0.25);
+  --ilc-disagree:  rgba(244, 67, 54, 0.22);
+  --ilc-question:  rgba(255, 152, 0, 0.25);
+  --ilc-important: rgba(33, 150, 243, 0.22);
+  --ilc-note:      rgba(158, 158, 158, 0.20);
+  --ilc-reply:     transparent;
+
+  --ilc-agree-border:     #4CAF50;
+  --ilc-disagree-border:  #F44336;
+  --ilc-question-border:  #FF9800;
+  --ilc-important-border: #2196F3;
+  --ilc-note-border:      #9E9E9E;
+}
+
+/* ─── Editor highlights ─────────────────────────────────────────────────────── */
+.ilc-highlight {
+  border-radius: 2px;
+  padding: 1px 0;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+.ilc-highlight:hover { filter: brightness(0.9); }
+
+.ilc-hl-agree     { background: var(--ilc-agree);     }
+.ilc-hl-disagree  { background: var(--ilc-disagree);  }
+.ilc-hl-question  { background: var(--ilc-question);  }
+.ilc-hl-important { background: var(--ilc-important); }
+.ilc-hl-note      { background: var(--ilc-note);      }
+
+/* ─── Badge widget ───────────────────────────────────────────────────────────── */
+.ilc-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  margin-left: 2px;
+  border-radius: 8px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: middle;
+  opacity: 0.85;
+  transition: opacity 0.15s;
+}
+.ilc-badge:hover { opacity: 1; }
+
+/* ─── Panel container ───────────────────────────────────────────────────────── */
+.ilc-panel {
+  padding: 8px 0;
+  overflow-y: auto;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.ilc-empty {
+  padding: 24px 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* ─── Card ───────────────────────────────────────────────────────────────────── */
+.ilc-card {
+  margin: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.1s ease;
+  overflow: hidden;
+}
+.ilc-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  transform: translateY(-1px);
+}
+
+.ilc-card-agree     { border-left: 3px solid var(--ilc-agree-border);     }
+.ilc-card-disagree  { border-left: 3px solid var(--ilc-disagree-border);  }
+.ilc-card-question  { border-left: 3px solid var(--ilc-question-border);  }
+.ilc-card-important { border-left: 3px solid var(--ilc-important-border); }
+.ilc-card-note      { border-left: 3px solid var(--ilc-note-border);      }
+
+.ilc-card-active {
+  box-shadow: 0 0 0 2px var(--interactive-accent);
+  transform: translateY(-1px);
+}
+
+@keyframes ilc-flash {
+  0%, 100% { box-shadow: 0 0 0 2px var(--interactive-accent); }
+  50%       { box-shadow: 0 0 0 4px var(--interactive-accent); }
+}
+.ilc-card-flash { animation: ilc-flash 0.5s ease; }
+
+/* ─── Preview (highlight text) ──────────────────────────────────────────────── */
+.ilc-card-preview {
+  padding: 8px 12px 4px;
+  background: var(--background-secondary);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.ilc-card-preview-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  line-height: 1.4;
+}
+
+/* ─── Thread ─────────────────────────────────────────────────────────────────── */
+.ilc-thread {
+  padding: 4px 0;
+}
+
+/* ─── Single comment entry ───────────────────────────────────────────────────── */
+.ilc-entry {
+  padding: 6px 12px;
+}
+.ilc-entry + .ilc-entry {
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.ilc-entry-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 3px;
+}
+.ilc-entry-emoji { font-size: 12px; }
+.ilc-entry-author {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+.ilc-entry-date {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-left: auto;
+}
+
+.ilc-entry-body {
+  font-size: 13px;
+  color: var(--text-normal);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+/* Reply entries are slightly indented */
+.ilc-entry-reply {
+  padding-left: 20px;
+  background: var(--background-secondary-alt, var(--background-secondary));
+}
+
+/* ─── Reply controls ─────────────────────────────────────────────────────────── */
+.ilc-reply-row {
+  padding: 4px 12px 8px;
+}
+.ilc-reply-btn {
+  font-size: 12px;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background 0.1s;
+}
+.ilc-reply-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.ilc-reply-input-row {
+  padding: 6px 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ilc-reply-input {
+  width: 100%;
+  resize: vertical;
+  font-size: 13px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  padding: 6px 8px;
+  box-sizing: border-box;
+}
+.ilc-reply-input:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+}
+.ilc-reply-input-row button {
+  align-self: flex-end;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  cursor: pointer;
+}
+.ilc-reply-submit {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: transparent !important;
+}
+.ilc-reply-cancel {
+  background: var(--background-secondary);
+  color: var(--text-muted);
+}
+
+.ilc-hidden { display: none !important; }
+
+/* ─── Add-comment modal ──────────────────────────────────────────────────────── */
+.ilc-add-modal .modal-content { padding: 16px 20px; }
+
+.ilc-modal-preview {
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  font-size: 13px;
+}
+.ilc-modal-preview-label { color: var(--text-muted); margin-right: 4px; }
+.ilc-modal-preview-text  { font-style: italic; }
+
+.ilc-modal-section-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 0 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ilc-type-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.ilc-type-btn {
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.12s;
+}
+.ilc-type-btn:hover        { border-color: var(--interactive-accent); }
+.ilc-type-btn-active       { border-color: var(--interactive-accent); background: var(--interactive-accent-hover); }
+
+.ilc-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}

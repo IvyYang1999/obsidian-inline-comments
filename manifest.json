@@ -1,0 +1,10 @@
+{
+  "id": "obsidian-inline-comments",
+  "name": "Inline Comments",
+  "version": "0.1.0",
+  "minAppVersion": "1.4.0",
+  "description": "Feishu-style inline comments embedded directly in Markdown. AI can participate in the comment thread by editing the file.",
+  "author": "yytyyf",
+  "authorUrl": "",
+  "isDesktopOnly": false
+}
