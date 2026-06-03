@@ -6,30 +6,29 @@ import type InlineCommentsPlugin from '../../main.ts';
 
 export const VIEW_TYPE_COMMENTS = 'ilc-comments-panel';
 
-// ─── Draft state ──────────────────────────────────────────────────────────────
-
 interface DraftState {
   highlightText: string;
   selectedType: CommentType;
   onPost: (markup: string) => void;
 }
 
-// ─── Panel ────────────────────────────────────────────────────────────────────
-
 export class CommentPanel extends ItemView {
   private annotations: Annotation[] = [];
   private activeAnnotationId: string | null = null;
   private cardEls: Map<string, HTMLElement> = new Map();
 
+  // Two separate zones so refresh() never touches the draft area
+  private draftZone!: HTMLElement;
+  private cardsZone!: HTMLElement;
+
   private draft: DraftState | null = null;
-  private draftCardEl: HTMLElement | null = null;
   private draftInputEl: HTMLTextAreaElement | null = null;
   private clickAwayHandler: ((e: MouseEvent) => void) | null = null;
 
-  constructor(
-    leaf: WorkspaceLeaf,
-    private plugin: InlineCommentsPlugin,
-  ) {
+  // Track which file we're showing so we cancel draft on file change
+  private currentFilePath: string | null = null;
+
+  constructor(leaf: WorkspaceLeaf, private plugin: InlineCommentsPlugin) {
     super(leaf);
   }
 
@@ -38,12 +37,18 @@ export class CommentPanel extends ItemView {
   getIcon(): string { return 'message-square'; }
 
   async onOpen(): Promise<void> {
+    const container = this.containerEl.children[1] as HTMLElement;
+    container.addClass('ilc-panel');
+
+    // Two fixed zones — draft zone comes first and is never cleared by refresh()
+    this.draftZone = container.createEl('div', { cls: 'ilc-draft-zone' });
+    this.cardsZone = container.createEl('div', { cls: 'ilc-cards-zone' });
+
     await this.refresh();
+
+    // active-leaf-change: refresh cards but do NOT cancel draft
     this.registerEvent(
-      this.app.workspace.on('active-leaf-change', () => {
-        this.cancelDraft();
-        this.refresh();
-      }),
+      this.app.workspace.on('active-leaf-change', () => this.refresh()),
     );
     this.registerEvent(
       this.app.vault.on('modify', (file) => {
@@ -60,38 +65,28 @@ export class CommentPanel extends ItemView {
 
   // ── Public API ──────────────────────────────────────────────────────────────
 
-  /** Show a draft card at the top of the panel (called from command) */
   showDraftCard(highlightText: string, onPost: (markup: string) => void): void {
-    this.cancelDraft(); // dismiss any existing draft
+    this.cancelDraft();
 
-    this.draft = {
-      highlightText,
-      selectedType: 'note',
-      onPost,
-    };
+    this.draft = { highlightText, selectedType: 'note', onPost };
 
-    const container = this.containerEl.children[1] as HTMLElement;
-    this.draftCardEl = this.renderDraftCardEl(container);
-    // Insert before all other cards
-    container.insertBefore(this.draftCardEl, container.firstChild);
+    // Render into draftZone (separate from cardsZone, never cleared by refresh)
+    this.renderDraftCardEl();
 
-    // Focus the input
-    setTimeout(() => this.draftInputEl?.focus(), 50);
+    setTimeout(() => this.draftInputEl?.focus(), 60);
 
-    // Click-away: dismiss draft when clicking outside (only if input is empty)
+    // Click-away: dismiss only when input is empty
     this.clickAwayHandler = (e: MouseEvent) => {
-      if (!this.draftCardEl) return;
-      if (this.draftCardEl.contains(e.target as Node)) return;
+      if (this.draftZone.contains(e.target as Node)) return;
       if (!this.draftInputEl?.value.trim()) {
         this.cancelDraft();
       }
     };
     setTimeout(() => {
       document.addEventListener('mousedown', this.clickAwayHandler!);
-    }, 100);
+    }, 150);
   }
 
-  /** Called by CM6 extension when editor cursor is inside an annotation */
   highlightCard(annotationId: string): void {
     if (this.activeAnnotationId === annotationId) return;
     if (this.activeAnnotationId) {
@@ -105,27 +100,29 @@ export class CommentPanel extends ItemView {
     }
   }
 
-  // ── Refresh (saved annotations) ─────────────────────────────────────────────
+  // ── Refresh: only touches cardsZone ─────────────────────────────────────────
 
   async refresh(): Promise<void> {
-    const container = this.containerEl.children[1] as HTMLElement;
+    // Guard: zones might not exist yet if called before onOpen completes
+    if (!this.cardsZone) return;
 
-    // Preserve the draft card element before emptying
-    const savedDraftEl = this.draftCardEl;
-    container.empty();
-    container.addClass('ilc-panel');
+    this.cardsZone.empty();
     this.cardEls.clear();
 
-    // Re-attach draft card if one exists
-    if (savedDraftEl && this.draft) {
-      container.appendChild(savedDraftEl);
+    const file = this.app.workspace.getActiveFile();
+    const newPath = file?.path ?? null;
+
+    // File changed → cancel pending draft
+    if (newPath !== this.currentFilePath) {
+      this.cancelDraft();
+      this.currentFilePath = newPath;
     }
 
-    const file = this.app.workspace.getActiveFile();
     if (!file || file.extension !== 'md') {
-      if (!savedDraftEl) {
-        container.createEl('div', { cls: 'ilc-empty', text: '请打开一篇 Markdown 笔记' });
-      }
+      this.cardsZone.createEl('div', {
+        cls: 'ilc-empty',
+        text: '请打开一篇 Markdown 笔记',
+      });
       return;
     }
 
@@ -133,7 +130,7 @@ export class CommentPanel extends ItemView {
     this.annotations = parseAnnotations(content);
 
     if (this.annotations.length === 0 && !this.draft) {
-      container.createEl('div', {
+      this.cardsZone.createEl('div', {
         cls: 'ilc-empty',
         text: '暂无评论。选中文字后按 ⌘⇧K 添加。',
       });
@@ -141,29 +138,32 @@ export class CommentPanel extends ItemView {
     }
 
     for (const ann of this.annotations) {
-      const card = this.renderCard(container, ann, file);
+      const card = this.renderCard(this.cardsZone, ann, file);
       this.cardEls.set(ann.id, card);
     }
   }
 
-  // ── Draft card rendering ─────────────────────────────────────────────────────
+  // ── Draft card ───────────────────────────────────────────────────────────────
 
-  private renderDraftCardEl(container: HTMLElement): HTMLElement {
-    const card = container.createEl('div', { cls: 'ilc-card ilc-card-draft' });
-
-    // Preview bar (top): colored accent will come from CSS + type class
-    const previewBar = card.createEl('div', { cls: 'ilc-draft-preview' });
-    const previewText = previewBar.createEl('span', {
-      cls: 'ilc-draft-preview-text',
-      text: this.draft!.highlightText.slice(0, 50) +
-        (this.draft!.highlightText.length > 50 ? '…' : ''),
-    });
-    void previewText;
-
-    // Type selector row
-    const typeRow = card.createEl('div', { cls: 'ilc-draft-type-row' });
+  private renderDraftCardEl(): void {
+    this.draftZone.empty();
+    const d = this.draft!;
     const types: CommentType[] = ['agree', 'disagree', 'question', 'important', 'note'];
-    let activeBtnEl: HTMLElement | null = null;
+
+    const card = this.draftZone.createEl('div', {
+      cls: `ilc-card ilc-card-draft ilc-card-${d.selectedType}`,
+    });
+
+    // Preview
+    const previewBar = card.createEl('div', { cls: 'ilc-draft-preview' });
+    previewBar.createEl('span', {
+      cls: 'ilc-draft-preview-text',
+      text: d.highlightText.slice(0, 50) + (d.highlightText.length > 50 ? '…' : ''),
+    });
+
+    // Type chips
+    const typeRow = card.createEl('div', { cls: 'ilc-draft-type-row' });
+    let activeBtn: HTMLElement | null = null;
 
     for (const type of types) {
       const meta = COMMENT_TYPE_META[type];
@@ -174,28 +174,26 @@ export class CommentPanel extends ItemView {
       btn.createEl('span', { text: meta.emoji });
       btn.createEl('span', { cls: 'ilc-draft-type-label', text: meta.label });
 
-      if (type === this.draft!.selectedType) {
+      if (type === d.selectedType) {
         btn.addClass('ilc-draft-type-active');
-        card.addClass(`ilc-card-${type}`);
-        activeBtnEl = btn;
+        activeBtn = btn;
       }
 
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        activeBtnEl?.removeClass('ilc-draft-type-active');
-        // Remove old color class from card
+        activeBtn?.removeClass('ilc-draft-type-active');
         types.forEach((t) => card.removeClass(`ilc-card-${t}`));
-        this.draft!.selectedType = type;
-        btn.addClass('ilc-draft-type-active');
+        d.selectedType = type;
         card.addClass(`ilc-card-${type}`);
-        activeBtnEl = btn;
+        btn.addClass('ilc-draft-type-active');
+        activeBtn = btn;
       });
     }
 
-    // Author row
+    // Author
     const authorRow = card.createEl('div', { cls: 'ilc-draft-author-row' });
-    const avatarEl = authorRow.createEl('div', { cls: 'ilc-draft-avatar' });
-    avatarEl.textContent = this.plugin.settings.authorName.charAt(0).toUpperCase();
+    const avatar = authorRow.createEl('div', { cls: 'ilc-draft-avatar' });
+    avatar.textContent = this.plugin.settings.authorName.charAt(0).toUpperCase();
     authorRow.createEl('span', {
       cls: 'ilc-draft-author-name',
       text: this.plugin.settings.authorName,
@@ -209,31 +207,25 @@ export class CommentPanel extends ItemView {
     });
     this.draftInputEl = input;
 
-    // Action row (hidden until input has content)
+    // Actions (hidden until input has content)
     const actionRow = card.createEl('div', { cls: 'ilc-draft-actions ilc-hidden' });
-    const cancelBtn = actionRow.createEl('button', {
-      cls: 'ilc-draft-cancel',
-      text: 'Cancel',
-    });
-    const postBtn = actionRow.createEl('button', {
-      cls: 'ilc-draft-post mod-cta',
-      text: 'Post',
-    });
+    const cancelBtn = actionRow.createEl('button', { cls: 'ilc-draft-cancel', text: 'Cancel' });
+    const postBtn = actionRow.createEl('button', { cls: 'ilc-draft-post mod-cta', text: 'Post' });
 
-    // Show/hide actions based on input content
     input.addEventListener('input', () => {
-      if (input.value.trim()) {
-        actionRow.removeClass('ilc-hidden');
-      } else {
-        actionRow.addClass('ilc-hidden');
-      }
+      input.value.trim()
+        ? actionRow.removeClass('ilc-hidden')
+        : actionRow.addClass('ilc-hidden');
     });
 
-    // Ctrl/Cmd+Enter to submit
     input.addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
         this.submitDraft(input.value);
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        this.cancelDraft();
       }
     });
 
@@ -246,8 +238,6 @@ export class CommentPanel extends ItemView {
       e.stopPropagation();
       this.submitDraft(input.value);
     });
-
-    return card;
   }
 
   private submitDraft(inputValue: string): void {
@@ -272,27 +262,21 @@ export class CommentPanel extends ItemView {
       document.removeEventListener('mousedown', this.clickAwayHandler);
       this.clickAwayHandler = null;
     }
-    if (this.draftCardEl) {
-      this.draftCardEl.remove();
-      this.draftCardEl = null;
-    }
+    this.draftZone?.empty();
     this.draftInputEl = null;
     this.draft = null;
   }
 
-  // ── Saved annotation card rendering ─────────────────────────────────────────
+  // ── Annotation cards ─────────────────────────────────────────────────────────
 
   private renderCard(container: HTMLElement, ann: Annotation, file: TFile): HTMLElement {
     const card = container.createEl('div', { cls: 'ilc-card' });
     card.dataset.annotationId = ann.id;
-
     const firstType = ann.comments[0]?.type ?? 'note';
     card.addClass(`ilc-card-${firstType}`);
 
-    // Click card header area → jump to editor
     card.addEventListener('click', (e) => {
-      const target = e.target as HTMLElement;
-      if (target.closest('.ilc-reply-input-row')) return;
+      if ((e.target as HTMLElement).closest('.ilc-reply-input-row')) return;
       this.jumpToAnnotation(ann);
     });
 
@@ -300,8 +284,7 @@ export class CommentPanel extends ItemView {
     const preview = card.createEl('div', { cls: 'ilc-card-preview' });
     preview.createEl('span', {
       cls: 'ilc-card-preview-text',
-      text: ann.highlightText.slice(0, 60) +
-        (ann.highlightText.length > 60 ? '…' : ''),
+      text: ann.highlightText.slice(0, 60) + (ann.highlightText.length > 60 ? '…' : ''),
     });
 
     // Thread
@@ -310,10 +293,9 @@ export class CommentPanel extends ItemView {
       this.renderCommentEntry(thread, comment);
     }
 
-    // Reply controls
+    // Reply
     const replyRow = card.createEl('div', { cls: 'ilc-reply-row' });
     const replyBtn = replyRow.createEl('button', { cls: 'ilc-reply-btn', text: '+ 回复' });
-
     const inputRow = card.createEl('div', { cls: 'ilc-reply-input-row ilc-hidden' });
     const input = inputRow.createEl('textarea', {
       cls: 'ilc-reply-input',
