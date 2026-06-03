@@ -1,5 +1,5 @@
 import { ItemView, MarkdownView, TFile, WorkspaceLeaf } from 'obsidian';
-import type { Annotation, CommentEntry, CommentType } from '../types.ts';
+import type { Annotation, CommentEntry } from '../types.ts';
 import { COMMENT_TYPE_META } from '../types.ts';
 import { parseAnnotations, appendReply, buildAnnotationMarkup } from '../parser.ts';
 import type InlineCommentsPlugin from '../../main.ts';
@@ -7,9 +7,11 @@ import type InlineCommentsPlugin from '../../main.ts';
 export const VIEW_TYPE_COMMENTS = 'ilc-comments-panel';
 
 interface DraftState {
-  highlightText: string;
-  selectedType: CommentType;
-  onPost: (markup: string) => void;
+  highlightText:  string;
+  selectedType:   string;
+  typeChanged:    boolean; // user explicitly clicked a type chip
+  wantsAIReply:   boolean;
+  onPost:         (markup: string) => void;
 }
 
 export class CommentPanel extends ItemView {
@@ -68,17 +70,25 @@ export class CommentPanel extends ItemView {
   showDraftCard(highlightText: string, onPost: (markup: string) => void): void {
     this.cancelDraft();
 
-    this.draft = { highlightText, selectedType: 'note', onPost };
+    // Default to first available type
+    const defaultType = this.plugin.settings.commentTypes[0]?.id ?? 'note';
+    this.draft = {
+      highlightText,
+      selectedType: defaultType,
+      typeChanged: false,
+      wantsAIReply: false,
+      onPost,
+    };
 
-    // Render into draftZone (separate from cardsZone, never cleared by refresh)
     this.renderDraftCardEl();
 
     setTimeout(() => this.draftInputEl?.focus(), 60);
 
-    // Click-away: dismiss only when input is empty
+    // Click-away: dismiss only when nothing useful was done
     this.clickAwayHandler = (e: MouseEvent) => {
       if (this.draftZone.contains(e.target as Node)) return;
-      if (!this.draftInputEl?.value.trim()) {
+      // Only auto-dismiss if empty input AND no type was explicitly selected
+      if (!this.draftInputEl?.value.trim() && !this.draft?.typeChanged) {
         this.cancelDraft();
       }
     };
@@ -103,7 +113,6 @@ export class CommentPanel extends ItemView {
   // ── Refresh: only touches cardsZone ─────────────────────────────────────────
 
   async refresh(): Promise<void> {
-    // Guard: zones might not exist yet if called before onOpen completes
     if (!this.cardsZone) return;
 
     this.cardsZone.empty();
@@ -112,7 +121,6 @@ export class CommentPanel extends ItemView {
     const file = this.app.workspace.getActiveFile();
     const newPath = file?.path ?? null;
 
-    // File changed → cancel pending draft
     if (newPath !== this.currentFilePath) {
       this.cancelDraft();
       this.currentFilePath = newPath;
@@ -148,33 +156,39 @@ export class CommentPanel extends ItemView {
   private renderDraftCardEl(): void {
     this.draftZone.empty();
     const d = this.draft!;
-    const types: CommentType[] = ['agree', 'disagree', 'question', 'important', 'note'];
+    const types = this.plugin.settings.commentTypes;
 
     const card = this.draftZone.createEl('div', {
       cls: `ilc-card ilc-card-draft ilc-card-${d.selectedType}`,
     });
 
-    // Preview
+    // ── Preview ──
     const previewBar = card.createEl('div', { cls: 'ilc-draft-preview' });
     previewBar.createEl('span', {
       cls: 'ilc-draft-preview-text',
       text: d.highlightText.slice(0, 50) + (d.highlightText.length > 50 ? '…' : ''),
     });
 
-    // Type chips
+    // ── Type chips ──
     const typeRow = card.createEl('div', { cls: 'ilc-draft-type-row' });
     let activeBtn: HTMLElement | null = null;
 
-    for (const type of types) {
-      const meta = COMMENT_TYPE_META[type];
-      const btn = typeRow.createEl('button', {
-        cls: `ilc-draft-type-btn ilc-draft-type-${type}`,
-        attr: { title: meta.label },
-      });
-      btn.createEl('span', { text: meta.emoji });
-      btn.createEl('span', { cls: 'ilc-draft-type-label', text: meta.label });
+    const updateActions = () => {
+      const hasContent = (this.draftInputEl?.value.trim() ?? '') !== '';
+      d.typeChanged || hasContent
+        ? actionRow.removeClass('ilc-hidden')
+        : actionRow.addClass('ilc-hidden');
+    };
 
-      if (type === d.selectedType) {
+    for (const type of types) {
+      const btn = typeRow.createEl('button', {
+        cls: `ilc-draft-type-btn ilc-draft-type-${type.id}`,
+        attr: { title: type.label },
+      });
+      btn.createEl('span', { cls: 'ilc-draft-type-emoji', text: type.emoji });
+      btn.createEl('span', { cls: 'ilc-draft-type-label', text: type.label });
+
+      if (type.id === d.selectedType) {
         btn.addClass('ilc-draft-type-active');
         activeBtn = btn;
       }
@@ -182,15 +196,18 @@ export class CommentPanel extends ItemView {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         activeBtn?.removeClass('ilc-draft-type-active');
-        types.forEach((t) => card.removeClass(`ilc-card-${t}`));
-        d.selectedType = type;
-        card.addClass(`ilc-card-${type}`);
+        types.forEach((t) => card.removeClass(`ilc-card-${t.id}`));
+        d.selectedType = type.id;
+        d.typeChanged = true;
+        card.addClass(`ilc-card-${type.id}`);
         btn.addClass('ilc-draft-type-active');
         activeBtn = btn;
+        typeBadge.textContent = type.emoji + ' ' + type.label;
+        updateActions();
       });
     }
 
-    // Author
+    // ── Author row ──
     const authorRow = card.createEl('div', { cls: 'ilc-draft-author-row' });
     const avatar = authorRow.createEl('div', { cls: 'ilc-draft-avatar' });
     avatar.textContent = this.plugin.settings.authorName.charAt(0).toUpperCase();
@@ -198,24 +215,45 @@ export class CommentPanel extends ItemView {
       cls: 'ilc-draft-author-name',
       text: this.plugin.settings.authorName,
     });
+    // Selected type badge
+    const selectedMeta = types.find((t) => t.id === d.selectedType);
+    const typeBadge = authorRow.createEl('span', {
+      cls: 'ilc-draft-type-badge',
+      text: selectedMeta ? selectedMeta.emoji + ' ' + selectedMeta.label : d.selectedType,
+    });
 
-    // Input
+    // ── Input ──
     const inputWrapper = card.createEl('div', { cls: 'ilc-draft-input-wrapper' });
     const input = inputWrapper.createEl('textarea', {
       cls: 'ilc-draft-input',
-      attr: { placeholder: '添加评论…', rows: '2' },
+      attr: { placeholder: '添加评论（可选）…', rows: '2' },
     });
     this.draftInputEl = input;
 
-    // Actions (hidden until input has content)
+    // ── Actions (hidden until type selected or input has content) ──
     const actionRow = card.createEl('div', { cls: 'ilc-draft-actions ilc-hidden' });
+
+    // AI reply toggle
+    const hasAgents = this.plugin.settings.aiAgents.length > 0;
+    if (hasAgents) {
+      const toggleRow = card.createEl('div', { cls: 'ilc-draft-ai-toggle' });
+      const checkbox = toggleRow.createEl('input', {
+        attr: { type: 'checkbox', id: 'ilc-ai-toggle' },
+      }) as HTMLInputElement;
+      toggleRow.createEl('label', {
+        attr: { for: 'ilc-ai-toggle' },
+        text: `请 ${this.plugin.getDefaultAIAgentName()} 回应`,
+      });
+      checkbox.addEventListener('change', () => {
+        d.wantsAIReply = checkbox.checked;
+      });
+    }
+
     const cancelBtn = actionRow.createEl('button', { cls: 'ilc-draft-cancel', text: 'Cancel' });
-    const postBtn = actionRow.createEl('button', { cls: 'ilc-draft-post mod-cta', text: 'Post' });
+    const postBtn   = actionRow.createEl('button', { cls: 'ilc-draft-post mod-cta', text: 'Post' });
 
     input.addEventListener('input', () => {
-      input.value.trim()
-        ? actionRow.removeClass('ilc-hidden')
-        : actionRow.addClass('ilc-hidden');
+      updateActions();
     });
 
     input.addEventListener('keydown', (e) => {
@@ -242,17 +280,30 @@ export class CommentPanel extends ItemView {
 
   private submitDraft(inputValue: string): void {
     if (!this.draft) return;
-    const text = inputValue.trim();
-    if (!text) return;
+    // Allow empty text — a selected type alone is a valid reaction
+    if (!this.draft.typeChanged && !inputValue.trim()) return;
 
     const today = new Date().toISOString().split('T')[0];
-    const entry: CommentEntry = {
-      author: this.plugin.settings.authorName,
-      date: today,
-      type: this.draft.selectedType,
-      text,
-    };
-    const markup = buildAnnotationMarkup(this.draft.highlightText, [entry]);
+    const entries: CommentEntry[] = [
+      {
+        author: this.plugin.settings.authorName,
+        date:   today,
+        type:   this.draft.selectedType,
+        text:   inputValue.trim(),
+      },
+    ];
+
+    // Append pending entry if AI response requested
+    if (this.draft.wantsAIReply) {
+      entries.push({
+        author: this.plugin.getDefaultAIAgentName(),
+        date:   today,
+        type:   'pending',
+        text:   '',
+      });
+    }
+
+    const markup = buildAnnotationMarkup(this.draft.highlightText, entries);
     this.draft.onPost(markup);
     this.cancelDraft();
   }
@@ -294,15 +345,15 @@ export class CommentPanel extends ItemView {
     }
 
     // Reply
-    const replyRow = card.createEl('div', { cls: 'ilc-reply-row' });
-    const replyBtn = replyRow.createEl('button', { cls: 'ilc-reply-btn', text: '+ 回复' });
-    const inputRow = card.createEl('div', { cls: 'ilc-reply-input-row ilc-hidden' });
-    const input = inputRow.createEl('textarea', {
+    const replyRow   = card.createEl('div', { cls: 'ilc-reply-row' });
+    const replyBtn   = replyRow.createEl('button', { cls: 'ilc-reply-btn', text: '+ 回复' });
+    const inputRow   = card.createEl('div', { cls: 'ilc-reply-input-row ilc-hidden' });
+    const input      = inputRow.createEl('textarea', {
       cls: 'ilc-reply-input',
       attr: { placeholder: '写下回复…', rows: '2' },
     });
-    const submitBtn = inputRow.createEl('button', { cls: 'ilc-reply-submit mod-cta', text: '发送' });
-    const cancelBtn = inputRow.createEl('button', { cls: 'ilc-reply-cancel', text: '取消' });
+    const submitBtn  = inputRow.createEl('button', { cls: 'ilc-reply-submit mod-cta', text: '发送' });
+    const cancelBtn  = inputRow.createEl('button', { cls: 'ilc-reply-cancel', text: '取消' });
 
     replyBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -323,8 +374,8 @@ export class CommentPanel extends ItemView {
       const today = new Date().toISOString().split('T')[0];
       const reply: CommentEntry = {
         author: this.plugin.settings.authorName,
-        date: today,
-        type: 'reply',
+        date:   today,
+        type:   'reply',
         text,
       };
       const currentContent = await this.app.vault.read(file);
@@ -336,13 +387,49 @@ export class CommentPanel extends ItemView {
   }
 
   private renderCommentEntry(container: HTMLElement, comment: CommentEntry): void {
-    const meta = COMMENT_TYPE_META[comment.type] ?? COMMENT_TYPE_META.note;
-    const entry = container.createEl('div', { cls: `ilc-entry ilc-entry-${comment.type}` });
+    // Look up type meta from settings first, then built-in fallback
+    const typeConfig = this.plugin.settings.commentTypes.find((t) => t.id === comment.type);
+    const builtinMeta = COMMENT_TYPE_META[comment.type];
+    const emoji = typeConfig?.emoji ?? builtinMeta?.emoji ?? '💬';
+    const label = typeConfig?.label ?? builtinMeta?.label ?? comment.type;
+
+    const entry = container.createEl('div', {
+      cls: `ilc-entry ilc-entry-${comment.type}`,
+    });
+
+    // pending: special rendering
+    if (comment.type === 'pending') {
+      entry.addClass('ilc-entry-pending');
+      const pendingRow = entry.createEl('div', { cls: 'ilc-pending-row' });
+      pendingRow.createEl('span', { cls: 'ilc-pending-spinner', text: '⏳' });
+      pendingRow.createEl('span', {
+        cls: 'ilc-pending-label',
+        text: `等待 ${comment.author} 回应…`,
+      });
+      return;
+    }
+
     const header = entry.createEl('div', { cls: 'ilc-entry-header' });
-    header.createEl('span', { cls: 'ilc-entry-emoji', text: meta.emoji });
+
+    // Author avatar — check AI agent config first
+    const agentConfig = this.plugin.getAIAgent(comment.author);
+    const avatarEl = header.createEl('div', { cls: 'ilc-entry-avatar' });
+    if (agentConfig) {
+      avatarEl.textContent = agentConfig.avatarChar;
+      avatarEl.style.background = agentConfig.avatarBg;
+      avatarEl.addClass('ilc-entry-avatar-ai');
+    } else {
+      avatarEl.textContent = comment.author.charAt(0).toUpperCase();
+    }
+
     header.createEl('span', { cls: 'ilc-entry-author', text: comment.author });
-    header.createEl('span', { cls: 'ilc-entry-date', text: comment.date });
-    entry.createEl('div', { cls: 'ilc-entry-body', text: comment.text });
+    header.createEl('span', { cls: 'ilc-entry-emoji',  text: emoji });
+    header.createEl('span', { cls: 'ilc-entry-date',   text: comment.date });
+
+    // Body (omit if empty — pure reaction)
+    if (comment.text) {
+      entry.createEl('div', { cls: 'ilc-entry-body', text: comment.text });
+    }
   }
 
   private jumpToAnnotation(ann: Annotation): void {

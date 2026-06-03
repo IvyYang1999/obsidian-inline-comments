@@ -1,11 +1,10 @@
-/* ─── CSS variables ─────────────────────────────────────────────────────────── */
+/* ─── CSS variables (built-in types) ────────────────────────────────────────── */
 :root {
-  --ilc-agree:     rgba(76, 175, 80, 0.25);
+  --ilc-agree:     rgba(76, 175, 80, 0.22);
   --ilc-disagree:  rgba(244, 67, 54, 0.22);
-  --ilc-question:  rgba(255, 152, 0, 0.25);
+  --ilc-question:  rgba(255, 152, 0, 0.22);
   --ilc-important: rgba(33, 150, 243, 0.22);
-  --ilc-note:      rgba(158, 158, 158, 0.20);
-  --ilc-reply:     transparent;
+  --ilc-note:      rgba(158, 158, 158, 0.18);
 
   --ilc-agree-border:     #4CAF50;
   --ilc-disagree-border:  #F44336;
@@ -127,10 +126,30 @@
 .ilc-entry-header {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   margin-bottom: 3px;
 }
-.ilc-entry-emoji { font-size: 12px; }
+
+/* Avatar in entry */
+.ilc-entry-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.ilc-entry-avatar-ai {
+  /* AI agents get a slightly larger avatar to distinguish them */
+  box-shadow: 0 0 0 1.5px rgba(255,255,255,0.4);
+}
+
+.ilc-entry-emoji  { font-size: 11px; }
 .ilc-entry-author {
   font-size: 12px;
   font-weight: 600;
@@ -153,6 +172,31 @@
 .ilc-entry-reply {
   padding-left: 20px;
   background: var(--background-secondary-alt, var(--background-secondary));
+}
+
+/* ─── Pending entry ───────────────────────────────────────────────────────────── */
+.ilc-entry-pending {
+  padding: 8px 12px;
+  background: var(--background-secondary);
+}
+.ilc-pending-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ilc-pending-spinner {
+  font-size: 13px;
+  animation: ilc-spin 2s linear infinite;
+}
+@keyframes ilc-spin {
+  0%   { opacity: 1;   }
+  50%  { opacity: 0.4; }
+  100% { opacity: 1;   }
+}
+.ilc-pending-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 /* ─── Reply controls ─────────────────────────────────────────────────────────── */
@@ -221,6 +265,7 @@
   border: 1px solid var(--background-modifier-border);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
   margin-bottom: 12px;
+  cursor: default;
 }
 
 /* Preview bar at the top of the draft card */
@@ -239,18 +284,24 @@
   display: block;
 }
 
-/* Type selector */
+/* ─── Type chip row: compact + scrollable ───────────────────────────────────── */
 .ilc-draft-type-row {
   display: flex;
   gap: 4px;
-  padding: 8px 12px 4px;
+  padding: 8px 10px 4px;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  scrollbar-width: none;          /* Firefox */
+  -webkit-overflow-scrolling: touch;
 }
+.ilc-draft-type-row::-webkit-scrollbar { display: none; } /* Chrome/Safari */
+
 .ilc-draft-type-btn {
   display: flex;
   align-items: center;
-  gap: 3px;
-  padding: 3px 7px;
-  border-radius: 12px;
+  gap: 2px;
+  padding: 2px 6px;
+  border-radius: 10px;
   border: 1px solid var(--background-modifier-border);
   background: var(--background-secondary);
   cursor: pointer;
@@ -258,6 +309,7 @@
   color: var(--text-muted);
   transition: all 0.12s;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .ilc-draft-type-btn:hover {
   border-color: var(--interactive-accent);
@@ -268,26 +320,33 @@
   background: var(--interactive-accent-hover) !important;
   color: var(--text-normal) !important;
 }
-.ilc-draft-type-label { font-size: 11px; }
 
-/* Author row */
+/* Emoji always visible; label hidden by default, shown on active */
+.ilc-draft-type-emoji { font-size: 12px; }
+.ilc-draft-type-label {
+  display: none;
+  font-size: 11px;
+}
+.ilc-draft-type-active .ilc-draft-type-label { display: inline; }
+
+/* ─── Author row ─────────────────────────────────────────────────────────────── */
 .ilc-draft-author-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 6px 12px 2px;
 }
 .ilc-draft-avatar {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: var(--interactive-accent);
   color: var(--text-on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
   flex-shrink: 0;
 }
 .ilc-draft-author-name {
@@ -295,10 +354,19 @@
   font-weight: 500;
   color: var(--text-normal);
 }
+.ilc-draft-type-badge {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  border-radius: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--background-modifier-border);
+}
 
-/* Input area */
+/* ─── Input area ─────────────────────────────────────────────────────────────── */
 .ilc-draft-input-wrapper {
-  padding: 6px 12px 8px;
+  padding: 6px 12px 4px;
 }
 .ilc-draft-input {
   width: 100%;
@@ -321,12 +389,30 @@
 }
 .ilc-draft-input::placeholder { color: var(--text-faint); }
 
-/* Action buttons (Cancel / Post) — hidden until input has content */
+/* ─── AI toggle ──────────────────────────────────────────────────────────────── */
+.ilc-draft-ai-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 12px 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.ilc-draft-ai-toggle input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--interactive-accent);
+}
+.ilc-draft-ai-toggle label {
+  cursor: pointer;
+  user-select: none;
+}
+
+/* ─── Action buttons (Cancel / Post) ─────────────────────────────────────────── */
 .ilc-draft-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding: 0 12px 10px;
+  padding: 4px 12px 10px;
 }
 .ilc-draft-cancel {
   padding: 5px 14px;
@@ -351,3 +437,86 @@
   transition: opacity 0.1s;
 }
 .ilc-draft-post:hover { opacity: 0.88; }
+
+/* ─── Settings tab ───────────────────────────────────────────────────────────── */
+.ilc-settings-list {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.ilc-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.ilc-settings-row:last-child { border-bottom: none; }
+
+.ilc-settings-input-emoji {
+  width: 3em;
+  text-align: center;
+  font-size: 15px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  padding: 2px 4px;
+  color: var(--text-normal);
+}
+.ilc-settings-input-id {
+  width: 7em;
+  font-size: 12px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  padding: 3px 5px;
+  color: var(--text-normal);
+  font-family: monospace;
+}
+.ilc-settings-input-label {
+  flex: 1;
+  font-size: 13px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  padding: 3px 5px;
+  color: var(--text-normal);
+}
+.ilc-settings-input-color {
+  width: 2.4em;
+  height: 2em;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  background: none;
+}
+.ilc-settings-del-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+  border-radius: 3px;
+  transition: color 0.1s, background 0.1s;
+}
+.ilc-settings-del-btn:hover {
+  color: var(--text-error);
+  background: var(--background-modifier-hover);
+}
+.ilc-settings-avatar-preview {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
