@@ -1,8 +1,6 @@
 import { MarkdownView, Plugin, PluginSettingTab, App, Setting } from 'obsidian';
 import { buildCommentExtension, type ICommentHost } from './src/editor/cmExtension.ts';
 import { CommentPanel, VIEW_TYPE_COMMENTS } from './src/views/CommentPanel.ts';
-import { AddCommentModal } from './src/modal/AddCommentModal.ts';
-import { buildAnnotationMarkup } from './src/parser.ts';
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
@@ -18,43 +16,35 @@ const DEFAULT_SETTINGS: ILCSettings = {
 
 export default class InlineCommentsPlugin extends Plugin implements ICommentHost {
   settings: ILCSettings = DEFAULT_SETTINGS;
-  private panel: CommentPanel | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
 
     // Register sidebar view
-    this.registerView(
-      VIEW_TYPE_COMMENTS,
-      (leaf) => {
-        this.panel = new CommentPanel(leaf, this);
-        return this.panel;
-      },
-    );
+    this.registerView(VIEW_TYPE_COMMENTS, (leaf) => new CommentPanel(leaf, this));
 
     // Register CodeMirror 6 extension
     this.registerEditorExtension(buildCommentExtension(this));
 
-    // Command: add inline comment
+    // Command: add inline comment → opens draft card in sidebar
     this.addCommand({
       id: 'add-inline-comment',
       name: '添加划线评论',
       hotkeys: [{ modifiers: ['Mod', 'Shift'], key: 'k' }],
-      editorCallback: (editor) => {
+      editorCallback: async (editor) => {
         const sel = editor.getSelection();
-        if (!sel) {
-          return;
-        }
+        if (!sel) return;
 
-        new AddCommentModal(
-          this.app,
-          sel,
-          (entry) => {
-            const markup = buildAnnotationMarkup(sel, [entry]);
-            editor.replaceSelection(markup);
-          },
-          this.settings.authorName,
-        ).open();
+        // Ensure panel is open
+        await this.activatePanel();
+
+        // Get the panel instance and show draft card
+        const panel = this.getPanel();
+        if (!panel) return;
+
+        panel.showDraftCard(sel, (markup: string) => {
+          editor.replaceSelection(markup);
+        });
       },
     });
 
@@ -82,7 +72,14 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
 
   /** Called by CM6 extension when editor cursor enters an annotation */
   onEditorCursorInAnnotation(annotationId: string): void {
-    this.panel?.highlightCard(annotationId);
+    this.getPanel()?.highlightCard(annotationId);
+  }
+
+  /** Get the active CommentPanel instance (if any) */
+  getPanel(): CommentPanel | null {
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_COMMENTS);
+    if (leaves.length > 0) return leaves[0].view as CommentPanel;
+    return null;
   }
 
   private async activatePanel(): Promise<void> {

@@ -215,49 +215,139 @@
 
 .ilc-hidden { display: none !important; }
 
-/* ─── Add-comment modal ──────────────────────────────────────────────────────── */
-.ilc-add-modal .modal-content { padding: 16px 20px; }
+/* ─── Draft card ─────────────────────────────────────────────────────────────── */
 
-.ilc-modal-preview {
+.ilc-card-draft {
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
   margin-bottom: 12px;
-  padding: 8px 10px;
+}
+
+/* Preview bar at the top of the draft card */
+.ilc-draft-preview {
+  padding: 8px 12px 6px;
   background: var(--background-secondary);
-  border-radius: 6px;
-  font-size: 13px;
+  border-bottom: 1px solid var(--background-modifier-border);
 }
-.ilc-modal-preview-label { color: var(--text-muted); margin-right: 4px; }
-.ilc-modal-preview-text  { font-style: italic; }
-
-.ilc-modal-section-label {
+.ilc-draft-preview-text {
   font-size: 12px;
-  font-weight: 600;
   color: var(--text-muted);
-  margin: 0 0 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
 }
 
-.ilc-type-row {
+/* Type selector */
+.ilc-draft-type-row {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 16px;
+  gap: 4px;
+  padding: 8px 12px 4px;
 }
-.ilc-type-btn {
-  padding: 5px 10px;
-  border-radius: 6px;
+.ilc-draft-type-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 7px;
+  border-radius: 12px;
   border: 1px solid var(--background-modifier-border);
   background: var(--background-secondary);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 11px;
+  color: var(--text-muted);
   transition: all 0.12s;
+  white-space: nowrap;
 }
-.ilc-type-btn:hover        { border-color: var(--interactive-accent); }
-.ilc-type-btn-active       { border-color: var(--interactive-accent); background: var(--interactive-accent-hover); }
+.ilc-draft-type-btn:hover {
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+}
+.ilc-draft-type-active {
+  border-color: var(--interactive-accent) !important;
+  background: var(--interactive-accent-hover) !important;
+  color: var(--text-normal) !important;
+}
+.ilc-draft-type-label { font-size: 11px; }
 
-.ilc-modal-footer {
+/* Author row */
+.ilc-draft-author-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 2px;
+}
+.ilc-draft-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.ilc-draft-author-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-normal);
+}
+
+/* Input area */
+.ilc-draft-input-wrapper {
+  padding: 6px 12px 8px;
+}
+.ilc-draft-input {
+  width: 100%;
+  resize: none;
+  font-size: 13px;
+  line-height: 1.5;
+  border-radius: 4px;
+  border: 1.5px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  padding: 7px 10px;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+  font-family: inherit;
+}
+.ilc-draft-input:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 2px rgba(var(--interactive-accent-rgb, 0, 122, 255), 0.15);
+}
+.ilc-draft-input::placeholder { color: var(--text-faint); }
+
+/* Action buttons (Cancel / Post) — hidden until input has content */
+.ilc-draft-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 12px;
+  padding: 0 12px 10px;
 }
+.ilc-draft-cancel {
+  padding: 5px 14px;
+  border-radius: 5px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.1s;
+}
+.ilc-draft-cancel:hover { background: var(--background-modifier-hover); }
+.ilc-draft-post {
+  padding: 5px 16px;
+  border-radius: 5px;
+  border: none;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: opacity 0.1s;
+}
+.ilc-draft-post:hover { opacity: 0.88; }
