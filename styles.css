@@ -537,6 +537,13 @@
 }
 
 /* ─── History modal ──────────────────────────────────────────────────────────── */
+.ilc-global-thread-input {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font-family: inherit;
+}
+
 .ilc-history-modal {
   max-height: 70vh;
   overflow-y: auto;
