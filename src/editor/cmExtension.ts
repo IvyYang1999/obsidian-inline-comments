@@ -11,9 +11,22 @@ import { RangeSetBuilder } from '@codemirror/state';
 import { parseAnnotations } from '../parser.ts';
 import type { Annotation } from '../types.ts';
 
+// ─── Position data emitted to the panel ──────────────────────────────────────
+
+export interface AnnotationPosition {
+  annotationId: string;
+  /** Y offset from the TOP of the editor's scroll container (not the viewport) */
+  topInEditor: number;
+  from: number;
+}
+
+// ─── Host interface ──────────────────────────────────────────────────────────
+
 /** Callback interface to avoid circular import with main.ts */
 export interface ICommentHost {
   onEditorCursorInAnnotation(annotationId: string): void;
+  onPositionsUpdated(positions: AnnotationPosition[]): void;
+  onEditorScroll(scrollTop: number): void;
 }
 
 // ─── Badge widget shown after each annotation ─────────────────────────────────
@@ -65,17 +78,45 @@ function highlightClass(ann: Annotation): string {
 
 class CommentViewPlugin implements PluginValue {
   decorations: DecorationSet = Decoration.none;
+  private scrollRAF = 0;
+  private view: EditorView;
+  private onScroll: () => void;
 
   constructor(
     view: EditorView,
     private host: ICommentHost,
   ) {
+    this.view = view;
     this.decorations = this.buildDecorations(view);
+
+    // Scroll listener on the editor's scroll container (throttled via rAF)
+    this.onScroll = () => {
+      if (this.scrollRAF) return;
+      this.scrollRAF = requestAnimationFrame(() => {
+        this.scrollRAF = 0;
+        try {
+          this.host.onEditorScroll(this.view.scrollDOM.scrollTop);
+        } catch { /* panel may not be ready */ }
+      });
+    };
+    try {
+      view.scrollDOM.addEventListener('scroll', this.onScroll, { passive: true });
+    } catch { /* scrollDOM may not be ready */ }
+
+    // Emit initial positions after a short delay (DOM needs to settle)
+    setTimeout(() => {
+      try { this.emitPositions(view); } catch { /* ignore */ }
+    }, 200);
   }
 
   update(update: ViewUpdate): void {
     if (update.docChanged || update.viewportChanged) {
       this.decorations = this.buildDecorations(update.view);
+    }
+
+    // Emit position updates when geometry or content changes
+    if (update.docChanged || update.viewportChanged || update.geometryChanged) {
+      try { this.emitPositions(update.view); } catch { /* ignore */ }
     }
 
     // Cursor moved → notify panel to highlight corresponding card
@@ -89,6 +130,38 @@ class CommentViewPlugin implements PluginValue {
       }
     }
   }
+
+  destroy(): void {
+    this.view.scrollDOM.removeEventListener('scroll', this.onScroll);
+    if (this.scrollRAF) {
+      cancelAnimationFrame(this.scrollRAF);
+    }
+  }
+
+  // ── Position emission ──────────────────────────────────────────────────────
+
+  private emitPositions(view: EditorView): void {
+    const content = view.state.doc.toString();
+    const anns = parseAnnotations(content);
+    const scrollerRect = view.scrollDOM.getBoundingClientRect();
+
+    const positions: AnnotationPosition[] = [];
+    for (const ann of anns) {
+      const hlStart = ann.from + 3; // skip {==
+      const coords = view.coordsAtPos(hlStart);
+      if (!coords) continue;
+
+      positions.push({
+        annotationId: ann.id,
+        topInEditor: coords.top - scrollerRect.top + view.scrollDOM.scrollTop,
+        from: ann.from,
+      });
+    }
+
+    this.host.onPositionsUpdated(positions);
+  }
+
+  // ── Decorations ────────────────────────────────────────────────────────────
 
   private buildDecorations(view: EditorView): DecorationSet {
     const builder = new RangeSetBuilder<Decoration>();

@@ -1,4 +1,5 @@
 import { ItemView, MarkdownView, Menu, TFile, WorkspaceLeaf } from 'obsidian';
+import { EditorView } from '@codemirror/view';
 import type { Annotation, CommentEntry } from '../types.ts';
 import { COMMENT_TYPE_META } from '../types.ts';
 import {
@@ -9,31 +10,52 @@ import {
   deleteCommentEntry,
 } from '../parser.ts';
 import { HistoryModal } from './HistoryModal.ts';
+import type { AnnotationPosition } from '../editor/cmExtension.ts';
 import type InlineCommentsPlugin from '../../main.ts';
 
 export const VIEW_TYPE_COMMENTS = 'ilc-comments-panel';
 
+// ─── Layout types ────────────────────────────────────────────────────────────
+
+interface LayoutItem {
+  id: string;
+  idealTop: number;
+  el: HTMLElement;
+  height: number;
+  actualTop: number;
+}
+
 interface DraftState {
   highlightText:  string;
+  from:           number;
   selectedType:   string;
   typeChanged:    boolean;
-  wantsAIReply:   boolean;
   onPost:         (markup: string) => void;
 }
+
+// ─── Panel ───────────────────────────────────────────────────────────────────
 
 export class CommentPanel extends ItemView {
   private annotations: Annotation[] = [];
   private activeAnnotationId: string | null = null;
   private cardEls: Map<string, HTMLElement> = new Map();
 
-  private draftZone!: HTMLElement;
   private cardsZone!: HTMLElement;
+  private panelContainer!: HTMLElement;
 
   private draft: DraftState | null = null;
+  private draftEl: HTMLElement | null = null;
   private draftInputEl: HTMLTextAreaElement | null = null;
   private clickAwayHandler: ((e: MouseEvent) => void) | null = null;
 
   private currentFilePath: string | null = null;
+
+  /** Latest positions received from CM6 */
+  private lastPositions: AnnotationPosition[] = [];
+  /** Flag to prevent scroll loop */
+  private syncingScroll = false;
+  /** Temporarily ignore editor scroll sync (e.g. during jumpToAnnotation) */
+  private ignoreEditorScrollUntil = 0;
 
   constructor(leaf: WorkspaceLeaf, private plugin: InlineCommentsPlugin) {
     super(leaf);
@@ -44,16 +66,26 @@ export class CommentPanel extends ItemView {
   getIcon(): string { return 'message-square'; }
 
   async onOpen(): Promise<void> {
-    const container = this.containerEl.children[1] as HTMLElement;
-    container.addClass('ilc-panel');
+    this.panelContainer = this.containerEl.children[1] as HTMLElement;
+    this.panelContainer.addClass('ilc-panel');
 
-    this.draftZone = container.createEl('div', { cls: 'ilc-draft-zone' });
-    this.cardsZone = container.createEl('div', { cls: 'ilc-cards-zone' });
+    this.cardsZone = this.panelContainer.createEl('div', { cls: 'ilc-cards-zone' });
+
+    // History button in the view header (top-right clock icon)
+    this.addAction('clock', '删除历史', () => {
+      new HistoryModal(this.app, this.plugin).open();
+    });
 
     await this.refresh();
 
     this.registerEvent(
-      this.app.workspace.on('active-leaf-change', () => this.refresh()),
+      this.app.workspace.on('active-leaf-change', () => {
+        // Only refresh if the active file actually changed
+        const newFile = this.app.workspace.getActiveFile();
+        if (newFile?.path !== this.currentFilePath) {
+          this.refresh();
+        }
+      }),
     );
     this.registerEvent(
       this.app.vault.on('modify', (file) => {
@@ -65,28 +97,36 @@ export class CommentPanel extends ItemView {
 
   async onClose(): Promise<void> {
     this.cancelDraft();
-    this.containerEl.children[1].empty();
+    this.panelContainer.empty();
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
 
-  showDraftCard(highlightText: string, onPost: (markup: string) => void): void {
+  showDraftCard(highlightText: string, from: number, onPost: (markup: string) => void): void {
     this.cancelDraft();
 
     const defaultType = this.plugin.settings.commentTypes[0]?.id ?? 'note';
     this.draft = {
       highlightText,
+      from,
       selectedType: defaultType,
       typeChanged: false,
-      wantsAIReply: false,
       onPost,
     };
 
     this.renderDraftCardEl();
-    setTimeout(() => this.draftInputEl?.focus(), 60);
+    // Scroll panel to show the draft card
+    setTimeout(() => {
+      this.draftInputEl?.focus();
+      if (this.draftEl) {
+        const cardTop = this.draftEl.offsetTop;
+        const panelHeight = this.panelContainer.clientHeight;
+        this.panelContainer.scrollTo({ top: Math.max(0, cardTop - panelHeight / 4), behavior: 'smooth' });
+      }
+    }, 80);
 
     this.clickAwayHandler = (e: MouseEvent) => {
-      if (this.draftZone.contains(e.target as Node)) return;
+      if (this.draftEl?.contains(e.target as Node)) return;
       if (!this.draftInputEl?.value.trim() && !this.draft?.typeChanged) {
         this.cancelDraft();
       }
@@ -98,21 +138,53 @@ export class CommentPanel extends ItemView {
 
   highlightCard(annotationId: string): void {
     if (this.activeAnnotationId === annotationId) return;
+
+    // Deactivate previous
     if (this.activeAnnotationId) {
-      this.cardEls.get(this.activeAnnotationId)?.removeClass('ilc-card-active');
+      const prevEl = this.cardEls.get(this.activeAnnotationId);
+      if (prevEl) {
+        prevEl.removeClass('ilc-card-active');
+      }
     }
+
     this.activeAnnotationId = annotationId;
     const el = this.cardEls.get(annotationId);
     if (el) {
       el.addClass('ilc-card-active');
-      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      // Pause editor scroll sync so it doesn't fight our scroll
+      this.ignoreEditorScrollUntil = Date.now() + 400;
+      // Scroll panel so the card is visible
+      const cardTop = el.offsetTop;
+      const panelHeight = this.panelContainer.clientHeight;
+      const scrollTarget = cardTop - panelHeight / 4;
+      this.panelContainer.scrollTo({ top: Math.max(0, scrollTarget), behavior: 'smooth' });
+      // Re-layout because focused card may have different height (reply input shown)
+      setTimeout(() => this.layoutCards(), 50);
     }
+  }
+
+  /** Receive annotation positions from CM6 */
+  syncPositions(positions: AnnotationPosition[]): void {
+    this.lastPositions = positions;
+    this.layoutCards();
+  }
+
+  /** Sync panel scroll with editor scroll */
+  syncEditorScroll(scrollTop: number): void {
+    // Skip if we're in a user-initiated scroll (e.g. after clicking a card)
+    if (Date.now() < this.ignoreEditorScrollUntil) return;
+    this.syncingScroll = true;
+    this.panelContainer.scrollTop = scrollTop;
+    requestAnimationFrame(() => { this.syncingScroll = false; });
   }
 
   // ── Refresh ──────────────────────────────────────────────────────────────────
 
   async refresh(): Promise<void> {
     if (!this.cardsZone) return;
+
+    // Preserve draft element if it exists
+    const hadDraft = !!this.draft;
 
     this.cardsZone.empty();
     this.cardEls.clear();
@@ -130,7 +202,6 @@ export class CommentPanel extends ItemView {
         cls: 'ilc-empty',
         text: '请打开一篇 Markdown 笔记',
       });
-      this.renderPanelFooter();
       return;
     }
 
@@ -149,55 +220,216 @@ export class CommentPanel extends ItemView {
       this.cardEls.set(ann.id, card);
     }
 
-    this.renderPanelFooter();
+    // Re-add draft element into cardsZone
+    if (hadDraft && this.draft) {
+      this.renderDraftCardEl();
+    }
+
+    // Compute positions directly from the editor (don't wait for async CM6 callback)
+    this.computePositionsFromEditor();
+    this.layoutCards();
   }
 
-  private renderPanelFooter(): void {
-    const footer = this.cardsZone.createEl('div', { cls: 'ilc-panel-footer' });
-    const histBtn = footer.createEl('button', {
-      cls: 'ilc-history-link',
-      text: '🕐 删除历史',
-    });
-    histBtn.addEventListener('click', () => {
-      new HistoryModal(this.app, this.plugin).open();
-    });
+  // ── Position computation ─────────────────────────────────────────────────────
+
+  /** Directly read annotation positions from the CM6 EditorView */
+  private computePositionsFromEditor(): void {
+    try {
+      const mdView = this.findMarkdownView();
+      if (!mdView) return;
+      // Access the underlying CM6 EditorView
+      const cmEditor = (mdView as any).editor?.cm as EditorView | undefined;
+      if (!cmEditor) return;
+
+      const scrollerRect = cmEditor.scrollDOM.getBoundingClientRect();
+      const positions: AnnotationPosition[] = [];
+      const editor = mdView.editor;
+
+      for (const ann of this.annotations) {
+        const hlStart = ann.from + 3; // skip {==
+        const coords = cmEditor.coordsAtPos(hlStart);
+
+        let topInEditor: number;
+        if (coords) {
+          topInEditor = coords.top - scrollerRect.top + cmEditor.scrollDOM.scrollTop;
+        } else {
+          // Annotation is outside the rendered viewport — estimate from line number
+          const pos = editor.offsetToPos(ann.from);
+          topInEditor = pos.line * 24; // rough estimate: 24px per line
+        }
+
+        positions.push({
+          annotationId: ann.id,
+          topInEditor,
+          from: ann.from,
+        });
+      }
+
+      if (positions.length > 0) {
+        this.lastPositions = positions;
+      }
+    } catch {
+      // Editor may not be ready yet, will get positions via async callback later
+    }
+  }
+
+  // ── Layout engine ────────────────────────────────────────────────────────────
+
+  private layoutCards(): void {
+    const items: LayoutItem[] = [];
+
+    // Build position map from last known positions
+    const posMap = new Map<string, number>();
+    for (const p of this.lastPositions) {
+      posMap.set(p.annotationId, p.topInEditor);
+    }
+
+    // Determine if we have any position data at all
+    const hasPositionData = this.lastPositions.length > 0;
+
+    // Add annotation cards — always include all, estimate position if missing
+    let lastKnownTop = 0;
+    for (const ann of this.annotations) {
+      const cardEl = this.cardEls.get(ann.id);
+      if (!cardEl) continue;
+
+      let idealTop: number;
+      if (hasPositionData) {
+        // Use CM6 position if available; estimate from document order if not
+        idealTop = posMap.get(ann.id) ?? lastKnownTop;
+      } else {
+        // No position data: stack sequentially
+        idealTop = lastKnownTop;
+      }
+      lastKnownTop = idealTop + (cardEl.offsetHeight || 100) + 8;
+
+      items.push({
+        id: ann.id,
+        idealTop,
+        el: cardEl,
+        height: cardEl.offsetHeight || 100,
+        actualTop: 0,
+      });
+    }
+
+    // Add draft card if present
+    if (this.draft && this.draftEl) {
+      const draftIdealTop = this.getDraftIdealTop();
+      items.push({
+        id: '__draft__',
+        idealTop: draftIdealTop,
+        el: this.draftEl,
+        height: this.draftEl.offsetHeight || 200,
+        actualTop: 0,
+      });
+    }
+
+    if (items.length === 0) return;
+
+    // Sort by idealTop (preserves document order when positions are correct)
+    items.sort((a, b) => a.idealTop - b.idealTop);
+
+    // Greedy collision resolution with max gap cap
+    const GAP = 8;
+    const MAX_GAP = 40; // don't let cards drift too far apart
+    let nextAvailable = 8;
+
+    for (const item of items) {
+      // Use idealTop but cap the gap from previous card
+      const capped = Math.min(item.idealTop, nextAvailable + MAX_GAP);
+      item.actualTop = Math.max(capped, nextAvailable);
+      nextAvailable = item.actualTop + item.height + GAP;
+    }
+
+    // Set cardsZone min-height
+    const lastItem = items[items.length - 1];
+    if (lastItem) {
+      this.cardsZone.style.minHeight = `${lastItem.actualTop + lastItem.height + 60}px`;
+    }
+
+    // Apply positions
+    for (const item of items) {
+      item.el.style.top = `${item.actualTop}px`;
+    }
+  }
+
+  private getDraftIdealTop(): number {
+    if (!this.draft) return 0;
+
+    // Get the pixel position of the selection directly from CM6
+    try {
+      const mdView = this.findMarkdownView();
+      if (mdView) {
+        const cmEditor = (mdView as any).editor?.cm as EditorView | undefined;
+        if (cmEditor) {
+          const coords = cmEditor.coordsAtPos(this.draft.from);
+          if (coords) {
+            const scrollerRect = cmEditor.scrollDOM.getBoundingClientRect();
+            return coords.top - scrollerRect.top + cmEditor.scrollDOM.scrollTop;
+          }
+        }
+        // Fallback: estimate from line number
+        const pos = mdView.editor.offsetToPos(this.draft.from);
+        return pos.line * 24;
+      }
+    } catch { /* ignore */ }
+    return 0;
   }
 
   // ── Draft card ────────────────────────────────────────────────────────────────
 
   private renderDraftCardEl(): void {
-    this.draftZone.empty();
+    // Remove previous draft element
+    this.draftEl?.remove();
+
     const d = this.draft!;
     const types = this.plugin.settings.commentTypes;
 
-    const card = this.draftZone.createEl('div', {
-      cls: `ilc-card ilc-card-draft ilc-card-${d.selectedType}`,
+    const card = this.cardsZone.createEl('div', {
+      cls: `ilc-card ilc-card-draft ilc-card-active`,
     });
+    this.draftEl = card;
 
-    // Preview
-    const previewBar = card.createEl('div', { cls: 'ilc-draft-preview' });
+    // ── 1. Preview text + ⋯ button ──
+    const previewBar = card.createEl('div', { cls: 'ilc-card-preview' });
     previewBar.createEl('span', {
-      cls: 'ilc-draft-preview-text',
+      cls: 'ilc-card-preview-text',
       text: d.highlightText.slice(0, 50) + (d.highlightText.length > 50 ? '…' : ''),
     });
+    const cardMoreBtn = previewBar.createEl('button', {
+      cls: 'ilc-more-btn',
+      attr: { 'aria-label': '更多操作' },
+    });
+    cardMoreBtn.textContent = '⋯';
+    cardMoreBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const menu = new Menu();
+      menu.addItem((item) =>
+        item.setTitle('取消').setIcon('x').onClick(() => this.cancelDraft()),
+      );
+      menu.showAtMouseEvent(e);
+    });
 
-    // Type chips
+    // ── 2. Avatar + Name row ──
+    const authorRow = card.createEl('div', { cls: 'ilc-draft-author-row' });
+    const avatar = authorRow.createEl('div', { cls: 'ilc-draft-avatar' });
+    avatar.textContent = this.plugin.settings.authorName.charAt(0).toUpperCase();
+    avatar.style.background = this.plugin.settings.avatarBg;
+    avatar.style.color = '#fff';
+    avatar.style.border = 'none';
+    authorRow.createEl('span', {
+      cls: 'ilc-draft-author-name',
+      text: this.plugin.settings.authorName,
+    });
+
+    // ── 3. Type chips (below the name) ──
     const typeRow = card.createEl('div', { cls: 'ilc-draft-type-row' });
     let activeBtn: HTMLElement | null = null;
-
-    const updateActions = () => {
-      const hasContent = (this.draftInputEl?.value.trim() ?? '') !== '';
-      d.typeChanged || hasContent
-        ? actionRow.removeClass('ilc-hidden')
-        : actionRow.addClass('ilc-hidden');
-    };
 
     for (const type of types) {
       const btn = typeRow.createEl('button', {
         cls: `ilc-draft-type-btn ilc-draft-type-${type.id}`,
-        attr: { title: type.label },
       });
-      btn.createEl('span', { cls: 'ilc-draft-type-emoji', text: type.emoji });
       btn.createEl('span', { cls: 'ilc-draft-type-label', text: type.label });
 
       if (type.id === d.selectedType) {
@@ -208,70 +440,39 @@ export class CommentPanel extends ItemView {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         activeBtn?.removeClass('ilc-draft-type-active');
-        types.forEach((t) => card.removeClass(`ilc-card-${t.id}`));
         d.selectedType = type.id;
         d.typeChanged = true;
-        card.addClass(`ilc-card-${type.id}`);
         btn.addClass('ilc-draft-type-active');
         activeBtn = btn;
-        typeBadge.textContent = type.emoji + ' ' + type.label;
-        updateActions();
       });
     }
 
-    // Author row
-    const authorRow = card.createEl('div', { cls: 'ilc-draft-author-row' });
-    const avatar = authorRow.createEl('div', { cls: 'ilc-draft-avatar' });
-    avatar.textContent = this.plugin.settings.authorName.charAt(0).toUpperCase();
-    authorRow.createEl('span', {
-      cls: 'ilc-draft-author-name',
-      text: this.plugin.settings.authorName,
-    });
-    const selectedMeta = types.find((t) => t.id === d.selectedType);
-    const typeBadge = authorRow.createEl('span', {
-      cls: 'ilc-draft-type-badge',
-      text: selectedMeta ? selectedMeta.emoji + ' ' + selectedMeta.label : d.selectedType,
-    });
-
-    // Input
+    // ── 4. Input ──
     const inputWrapper = card.createEl('div', { cls: 'ilc-draft-input-wrapper' });
     const input = inputWrapper.createEl('textarea', {
       cls: 'ilc-draft-input',
-      attr: { placeholder: '添加评论（可选）…', rows: '2' },
+      attr: { placeholder: '添加评论（可选）…', rows: '3' },
     });
     this.draftInputEl = input;
 
-    // Actions
-    const actionRow = card.createEl('div', { cls: 'ilc-draft-actions ilc-hidden' });
+    // ── 5. Action buttons (always visible) ──
+    const actionRow = card.createEl('div', { cls: 'ilc-draft-actions' });
+    const cancelBtn = actionRow.createEl('button', { cls: 'ilc-draft-cancel', text: '取消' });
+    const postBtn   = actionRow.createEl('button', { cls: 'ilc-draft-post mod-cta', text: '发送' });
 
-    // AI reply toggle
-    if (this.plugin.settings.aiAgents.length > 0) {
-      const toggleRow = card.createEl('div', { cls: 'ilc-draft-ai-toggle' });
-      const checkbox = toggleRow.createEl('input', {
-        attr: { type: 'checkbox', id: 'ilc-ai-toggle' },
-      }) as HTMLInputElement;
-      toggleRow.createEl('label', {
-        attr: { for: 'ilc-ai-toggle' },
-        text: `请 ${this.plugin.getDefaultAIAgentName()} 回应`,
-      });
-      checkbox.addEventListener('change', () => { d.wantsAIReply = checkbox.checked; });
-    }
-
-    const cancelBtn = actionRow.createEl('button', { cls: 'ilc-draft-cancel', text: 'Cancel' });
-    const postBtn   = actionRow.createEl('button', { cls: 'ilc-draft-post mod-cta', text: 'Post' });
-
-    input.addEventListener('input', () => { updateActions(); });
     input.addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); this.submitDraft(input.value); }
       if (e.key === 'Escape') { e.preventDefault(); this.cancelDraft(); }
     });
     cancelBtn.addEventListener('click', (e) => { e.stopPropagation(); this.cancelDraft(); });
     postBtn.addEventListener('click', (e) => { e.stopPropagation(); this.submitDraft(input.value); });
+
+    // Schedule layout
+    requestAnimationFrame(() => this.layoutCards());
   }
 
   private submitDraft(inputValue: string): void {
     if (!this.draft) return;
-    if (!this.draft.typeChanged && !inputValue.trim()) return;
 
     const today = new Date().toISOString().split('T')[0];
     const entries: CommentEntry[] = [
@@ -283,15 +484,6 @@ export class CommentPanel extends ItemView {
       },
     ];
 
-    if (this.draft.wantsAIReply) {
-      entries.push({
-        author: this.plugin.getDefaultAIAgentName(),
-        date:   today,
-        type:   'pending',
-        text:   '',
-      });
-    }
-
     const markup = buildAnnotationMarkup(this.draft.highlightText, entries);
     this.draft.onPost(markup);
     this.cancelDraft();
@@ -302,7 +494,8 @@ export class CommentPanel extends ItemView {
       document.removeEventListener('mousedown', this.clickAwayHandler);
       this.clickAwayHandler = null;
     }
-    this.draftZone?.empty();
+    this.draftEl?.remove();
+    this.draftEl = null;
     this.draftInputEl = null;
     this.draft = null;
   }
@@ -315,9 +508,15 @@ export class CommentPanel extends ItemView {
     const firstType = ann.comments[0]?.type ?? 'note';
     card.addClass(`ilc-card-${firstType}`);
 
+    // Apply active state if this card is currently active
+    if (ann.id === this.activeAnnotationId) {
+      card.addClass('ilc-card-active');
+    }
+
     card.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest('.ilc-reply-input-row')) return;
       this.jumpToAnnotation(ann);
+      this.highlightCard(ann.id);
     });
 
     // Preview with card-level ⋯ menu
@@ -328,7 +527,7 @@ export class CommentPanel extends ItemView {
     });
     const cardMoreBtn = preview.createEl('button', {
       cls: 'ilc-more-btn',
-      attr: { title: '更多操作', 'aria-label': '更多操作' },
+      attr: { 'aria-label': '更多操作' },
     });
     cardMoreBtn.textContent = '⋯';
     cardMoreBtn.addEventListener('click', (e) => {
@@ -343,25 +542,32 @@ export class CommentPanel extends ItemView {
       menu.showAtMouseEvent(e);
     });
 
-    // Thread — pass ann + index + file for per-entry menus
+    // Thread
     const thread = card.createEl('div', { cls: 'ilc-thread' });
     ann.comments.forEach((comment, i) => {
       this.renderCommentEntry(thread, comment, ann, i, file);
     });
 
-    // Reply
-    const replyRow  = card.createEl('div', { cls: 'ilc-reply-row' });
-    const replyBtn  = replyRow.createEl('button', { cls: 'ilc-reply-btn', text: '+ 回复' });
-    const inputRow  = card.createEl('div', { cls: 'ilc-reply-input-row ilc-hidden' });
+    // Reply input row (visible only when card is active, controlled by CSS)
+    const inputRow  = card.createEl('div', { cls: 'ilc-reply-input-row' });
     const input     = inputRow.createEl('textarea', {
       cls: 'ilc-reply-input',
       attr: { placeholder: '写下回复…', rows: '2' },
     });
-    const submitBtn = inputRow.createEl('button', { cls: 'ilc-reply-submit mod-cta', text: '发送' });
-    const cancelBtn = inputRow.createEl('button', { cls: 'ilc-reply-cancel', text: '取消' });
+    const btnRow = inputRow.createEl('div', { cls: 'ilc-reply-btn-row' });
+    const submitBtn = btnRow.createEl('button', { cls: 'ilc-reply-submit mod-cta ilc-hidden', text: '发送' });
 
-    replyBtn.addEventListener('click', (e) => { e.stopPropagation(); replyRow.addClass('ilc-hidden'); inputRow.removeClass('ilc-hidden'); input.focus(); });
-    cancelBtn.addEventListener('click', (e) => { e.stopPropagation(); inputRow.addClass('ilc-hidden'); replyRow.removeClass('ilc-hidden'); input.value = ''; });
+    // Show submit button only when input has content
+    input.addEventListener('input', () => {
+      if (input.value.trim()) {
+        submitBtn.removeClass('ilc-hidden');
+      } else {
+        submitBtn.addClass('ilc-hidden');
+      }
+      // Re-layout after height change
+      requestAnimationFrame(() => this.layoutCards());
+    });
+
     submitBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const text = input.value.trim();
@@ -394,15 +600,14 @@ export class CommentPanel extends ItemView {
       const row = entry.createEl('div', { cls: 'ilc-pending-row' });
       row.createEl('span', { cls: 'ilc-pending-spinner', text: '⏳' });
       row.createEl('span', { cls: 'ilc-pending-label', text: `等待 ${comment.author} 回应…` });
-      // Allow deleting pending entries too
-      const moreBtn = row.createEl('button', { cls: 'ilc-more-btn ilc-entry-more-btn', text: '⋯', attr: { title: '删除' } });
+      const moreBtn = row.createEl('button', { cls: 'ilc-more-btn ilc-entry-more-btn', text: '⋯' });
       moreBtn.addEventListener('click', (e) => { e.stopPropagation(); this.showEntryMenu(e, ann, entryIndex, file); });
       return;
     }
 
     const header = entry.createEl('div', { cls: 'ilc-entry-header' });
 
-    // Avatar
+    // Avatar — use AI agent config or user's avatar settings
     const agentConfig = this.plugin.getAIAgent(comment.author);
     const avatarEl = header.createEl('div', { cls: 'ilc-entry-avatar' });
     if (agentConfig) {
@@ -411,6 +616,8 @@ export class CommentPanel extends ItemView {
       avatarEl.addClass('ilc-entry-avatar-ai');
     } else {
       avatarEl.textContent = comment.author.charAt(0).toUpperCase();
+      avatarEl.style.background = this.plugin.settings.avatarBg;
+      avatarEl.style.color = '#fff';
     }
 
     header.createEl('span', { cls: 'ilc-entry-author', text: comment.author });
@@ -418,7 +625,7 @@ export class CommentPanel extends ItemView {
     header.createEl('span', { cls: 'ilc-entry-date',   text: comment.date });
 
     // ⋯ button (appears on hover)
-    const moreBtn = header.createEl('button', { cls: 'ilc-more-btn ilc-entry-more-btn', text: '⋯', attr: { title: '更多操作' } });
+    const moreBtn = header.createEl('button', { cls: 'ilc-more-btn ilc-entry-more-btn', text: '⋯' });
     moreBtn.addEventListener('click', (e) => { e.stopPropagation(); this.showEntryMenu(e, ann, entryIndex, file); });
 
     if (comment.text) {
@@ -430,20 +637,20 @@ export class CommentPanel extends ItemView {
 
   private showEntryMenu(e: MouseEvent, ann: Annotation, entryIndex: number, file: TFile): void {
     const menu = new Menu();
-    const isLast = ann.comments.length === 1;
-    menu.addItem((item) =>
-      item
-        .setTitle(isLast ? '删除整条评论' : '删除此条')
-        .setIcon('trash-2')
-        .onClick(() => this.deleteEntry(ann, entryIndex, file)),
-    );
-    if (!isLast) {
-      menu.addSeparator();
+    const isOnly = ann.comments.length === 1;
+    const isFirst = entryIndex === 0;
+
+    if (isOnly) {
+      // Only one entry — deleting it removes the whole annotation
       menu.addItem((item) =>
-        item
-          .setTitle('删除整条评论')
-          .setIcon('trash-2')
+        item.setTitle('删除整条评论').setIcon('trash-2')
           .onClick(() => this.deleteWholeAnnotation(ann, file)),
+      );
+    } else {
+      // Multiple entries — only show "删除此条"
+      menu.addItem((item) =>
+        item.setTitle('删除此条').setIcon('trash-2')
+          .onClick(() => this.deleteEntry(ann, entryIndex, file)),
       );
     }
     menu.showAtMouseEvent(e);
@@ -475,13 +682,39 @@ export class CommentPanel extends ItemView {
 
   // ── Navigation ────────────────────────────────────────────────────────────────
 
+  /** Find the MarkdownView for the current file (not getActiveViewOfType which may return null when panel is focused) */
+  private findMarkdownView(): MarkdownView | null {
+    const file = this.app.workspace.getActiveFile();
+    if (!file) return null;
+    // Search all leaves for a MarkdownView showing this file
+    const leaves = this.app.workspace.getLeavesOfType('markdown');
+    for (const leaf of leaves) {
+      const view = leaf.view;
+      if (view instanceof MarkdownView && view.file?.path === file.path) {
+        return view;
+      }
+    }
+    return null;
+  }
+
   private jumpToAnnotation(ann: Annotation): void {
-    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (!view) return;
-    const editor = view.editor;
+    const mdView = this.findMarkdownView();
+    if (!mdView) return;
+    const editor = mdView.editor;
+
+    // Temporarily stop syncing panel scroll with editor
+    this.ignoreEditorScrollUntil = Date.now() + 600;
+
+    // Focus the editor DOM directly (avoid setActiveLeaf which triggers refresh)
+    const cmEditor = (mdView as any).editor?.cm as EditorView | undefined;
+    if (cmEditor) {
+      cmEditor.focus();
+    }
+
     const pos = editor.offsetToPos(ann.from + 3);
     editor.setCursor(pos);
     editor.scrollIntoView({ from: pos, to: pos }, true);
+
     const card = this.cardEls.get(ann.id);
     if (card) {
       card.addClass('ilc-card-flash');

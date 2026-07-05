@@ -1,5 +1,5 @@
 import { MarkdownView, Plugin, PluginSettingTab, App, Setting, Notice } from 'obsidian';
-import { buildCommentExtension, type ICommentHost } from './src/editor/cmExtension.ts';
+import { buildCommentExtension, type ICommentHost, type AnnotationPosition } from './src/editor/cmExtension.ts';
 import { CommentPanel, VIEW_TYPE_COMMENTS } from './src/views/CommentPanel.ts';
 import { HistoryModal } from './src/views/HistoryModal.ts';
 import type { CommentTypeConfig, AIAgentConfig, DeletedRecord } from './src/types.ts';
@@ -25,6 +25,7 @@ export const DEFAULT_AI_AGENTS: AIAgentConfig[] = [
 
 interface ILCSettings {
   authorName:     string;
+  avatarBg:       string; // user avatar background color
   commentTypes:   CommentTypeConfig[];
   aiAgents:       AIAgentConfig[];
   defaultAIAgent: string; // id of the default AI agent to request
@@ -32,6 +33,7 @@ interface ILCSettings {
 
 const DEFAULT_SETTINGS: ILCSettings = {
   authorName:     'user',
+  avatarBg:       '#7C4DFF',
   commentTypes:   DEFAULT_COMMENT_TYPES,
   aiAgents:       DEFAULT_AI_AGENTS,
   defaultAIAgent: 'claude',
@@ -61,12 +63,14 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
         const sel = editor.getSelection();
         if (!sel) return;
 
+        const from = editor.posToOffset(editor.getCursor('from'));
+
         await this.activatePanel();
 
         const panel = this.getPanel();
         if (!panel) return;
 
-        panel.showDraftCard(sel, (markup: string) => {
+        panel.showDraftCard(sel, from, (markup: string) => {
           editor.replaceSelection(markup);
         });
       },
@@ -107,6 +111,16 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
   /** Called by CM6 extension when editor cursor enters an annotation */
   onEditorCursorInAnnotation(annotationId: string): void {
     this.getPanel()?.highlightCard(annotationId);
+  }
+
+  /** Called by CM6 extension when annotation positions change */
+  onPositionsUpdated(positions: AnnotationPosition[]): void {
+    this.getPanel()?.syncPositions(positions);
+  }
+
+  /** Called by CM6 extension when the editor scrolls */
+  onEditorScroll(scrollTop: number): void {
+    this.getPanel()?.syncEditorScroll(scrollTop);
   }
 
   /** Get the active CommentPanel instance (if any) */
@@ -249,6 +263,18 @@ class ILCSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.authorName)
           .onChange(async (value) => {
             this.plugin.settings.authorName = value.trim() || 'user';
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName('头像颜色')
+      .setDesc('评论头像的背景色')
+      .addColorPicker((cp) =>
+        cp
+          .setValue(this.plugin.settings.avatarBg)
+          .onChange(async (value) => {
+            this.plugin.settings.avatarBg = value;
             await this.plugin.saveSettings();
           }),
       );

@@ -76,10 +76,14 @@
 
 /* ─── Panel container ───────────────────────────────────────────────────────── */
 .ilc-panel {
-  padding: 8px 0;
   overflow-y: auto;
   height: 100%;
   box-sizing: border-box;
+}
+
+/* Absolute-positioned card container — height set by JS */
+.ilc-cards-zone {
+  position: relative;
 }
 
 .ilc-empty {
@@ -90,67 +94,72 @@
   line-height: 1.6;
 }
 
-/* ─── Card ───────────────────────────────────────────────────────────────────── */
+/* ─── Card (absolute positioned, clean Feishu-style) ──────────────────────── */
 .ilc-card {
-  margin: 6px 10px;
+  position: absolute;
+  left: 8px;
+  right: 8px;
   border-radius: var(--ilc-radius-card);
   border: 1px solid var(--background-modifier-border);
   background: var(--background-primary);
   cursor: pointer;
   box-shadow: var(--ilc-shadow-xs);
-  transition: box-shadow var(--ilc-trans-std), transform var(--ilc-trans-fast);
+  transition: box-shadow var(--ilc-trans-std), top 0.15s ease-out;
   overflow: hidden;
 }
 .ilc-card:hover {
   box-shadow: var(--ilc-shadow-sm);
-  transform: translateY(-1px);
 }
 
-/* Type left-border (5px, sidebar-highlights pattern) */
-.ilc-card-agree     { border-left: 5px solid var(--ilc-agree-border);     }
-.ilc-card-disagree  { border-left: 5px solid var(--ilc-disagree-border);  }
-.ilc-card-question  { border-left: 5px solid var(--ilc-question-border);  }
-.ilc-card-important { border-left: 5px solid var(--ilc-important-border); }
-.ilc-card-note      { border-left: 5px solid var(--ilc-note-border);      }
+/* No left-border color — types are shown via chips only */
 
-/* Active / focus state — Feishu yellow, no layout shift (box-shadow only) */
+/* Active / focus state — Feishu yellow top bar */
 .ilc-card-active {
-  box-shadow: var(--ilc-shadow-focus), var(--ilc-shadow-sm);
-  transform: translateY(-1px);
+  border-top: 3px solid #FFD54F;
+  box-shadow: var(--ilc-shadow-sm);
+}
+
+/* Reply input: only visible when card is active */
+.ilc-card:not(.ilc-card-active) .ilc-reply-input-row {
+  display: none !important;
 }
 
 @keyframes ilc-flash {
-  0%   { box-shadow: var(--ilc-shadow-focus), var(--ilc-shadow-sm); }
-  40%  { box-shadow: 0 0 0 4px #ffe8a3, var(--ilc-shadow-sm); }
-  100% { box-shadow: var(--ilc-shadow-xs); }
+  0%   { border-top-color: #FFD54F; box-shadow: var(--ilc-shadow-sm); }
+  40%  { border-top-color: #FFE082; box-shadow: 0 0 0 2px rgba(255,232,163,0.5), var(--ilc-shadow-sm); }
+  100% { border-top-color: transparent; box-shadow: var(--ilc-shadow-xs); }
 }
 .ilc-card-flash { animation: ilc-flash 0.6s ease-out forwards; }
 
-/* ─── Card preview bar ──────────────────────────────────────────────────────── */
+/* ─── Card preview bar (highlight text with left quote line + ⋯ button) ───── */
 .ilc-card-preview {
   display: flex;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 8px 12px 6px;
-  background: var(--background-secondary);
-  border-bottom: 1px solid var(--background-modifier-border);
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px 8px;
+  min-width: 0; /* allow flex children to shrink */
 }
 .ilc-card-preview-text {
   flex: 1;
-  font-size: var(--ilc-font-meta);
+  font-size: var(--ilc-font-body);
   color: var(--text-muted);
-  font-style: italic;
   line-height: 1.4;
+  border-left: 3px solid var(--background-modifier-border);
+  padding-left: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* ─── Thread ─────────────────────────────────────────────────────────────────── */
 .ilc-thread {
-  padding: 2px 0;
+  padding: 0;
 }
 
 /* ─── Single comment entry ───────────────────────────────────────────────────── */
 .ilc-entry {
-  padding: 7px 12px;
+  padding: 6px 12px;
 }
 .ilc-entry + .ilc-entry {
   border-top: 1px solid var(--background-modifier-border);
@@ -159,8 +168,8 @@
 .ilc-entry-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
+  gap: 5px;
+  margin-bottom: 3px;
   min-height: 22px;
 }
 
@@ -169,15 +178,12 @@
   width: 22px;
   height: 22px;
   border-radius: var(--ilc-radius-avatar);
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 10px;
   font-weight: 700;
   flex-shrink: 0;
-  letter-spacing: 0;
 }
 .ilc-entry-avatar-ai {
   box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.35);
@@ -195,7 +201,7 @@
 .ilc-entry-date {
   font-size: 11px;
   color: var(--text-faint);
-  margin-left: auto;
+  margin-left: 4px; /* small gap, not auto-pushed to far right */
 }
 
 .ilc-entry-body {
@@ -203,17 +209,10 @@
   color: var(--text-normal);
   line-height: 1.55;
   white-space: pre-wrap;
-  padding-left: 28px; /* align under avatar */
+  padding-left: 27px; /* align under avatar (22px avatar + 5px gap) */
 }
 
-/* Reply entries — slightly indented, muted background */
-.ilc-entry-reply {
-  padding-left: 20px;
-  background: var(--background-secondary-alt, var(--background-secondary));
-}
-.ilc-entry-reply .ilc-entry-body {
-  padding-left: 28px;
-}
+/* All entries have same left padding — no indentation for replies */
 
 /* ─── Pending entry ───────────────────────────────────────────────────────────── */
 .ilc-entry-pending {
@@ -240,34 +239,15 @@
 }
 
 /* ─── Reply controls ─────────────────────────────────────────────────────────── */
-.ilc-reply-row {
-  padding: 4px 12px 8px;
-}
-.ilc-reply-btn {
-  font-size: var(--ilc-font-badge);
-  color: var(--text-muted);
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 2px 6px;
-  border-radius: var(--ilc-radius-btn);
-  transition: background var(--ilc-trans-fast), color var(--ilc-trans-fast);
-  opacity: 0;
-  transition: opacity var(--ilc-trans-std), background var(--ilc-trans-fast);
-}
-/* Show reply button when card is hovered */
-.ilc-card:hover .ilc-reply-btn {
-  opacity: 1;
-}
-.ilc-reply-btn:hover {
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
-}
-
 .ilc-reply-input-row {
   padding: 6px 12px 10px;
   display: flex;
   flex-direction: column;
+  gap: 6px;
+}
+.ilc-reply-btn-row {
+  display: flex;
+  justify-content: flex-end;
   gap: 6px;
 }
 .ilc-reply-input {
@@ -312,15 +292,16 @@
 .ilc-more-btn {
   flex-shrink: 0;
   opacity: 0;
-  background: none;
-  border: none;
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
   cursor: pointer;
-  color: var(--text-muted);
-  font-size: 15px;
-  padding: 0 4px;
-  border-radius: 4px;
+  color: var(--text-faint);
+  font-size: 14px;
+  padding: 0 2px;
   line-height: 1.2;
-  transition: opacity var(--ilc-trans-std), background var(--ilc-trans-fast);
+  transition: opacity var(--ilc-trans-std);
   margin-left: auto;
 }
 .ilc-card-preview:hover .ilc-more-btn,
@@ -330,7 +311,6 @@
 }
 .ilc-more-btn:hover {
   opacity: 1 !important;
-  background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 
@@ -339,27 +319,24 @@
 
 /* ─── Draft card ─────────────────────────────────────────────────────────────── */
 .ilc-card-draft {
-  border: 1px solid var(--background-modifier-border);
   box-shadow: var(--ilc-shadow-md);
-  margin: 8px 10px 14px;
   cursor: default;
+  z-index: 10;
 }
 /* Draft card doesn't get hover lift */
 .ilc-card-draft:hover {
-  transform: none;
   box-shadow: var(--ilc-shadow-md);
 }
 
-/* Preview bar */
+/* Draft preview bar */
 .ilc-draft-preview {
-  padding: 8px 12px 6px;
-  background: var(--background-secondary);
-  border-bottom: 1px solid var(--background-modifier-border);
+  padding: 10px 12px 8px;
 }
 .ilc-draft-preview-text {
-  font-size: var(--ilc-font-meta);
+  font-size: var(--ilc-font-body);
   color: var(--text-muted);
-  font-style: italic;
+  border-left: 3px solid var(--background-modifier-border);
+  padding-left: 8px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -369,8 +346,8 @@
 /* ─── Type chip row ──────────────────────────────────────────────────────────── */
 .ilc-draft-type-row {
   display: flex;
-  gap: 4px;
-  padding: 8px 10px 4px;
+  gap: 6px;
+  padding: 4px 12px 6px;
   overflow-x: auto;
   flex-wrap: nowrap;
   scrollbar-width: none;
@@ -378,34 +355,46 @@
 }
 .ilc-draft-type-row::-webkit-scrollbar { display: none; }
 
+/* Soft pastel chips — compact, no border, colorful */
 .ilc-draft-type-btn {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 3px 8px;
-  border-radius: var(--ilc-radius-chip);
-  border: 1px solid var(--background-modifier-border);
-  background: var(--background-secondary);
+  padding: 0 6px;
+  height: 20px;
+  border-radius: 3px;
+  border: 1px solid transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
   cursor: pointer;
-  font-size: var(--ilc-font-badge);
-  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1;
   white-space: nowrap;
   flex-shrink: 0;
-  transition: border-color var(--ilc-trans-fast), background var(--ilc-trans-fast), color var(--ilc-trans-fast);
+  transition: opacity var(--ilc-trans-fast);
 }
-.ilc-draft-type-btn:hover {
-  border-color: var(--interactive-accent);
-  color: var(--text-normal);
-}
-.ilc-draft-type-active {
-  border-color: var(--interactive-accent) !important;
-  background: var(--interactive-accent-hover, rgba(var(--interactive-accent-rgb, 0, 122, 255), 0.12)) !important;
-  color: var(--text-normal) !important;
+.ilc-draft-type-btn:hover { opacity: 0.75; }
+
+/* Soft colors per type */
+.ilc-draft-type-agree     { background: rgba(76,175,80,0.18)  !important; color: #2e7d32 !important; }
+.ilc-draft-type-disagree  { background: rgba(244,67,54,0.14)  !important; color: #c62828 !important; }
+.ilc-draft-type-question  { background: rgba(255,152,0,0.16)  !important; color: #e65100 !important; }
+.ilc-draft-type-important { background: rgba(33,150,243,0.16) !important; color: #1565c0 !important; }
+.ilc-draft-type-note      { background: rgba(158,158,158,0.18) !important; color: #616161 !important; }
+
+/* Fallback for custom types */
+.ilc-draft-type-btn:not(.ilc-draft-type-agree):not(.ilc-draft-type-disagree):not(.ilc-draft-type-question):not(.ilc-draft-type-important):not(.ilc-draft-type-note) {
+  background: rgba(158,158,158,0.14) !important;
+  color: #757575 !important;
 }
 
-.ilc-draft-type-emoji { font-size: 12px; line-height: 1; }
-.ilc-draft-type-label { display: none; font-size: var(--ilc-font-badge); }
-.ilc-draft-type-active .ilc-draft-type-label { display: inline; }
+/* Only active chip gets a visible border */
+.ilc-draft-type-active {
+  font-weight: 600;
+  border-color: currentColor !important;
+}
+
+.ilc-draft-type-emoji { display: none; }
+.ilc-draft-type-label { font-size: 10px; }
 
 /* ─── Author row ─────────────────────────────────────────────────────────────── */
 .ilc-draft-author-row {
@@ -415,11 +404,9 @@
   padding: 6px 12px 2px;
 }
 .ilc-draft-avatar {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border-radius: var(--ilc-radius-avatar);
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -428,23 +415,17 @@
   flex-shrink: 0;
 }
 .ilc-draft-author-name {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--text-normal);
 }
 .ilc-draft-type-badge {
-  margin-left: auto;
-  font-size: var(--ilc-font-badge);
-  color: var(--text-muted);
-  background: var(--background-secondary);
-  border-radius: 8px;
-  padding: 2px 7px;
-  border: 1px solid var(--background-modifier-border);
+  display: none; /* redundant with type chips */
 }
 
 /* ─── Draft input ────────────────────────────────────────────────────────────── */
 .ilc-draft-input-wrapper {
-  padding: 6px 12px 4px;
+  padding: 8px 12px 4px;
 }
 .ilc-draft-input {
   width: 100%;
@@ -493,48 +474,28 @@
   padding: 4px 12px 10px;
 }
 .ilc-draft-cancel {
-  padding: 5px 14px;
+  padding: 6px 18px;
   border-radius: var(--ilc-radius-btn);
   border: 1px solid var(--background-modifier-border);
   background: var(--background-secondary);
   color: var(--text-muted);
   cursor: pointer;
-  font-size: var(--ilc-font-body);
+  font-size: 13px;
   transition: background var(--ilc-trans-fast);
 }
 .ilc-draft-cancel:hover { background: var(--background-modifier-hover); }
 .ilc-draft-post {
-  padding: 5px 16px;
+  padding: 6px 20px;
   border-radius: var(--ilc-radius-btn);
   border: none;
   background: var(--interactive-accent);
   color: var(--text-on-accent);
   cursor: pointer;
-  font-size: var(--ilc-font-body);
+  font-size: 13px;
   font-weight: 600;
   transition: opacity var(--ilc-trans-fast);
 }
 .ilc-draft-post:hover { opacity: 0.88; }
-
-/* ─── Panel footer ───────────────────────────────────────────────────────────── */
-.ilc-panel-footer {
-  padding: 10px 12px 14px;
-  text-align: center;
-}
-.ilc-history-link {
-  background: none;
-  border: none;
-  font-size: var(--ilc-font-badge);
-  color: var(--text-faint);
-  cursor: pointer;
-  padding: 3px 8px;
-  border-radius: var(--ilc-radius-btn);
-  transition: color var(--ilc-trans-fast), background var(--ilc-trans-fast);
-}
-.ilc-history-link:hover {
-  color: var(--text-muted);
-  background: var(--background-modifier-hover);
-}
 
 /* ─── History modal ──────────────────────────────────────────────────────────── */
 .ilc-history-modal {
