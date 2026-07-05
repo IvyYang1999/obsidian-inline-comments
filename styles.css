@@ -76,25 +76,27 @@
 
 /* ─── Panel container ───────────────────────────────────────────────────────── */
 .ilc-panel {
+  padding: 4px 0;
   overflow-y: auto;
   height: 100%;
   box-sizing: border-box;
 }
 
-/* Absolute-positioned card container — height set by JS */
+/* Absolute-positioned card container - height set by JS */
 .ilc-cards-zone {
   position: relative;
 }
 
 .ilc-empty {
-  padding: 32px 16px;
+  padding: 40px 20px;
   color: var(--text-muted);
   font-size: var(--ilc-font-meta);
   text-align: center;
-  line-height: 1.6;
+  line-height: 1.7;
+  opacity: 0.8;
 }
 
-/* ─── Card (absolute positioned, clean Feishu-style) ──────────────────────── */
+/* ─── Card (absolute positioned; visual treatment from c186303) ─────────────── */
 .ilc-card {
   position: absolute;
   left: 8px;
@@ -104,73 +106,90 @@
   background: var(--background-primary);
   cursor: pointer;
   box-shadow: var(--ilc-shadow-xs);
-  transition: box-shadow var(--ilc-trans-std), top 0.15s ease-out;
+  transition: box-shadow 0.18s ease, transform 0.12s ease, border-color 0.18s ease, top 0.15s ease-out;
   overflow: hidden;
 }
 .ilc-card:hover {
   box-shadow: var(--ilc-shadow-sm);
+  transform: translateY(-1px);
+  border-color: var(--background-modifier-border-hover, var(--background-modifier-border));
 }
 
-/* No left-border color — types are shown via chips only */
+/* Type left-border (4px, sidebar-highlights pattern) */
+.ilc-card-agree     { border-left: 4px solid var(--ilc-agree-border);     }
+.ilc-card-disagree  { border-left: 4px solid var(--ilc-disagree-border);  }
+.ilc-card-question  { border-left: 4px solid var(--ilc-question-border);  }
+.ilc-card-important { border-left: 4px solid var(--ilc-important-border); }
+.ilc-card-note      { border-left: 4px solid var(--ilc-note-border);      }
 
-/* Active / focus state — Feishu yellow top bar */
+/* Active / focus state — Feishu yellow ring + subtle bg tint, no layout shift */
 .ilc-card-active {
-  border-top: 3px solid #FFD54F;
-  box-shadow: var(--ilc-shadow-sm);
+  box-shadow: var(--ilc-shadow-focus), var(--ilc-shadow-sm);
+  border-color: #ffe8a3;
+  z-index: 1;
+}
+.ilc-card-active .ilc-card-preview {
+  background: color-mix(in srgb, #ffe8a3 8%, var(--background-secondary));
 }
 
-/* Reply input: only visible when card is active */
+/* Reply input is rendered for every card but visible only while focused. */
 .ilc-card:not(.ilc-card-active) .ilc-reply-input-row {
   display: none !important;
 }
+.ilc-reply-btn-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
 
 @keyframes ilc-flash {
-  0%   { border-top-color: #FFD54F; box-shadow: var(--ilc-shadow-sm); }
-  40%  { border-top-color: #FFE082; box-shadow: 0 0 0 2px rgba(255,232,163,0.5), var(--ilc-shadow-sm); }
-  100% { border-top-color: transparent; box-shadow: var(--ilc-shadow-xs); }
+  0%   { box-shadow: var(--ilc-shadow-focus), var(--ilc-shadow-sm); }
+  30%  { box-shadow: 0 0 0 4px #ffe8a3, var(--ilc-shadow-md); }
+  100% { box-shadow: var(--ilc-shadow-xs); }
 }
-.ilc-card-flash { animation: ilc-flash 0.6s ease-out forwards; }
+.ilc-card-flash { animation: ilc-flash 0.5s ease-out forwards; }
 
-/* ─── Card preview bar (highlight text with left quote line + ⋯ button) ───── */
+/* ─── Card preview bar ──────────────────────────────────────────────────────── */
 .ilc-card-preview {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 10px 12px 8px;
-  min-width: 0; /* allow flex children to shrink */
+  padding: 7px 12px;
+  background: var(--background-secondary);
+  border-bottom: 1px solid var(--background-modifier-border);
+  min-height: 28px;
+  transition: background 0.18s ease;
 }
 .ilc-card-preview-text {
   flex: 1;
-  font-size: var(--ilc-font-body);
+  font-size: var(--ilc-font-meta);
   color: var(--text-muted);
-  line-height: 1.4;
-  border-left: 3px solid var(--background-modifier-border);
-  padding-left: 8px;
+  font-style: italic;
+  line-height: 1.45;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  min-width: 0;
 }
 
 /* ─── Thread ─────────────────────────────────────────────────────────────────── */
 .ilc-thread {
-  padding: 0;
+  padding: 4px 0 2px;
 }
 
 /* ─── Single comment entry ───────────────────────────────────────────────────── */
 .ilc-entry {
-  padding: 6px 12px;
+  padding: 8px 12px;
 }
 .ilc-entry + .ilc-entry {
-  border-top: 1px solid var(--background-modifier-border);
+  border-top: 1px solid color-mix(in srgb, var(--background-modifier-border) 60%, transparent);
 }
 
 .ilc-entry-header {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   margin-bottom: 3px;
-  min-height: 22px;
+  min-height: 24px;
 }
 
 /* Avatar */
@@ -178,15 +197,30 @@
   width: 22px;
   height: 22px;
   border-radius: var(--ilc-radius-avatar);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 10px;
   font-weight: 700;
   flex-shrink: 0;
+  letter-spacing: 0;
 }
 .ilc-entry-avatar-ai {
-  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.3);
+  position: relative;
+}
+.ilc-entry-avatar-ai::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-success, #4caf50);
+  border: 1.5px solid var(--background-primary);
 }
 
 .ilc-entry-author {
@@ -197,26 +231,37 @@
 .ilc-entry-emoji {
   font-size: 11px;
   line-height: 1;
+  opacity: 0.8;
 }
 .ilc-entry-date {
   font-size: 11px;
   color: var(--text-faint);
-  margin-left: 4px; /* small gap, not auto-pushed to far right */
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .ilc-entry-body {
   font-size: var(--ilc-font-body);
   color: var(--text-normal);
-  line-height: 1.55;
+  line-height: 1.6;
   white-space: pre-wrap;
-  padding-left: 27px; /* align under avatar (22px avatar + 5px gap) */
+  padding-left: 28px;
+  word-break: break-word;
 }
 
-/* All entries have same left padding — no indentation for replies */
+/* Reply entries — slightly indented, muted background */
+.ilc-entry-reply {
+  padding-left: 20px;
+  background: var(--background-secondary-alt, var(--background-secondary));
+}
+.ilc-entry-reply .ilc-entry-body {
+  padding-left: 28px;
+}
 
 /* ─── Pending entry ───────────────────────────────────────────────────────────── */
 .ilc-entry-pending {
   padding: 8px 12px;
+  background: color-mix(in srgb, var(--background-secondary) 50%, transparent);
 }
 .ilc-pending-row {
   display: flex;
@@ -239,15 +284,33 @@
 }
 
 /* ─── Reply controls ─────────────────────────────────────────────────────────── */
+.ilc-reply-row {
+  padding: 2px 12px 6px;
+}
+.ilc-reply-btn {
+  font-size: var(--ilc-font-badge);
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: var(--ilc-radius-btn);
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.1s ease, color 0.1s ease;
+}
+.ilc-card:hover .ilc-reply-btn,
+.ilc-card-active .ilc-reply-btn {
+  opacity: 1;
+}
+.ilc-reply-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
 .ilc-reply-input-row {
   padding: 6px 12px 10px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-}
-.ilc-reply-btn-row {
-  display: flex;
-  justify-content: flex-end;
   gap: 6px;
 }
 .ilc-reply-input {
@@ -258,28 +321,35 @@
   border: 1.5px solid var(--background-modifier-border);
   background: var(--background-primary);
   color: var(--text-normal);
-  padding: 6px 8px;
+  padding: 7px 10px;
   box-sizing: border-box;
   font-family: inherit;
-  transition: border-color var(--ilc-trans-std);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .ilc-reply-input:focus {
   outline: none;
   border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 2px rgba(var(--interactive-accent-rgb, 0, 122, 255), 0.12);
+}
+.ilc-reply-input-row .ilc-reply-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
 }
 .ilc-reply-input-row button {
   align-self: flex-end;
   font-size: var(--ilc-font-meta);
-  padding: 4px 12px;
+  padding: 5px 14px;
   border-radius: var(--ilc-radius-btn);
   border: 1px solid var(--background-modifier-border);
   cursor: pointer;
-  transition: opacity var(--ilc-trans-fast), background var(--ilc-trans-fast);
+  transition: opacity 0.1s ease, background 0.1s ease;
 }
 .ilc-reply-submit {
   background: var(--interactive-accent);
   color: var(--text-on-accent);
   border-color: transparent !important;
+  font-weight: 500;
 }
 .ilc-reply-submit:hover { opacity: 0.88; }
 .ilc-reply-cancel {
@@ -319,24 +389,26 @@
 
 /* ─── Draft card ─────────────────────────────────────────────────────────────── */
 .ilc-card-draft {
-  box-shadow: var(--ilc-shadow-md);
+  border: 1.5px solid var(--interactive-accent);
+  box-shadow: var(--ilc-shadow-md), 0 0 0 1px rgba(var(--interactive-accent-rgb, 0, 122, 255), 0.08);
   cursor: default;
   z-index: 10;
 }
-/* Draft card doesn't get hover lift */
 .ilc-card-draft:hover {
-  box-shadow: var(--ilc-shadow-md);
+  transform: none;
+  box-shadow: var(--ilc-shadow-md), 0 0 0 1px rgba(var(--interactive-accent-rgb, 0, 122, 255), 0.08);
 }
 
-/* Draft preview bar */
+/* Preview bar */
 .ilc-draft-preview {
-  padding: 10px 12px 8px;
+  padding: 8px 12px 6px;
+  background: var(--background-secondary);
+  border-bottom: 1px solid var(--background-modifier-border);
 }
 .ilc-draft-preview-text {
-  font-size: var(--ilc-font-body);
+  font-size: var(--ilc-font-meta);
   color: var(--text-muted);
-  border-left: 3px solid var(--background-modifier-border);
-  padding-left: 8px;
+  font-style: italic;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -404,9 +476,11 @@
   padding: 6px 12px 2px;
 }
 .ilc-draft-avatar {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border-radius: var(--ilc-radius-avatar);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -415,17 +489,23 @@
   flex-shrink: 0;
 }
 .ilc-draft-author-name {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-normal);
 }
 .ilc-draft-type-badge {
-  display: none; /* redundant with type chips */
+  margin-left: auto;
+  font-size: var(--ilc-font-badge);
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  border-radius: 8px;
+  padding: 2px 7px;
+  border: 1px solid var(--background-modifier-border);
 }
 
 /* ─── Draft input ────────────────────────────────────────────────────────────── */
 .ilc-draft-input-wrapper {
-  padding: 8px 12px 4px;
+  padding: 6px 12px 4px;
 }
 .ilc-draft-input {
   width: 100%;
@@ -474,30 +554,77 @@
   padding: 4px 12px 10px;
 }
 .ilc-draft-cancel {
-  padding: 6px 18px;
+  padding: 5px 14px;
   border-radius: var(--ilc-radius-btn);
   border: 1px solid var(--background-modifier-border);
   background: var(--background-secondary);
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--ilc-font-body);
   transition: background var(--ilc-trans-fast);
 }
 .ilc-draft-cancel:hover { background: var(--background-modifier-hover); }
 .ilc-draft-post {
-  padding: 6px 20px;
+  padding: 5px 16px;
   border-radius: var(--ilc-radius-btn);
   border: none;
   background: var(--interactive-accent);
   color: var(--text-on-accent);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--ilc-font-body);
   font-weight: 600;
   transition: opacity var(--ilc-trans-fast);
 }
 .ilc-draft-post:hover { opacity: 0.88; }
 
+/* ─── Panel footer ───────────────────────────────────────────────────────────── */
+.ilc-panel-footer {
+  padding: 12px 12px 16px;
+  text-align: center;
+}
+.ilc-history-link {
+  background: none;
+  border: none;
+  font-size: var(--ilc-font-badge);
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: var(--ilc-radius-btn);
+  transition: color var(--ilc-trans-fast), background var(--ilc-trans-fast);
+}
+.ilc-history-link:hover {
+  color: var(--text-muted);
+  background: var(--background-modifier-hover);
+}
+
+/* ─── Global thread modal input ─────────────────────────────────────────────── */
+.ilc-global-thread-input {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font-family: inherit;
+  font-size: var(--ilc-font-body);
+  line-height: 1.6;
+  padding: 10px 12px;
+  border-radius: var(--ilc-radius-btn);
+  border: 1.5px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  margin-bottom: 4px;
+  min-height: 120px;
+}
+.ilc-global-thread-input:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 2px rgba(var(--interactive-accent-rgb, 0, 122, 255), 0.12);
+}
+.ilc-global-thread-input::placeholder {
+  color: var(--text-faint);
+}
+
 /* ─── History modal ──────────────────────────────────────────────────────────── */
+
 .ilc-history-modal {
   max-height: 70vh;
   overflow-y: auto;
@@ -690,4 +817,57 @@
   font-size: 12px;
   font-weight: 700;
   flex-shrink: 0;
+}
+
+/* ─── Global thread callout [!ai-thread] ───────────────────────────────────── */
+.callout[data-callout="ai-thread"] {
+  --callout-color: var(--interactive-accent-rgb, 0, 122, 255);
+  --callout-icon: lucide-message-circle;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--ilc-radius-card);
+  background: var(--background-primary);
+  box-shadow: var(--ilc-shadow-xs);
+  overflow: hidden;
+}
+
+.callout[data-callout="ai-thread"] > .callout-title {
+  padding: 8px 14px;
+  background: var(--background-secondary);
+  border-bottom: 1px solid var(--background-modifier-border);
+  font-size: var(--ilc-font-meta);
+  font-weight: 600;
+  gap: 8px;
+}
+
+.callout[data-callout="ai-thread"] > .callout-content {
+  padding: 4px 0;
+}
+
+.callout[data-callout="ai-thread"] > .callout-content > p {
+  padding: 8px 14px;
+  margin: 0;
+  font-size: var(--ilc-font-body);
+  line-height: 1.6;
+  border-bottom: 1px solid color-mix(in srgb, var(--background-modifier-border) 50%, transparent);
+}
+.callout[data-callout="ai-thread"] > .callout-content > p:last-child {
+  border-bottom: none;
+}
+
+.callout[data-callout="ai-thread"] > .callout-content > p > strong {
+  font-size: var(--ilc-font-meta);
+  color: var(--text-normal);
+  display: inline-block;
+  margin-bottom: 2px;
+}
+
+/* Dark mode subtle adjustments */
+.theme-dark .callout[data-callout="ai-thread"] {
+  border-color: color-mix(in srgb, var(--background-modifier-border) 80%, transparent);
+}
+.theme-dark .ilc-card {
+  border-color: color-mix(in srgb, var(--background-modifier-border) 80%, transparent);
+}
+.theme-dark .ilc-card-active {
+  border-color: #ffe8a3;
 }

@@ -1,9 +1,20 @@
+import { execFile } from 'child_process';
 import { MarkdownView, Plugin, PluginSettingTab, App, Setting, Notice } from 'obsidian';
+import type { TFile } from 'obsidian';
 import { buildCommentExtension, type ICommentHost, type AnnotationPosition } from './src/editor/cmExtension.ts';
 import { CommentPanel, VIEW_TYPE_COMMENTS } from './src/views/CommentPanel.ts';
 import { HistoryModal } from './src/views/HistoryModal.ts';
+import { GlobalThreadModal } from './src/modal/GlobalThreadModal.ts';
 import type { CommentTypeConfig, AIAgentConfig, DeletedRecord } from './src/types.ts';
 import { BUILTIN_TYPE_IDS, typeBgColor } from './src/types.ts';
+import {
+  GLOBAL_THREAD_END_MARKER,
+  GLOBAL_THREAD_START_MARKER,
+  appendGlobalThreadEntry,
+  hasOnlyGlobalThreadBlockChanged,
+  parseGlobalThreadBlock,
+  type GlobalThreadEngine,
+} from './src/globalThread.ts';
 
 // ─── Default type chips ────────────────────────────────────────────────────────
 
@@ -29,6 +40,7 @@ interface ILCSettings {
   commentTypes:   CommentTypeConfig[];
   aiAgents:       AIAgentConfig[];
   defaultAIAgent: string; // id of the default AI agent to request
+  globalThreadEngine: GlobalThreadEngine;
 }
 
 const DEFAULT_SETTINGS: ILCSettings = {
@@ -37,12 +49,14 @@ const DEFAULT_SETTINGS: ILCSettings = {
   commentTypes:   DEFAULT_COMMENT_TYPES,
   aiAgents:       DEFAULT_AI_AGENTS,
   defaultAIAgent: 'claude',
+  globalThreadEngine: 'claude',
 };
 
 // ─── Plugin ───────────────────────────────────────────────────────────────────
 
 export default class InlineCommentsPlugin extends Plugin implements ICommentHost {
   settings: ILCSettings = DEFAULT_SETTINGS;
+  private runningGlobalThreads = new Set<string>();
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -91,6 +105,15 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       name: '查看评论删除历史',
       callback: () => {
         new HistoryModal(this.app, this).open();
+      },
+    });
+
+    // Command: document-level AI conversation block
+    this.addCommand({
+      id: 'start-or-continue-global-thread',
+      name: '开始/继续文档对话',
+      callback: () => {
+        this.openGlobalThreadModal();
       },
     });
 
@@ -189,6 +212,155 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     return agent?.name ?? 'Claude';
   }
 
+  private openGlobalThreadModal(): void {
+    const file = this.app.workspace.getActiveFile();
+    if (!file || file.extension !== 'md') {
+      new Notice('请先打开一篇 Markdown 笔记');
+      return;
+    }
+
+    new GlobalThreadModal(this.app, async (message) => {
+      await this.continueGlobalThread(file, message);
+    }).open();
+  }
+
+  private async continueGlobalThread(file: TFile, message: string): Promise<void> {
+    if (this.runningGlobalThreads.has(file.path)) {
+      new Notice('文档对话正在进行中');
+      return;
+    }
+
+    const absolutePath = this.getAbsoluteFilePath(file);
+    if (!absolutePath) {
+      new Notice('文档对话需要桌面文件系统路径，当前 vault adapter 不支持');
+      return;
+    }
+
+    this.runningGlobalThreads.add(file.path);
+
+    const date = todayIsoDate();
+    const engine = this.settings.globalThreadEngine;
+    const aiName = this.getGlobalThreadAgentName(engine);
+    let contentWithUserMessage = '';
+
+    try {
+      const before = await this.app.vault.read(file);
+      contentWithUserMessage = appendGlobalThreadEntry(before, {
+        author: this.settings.authorName,
+        date,
+        text: message,
+      });
+      const expectedBlock = parseGlobalThreadBlock(contentWithUserMessage);
+      if (!expectedBlock) throw new Error('无法创建文档对话块');
+
+      await this.app.vault.modify(file, contentWithUserMessage);
+      new Notice(`文档对话：正在请求 ${aiName}...`);
+
+      await this.runGlobalThreadEngine(engine, absolutePath, aiName, date);
+
+      const after = await this.app.vault.adapter.read(file.path);
+      const afterBlock = parseGlobalThreadBlock(after);
+      this.refreshActiveMarkdownView(file, after, contentWithUserMessage);
+
+      if (!afterBlock) {
+        new Notice('文档对话：AI 执行完成，但全局对话块未解析成功，请检查', 10000);
+        return;
+      }
+
+      const onlyThreadChanged = hasOnlyGlobalThreadBlockChanged(
+        contentWithUserMessage,
+        after,
+      );
+      const appendedReply = afterBlock.entries.length > expectedBlock.entries.length;
+
+      if (!onlyThreadChanged) {
+        new Notice('文档对话：AI 已返回，但检测到块外内容变化，请检查文档', 10000);
+      } else if (!appendedReply) {
+        new Notice('文档对话：AI 已返回，但未检测到新增回复', 10000);
+      } else {
+        new Notice('文档对话：AI 回复已写回');
+      }
+    } catch (error) {
+      const messageText = formatProcessError(error);
+      console.error('ILC: global thread engine failed:', messageText);
+      new Notice(`文档对话：AI 应答失败：${messageText}`, 10000);
+    } finally {
+      this.runningGlobalThreads.delete(file.path);
+    }
+  }
+
+  private getGlobalThreadAgentName(engine: GlobalThreadEngine): string {
+    return engine === 'glm' ? 'GLM' : 'Claude';
+  }
+
+  private async runGlobalThreadEngine(
+    engine: GlobalThreadEngine,
+    absolutePath: string,
+    aiName: string,
+    date: string,
+  ): Promise<void> {
+    const prompt = this.buildGlobalThreadPrompt(absolutePath, aiName, date);
+    const cwd = getParentDir(absolutePath);
+
+    if (engine === 'glm') {
+      await runHeadlessCommand(
+        '/Users/yytyyf/Documents/main/_os/scripts/glm.sh',
+        [prompt],
+        cwd,
+      );
+      return;
+    }
+
+    await runHeadlessCommand('claude', ['-p', prompt], cwd);
+  }
+
+  private buildGlobalThreadPrompt(
+    absolutePath: string,
+    aiName: string,
+    date: string,
+  ): string {
+    return [
+      '你正在为 Obsidian Markdown 文件追加文档级 AI 对话回复。',
+      `文件绝对路径：${JSON.stringify(absolutePath)}`,
+      '',
+      '只允许修改这个全局对话块内部：',
+      GLOBAL_THREAD_START_MARKER,
+      GLOBAL_THREAD_END_MARKER,
+      '',
+      '任务：',
+      '1. 读取该文件，理解正文和全局对话块里最后一条用户消息。',
+      `2. 只在全局对话块末尾追加一条 ${aiName} 回复。`,
+      `3. 回复首行格式必须是：> **${aiName}｜${date}**：你的回复`,
+      '4. 如果回复有多行，每一行都必须以 "> " 开头，保持在 Obsidian callout 内。',
+      '5. 不要修改块外任何字符；不要修改已有对话；不要修改 `{==...==}{>>...<<}` 划线评论。',
+      '6. 直接编辑并保存原文件；不要创建新文件，不要输出整篇文档。',
+    ].join('\n');
+  }
+
+  private getAbsoluteFilePath(file: TFile): string | null {
+    const adapter = this.app.vault.adapter as unknown;
+    if (!hasFullPathAdapter(adapter)) return null;
+    return adapter.getFullPath(file.path);
+  }
+
+  private refreshActiveMarkdownView(
+    file: TFile,
+    latestContent: string,
+    expectedBeforeAI: string,
+  ): void {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view || view.file?.path !== file.path) return;
+
+    const current = view.editor.getValue();
+    if (current === latestContent) return;
+    if (current === expectedBeforeAI) {
+      view.editor.setValue(latestContent);
+      return;
+    }
+
+    new Notice('文档对话：当前编辑器已有新改动，未强制刷新视图', 8000);
+  }
+
   /** Inject dynamic CSS for custom (non-builtin) type IDs */
   injectTypeStyles(): void {
     let el = document.getElementById('ilc-type-styles');
@@ -234,12 +406,75 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     if (!Array.isArray(this.settings.aiAgents) || this.settings.aiAgents.length === 0) {
       this.settings.aiAgents = DEFAULT_AI_AGENTS;
     }
+    if (!['claude', 'glm'].includes(this.settings.globalThreadEngine)) {
+      this.settings.globalThreadEngine = 'claude';
+    }
   }
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
     this.injectTypeStyles();
   }
+}
+
+function todayIsoDate(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function hasFullPathAdapter(
+  adapter: unknown,
+): adapter is { getFullPath(filePath: string): string } {
+  return (
+    typeof adapter === 'object' &&
+    adapter !== null &&
+    typeof (adapter as { getFullPath?: unknown }).getFullPath === 'function'
+  );
+}
+
+function getParentDir(filePath: string): string | undefined {
+  const slashIndex = filePath.lastIndexOf('/');
+  return slashIndex > 0 ? filePath.slice(0, slashIndex) : undefined;
+}
+
+function runHeadlessCommand(
+  command: string,
+  args: string[],
+  cwd?: string,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      command,
+      args,
+      {
+        cwd,
+        timeout: 10 * 60 * 1000,
+        maxBuffer: 8 * 1024 * 1024,
+      },
+      (error) => {
+        if (error) {
+          const err = error as NodeJS.ErrnoException & {
+            killed?: boolean;
+            signal?: NodeJS.Signals | string | null;
+          };
+          const reason = err.killed
+            ? 'timeout'
+            : `code=${err.code ?? 'unknown'} signal=${err.signal ?? 'none'}`;
+          reject(new Error(reason));
+          return;
+        }
+        resolve();
+      },
+    );
+  });
+}
+
+function formatProcessError(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  return 'unknown';
 }
 
 // ─── Settings tab ─────────────────────────────────────────────────────────────
@@ -326,7 +561,6 @@ class ILCSettingTab extends PluginSettingTab {
     );
 
     // ── Default AI agent ──
-    const agentNames = this.plugin.settings.aiAgents.map((a) => a.id);
     new Setting(containerEl)
       .setName('默认 AI 助手')
       .setDesc('点击「请 AI 回应」时，默认请求哪个 AI')
@@ -337,6 +571,22 @@ class ILCSettingTab extends PluginSettingTab {
         drop.setValue(this.plugin.settings.defaultAIAgent);
         drop.onChange(async (value) => {
           this.plugin.settings.defaultAIAgent = value;
+          await this.plugin.saveSettings();
+        });
+        return drop;
+      });
+
+    // ── Document-level thread engine ──
+    new Setting(containerEl)
+      .setName('文档对话引擎')
+      .setDesc('「开始/继续文档对话」命令调用的 headless 引擎')
+      .addDropdown((drop) => {
+        drop.addOption('claude', 'Claude CLI');
+        drop.addOption('glm', 'GLM 脚本');
+        drop.setValue(this.plugin.settings.globalThreadEngine);
+        drop.onChange(async (value) => {
+          this.plugin.settings.globalThreadEngine =
+            value === 'glm' ? 'glm' : 'claude';
           await this.plugin.saveSettings();
         });
         return drop;
