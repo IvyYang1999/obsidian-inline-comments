@@ -1,10 +1,14 @@
 import { execFile } from 'child_process';
+import { promises as fsp } from 'fs';
+import { join } from 'path';
 import { MarkdownView, Plugin, PluginSettingTab, App, Setting, Notice } from 'obsidian';
 import type { TFile } from 'obsidian';
+import { buildAgentReplyPrompt, verifyOnlyTargetAnnotationChanged } from './src/agentReply.ts';
 import { buildCommentExtension, type ICommentHost, type AnnotationPosition } from './src/editor/cmExtension.ts';
 import { CommentPanel, VIEW_TYPE_COMMENTS } from './src/views/CommentPanel.ts';
 import { HistoryModal } from './src/views/HistoryModal.ts';
 import { GlobalThreadModal } from './src/modal/GlobalThreadModal.ts';
+import { parseAnnotations } from './src/parser.ts';
 import type { CommentTypeConfig, AIAgentConfig, DeletedRecord } from './src/types.ts';
 import { BUILTIN_TYPE_IDS, typeBgColor } from './src/types.ts';
 import {
@@ -27,9 +31,9 @@ export const DEFAULT_COMMENT_TYPES: CommentTypeConfig[] = [
 ];
 
 export const DEFAULT_AI_AGENTS: AIAgentConfig[] = [
-  { id: 'claude', name: 'Claude', avatarChar: 'C', avatarBg: '#7B61FF' },
-  { id: 'codex',  name: 'Codex',  avatarChar: 'X', avatarBg: '#10A37F' },
-  { id: 'gemini', name: 'Gemini', avatarChar: 'G', avatarBg: '#4285F4' },
+  { id: 'claude', name: 'Claude', avatarChar: 'C', avatarBg: '#7B61FF', resumeType: 'claude-resume' },
+  { id: 'codex',  name: 'Codex',  avatarChar: 'X', avatarBg: '#10A37F', resumeType: 'claude-resume' },
+  { id: 'gemini', name: 'Gemini', avatarChar: 'G', avatarBg: '#4285F4', resumeType: 'claude-resume' },
 ];
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
@@ -57,6 +61,7 @@ const DEFAULT_SETTINGS: ILCSettings = {
 export default class InlineCommentsPlugin extends Plugin implements ICommentHost {
   settings: ILCSettings = DEFAULT_SETTINGS;
   private runningGlobalThreads = new Set<string>();
+  private runningAgentReplies = new Set<string>();
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -158,6 +163,24 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     return this.settings.aiAgents.find(
       (a) => a.name.toLowerCase() === name.toLowerCase(),
     );
+  }
+
+  private getRegisteredAgentSession(agentName: string): {
+    agent: AIAgentConfig;
+    sessionId: string;
+    resumeType: string;
+  } | null {
+    const normalizedName = agentName.trim().toLowerCase();
+    const agent = this.settings.aiAgents.find(
+      (item) => item.name.toLowerCase() === normalizedName,
+    );
+    const sessionId = agent?.sessionId?.trim();
+    if (!agent || !sessionId) return null;
+
+    const resumeType =
+      (agent as AIAgentConfig & { resumeType?: string }).resumeType ??
+      'claude-resume';
+    return { agent, sessionId, resumeType };
   }
 
   // ── History ────────────────────────────────────────────────────────────────
@@ -289,6 +312,108 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     }
   }
 
+  /** Called by UI: ask a registered Agent session to reply to one annotation. */
+  async requestAgentReply(
+    file: TFile,
+    annotationFrom: number,
+    agentName: string,
+  ): Promise<void> {
+    const lockKey = `${file.path}:${annotationFrom}`;
+    if (this.runningAgentReplies.has(lockKey)) {
+      new Notice('评论回应正在进行中');
+      return;
+    }
+
+    const registeredAgent = this.getRegisteredAgentSession(agentName);
+    if (!registeredAgent) {
+      new Notice('未找到已注册会话: ' + agentName);
+      return;
+    }
+    if (registeredAgent.resumeType !== 'claude-resume') {
+      new Notice('暂不支持会话类型: ' + registeredAgent.resumeType);
+      return;
+    }
+
+    const absolutePath = this.getAbsoluteFilePath(file);
+    if (!absolutePath) {
+      new Notice('评论回应需要桌面文件系统路径，当前 vault adapter 不支持');
+      return;
+    }
+
+    this.runningAgentReplies.add(lockKey);
+
+    const cwd = getParentDir(absolutePath);
+    const date = todayIsoDate();
+    let before = '';
+    let hasBefore = false;
+
+    try {
+      before = await this.app.vault.read(file);
+      hasBefore = true;
+      const annotation = parseAnnotations(before).find(
+        (item) => item.from === annotationFrom,
+      );
+      if (!annotation) {
+        new Notice('评论回应：未找到目标评论块', 10000);
+        return;
+      }
+
+      const prompt = buildAgentReplyPrompt({
+        absolutePath,
+        agentName: registeredAgent.agent.name,
+        highlightText: annotation.highlightText,
+        existingComments: annotation.comments.map((comment) => ({
+          author: comment.author,
+          type:   comment.type,
+          text:   comment.text,
+        })),
+        date,
+      });
+
+      new Notice(`评论回应：正在请求 ${registeredAgent.agent.name}...`);
+      await runHeadlessCommand(
+        'claude',
+        ['--print', '--resume', registeredAgent.sessionId, '-p', prompt],
+        cwd,
+      );
+
+      const after = await this.app.vault.adapter.read(file.path);
+      const verification = verifyOnlyTargetAnnotationChanged(
+        before,
+        after,
+        annotationFrom,
+      );
+      this.refreshActiveMarkdownView(file, after, before, '评论回应');
+
+      if (!verification.onlyTargetChanged) {
+        new Notice('评论回应：AI 已返回，但检测到目标评论外内容变化，请检查文档', 10000);
+      } else if (!verification.appendedReply) {
+        new Notice('评论回应：AI 已返回，但未检测到新增回复', 10000);
+      } else {
+        new Notice('评论回应：AI 回复已写回');
+        await this.appendAgentReplyLog(
+          cwd,
+          registeredAgent.agent.name,
+          file,
+          annotation.highlightText,
+        );
+      }
+    } catch (error) {
+      const messageText = formatProcessError(error);
+      if (hasBefore) {
+        await this.warnIfAgentReplyChangedAfterFailure(
+          file,
+          before,
+          annotationFrom,
+        );
+      }
+      console.error('ILC: agent reply failed:', messageText);
+      new Notice(`评论回应：AI 应答失败：${messageText}`, 10000);
+    } finally {
+      this.runningAgentReplies.delete(lockKey);
+    }
+  }
+
   private getGlobalThreadAgentName(engine: GlobalThreadEngine): string {
     return engine === 'glm' ? 'GLM' : 'Claude';
   }
@@ -312,6 +437,60 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     }
 
     await runHeadlessCommand('claude', ['-p', prompt], cwd);
+  }
+
+  private async appendAgentReplyLog(
+    documentDir: string | undefined,
+    agentName: string,
+    file: TFile,
+    highlightText: string,
+  ): Promise<void> {
+    if (!documentDir) return;
+
+    try {
+      const logDir = join(
+        documentDir,
+        '.agent-threads',
+        safePathSegment(agentName),
+      );
+      await fsp.mkdir(logDir, { recursive: true });
+      const highlightSummary = buildLogField(highlightText).slice(0, 20);
+      const line = [
+        localMinuteTimestamp(),
+        buildLogField(file.name),
+        highlightSummary,
+        '已回复',
+      ].join(' | ');
+      await fsp.appendFile(join(logDir, 'log.md'), `${line}\n`, 'utf8');
+    } catch (error) {
+      console.warn('ILC: failed to append agent reply log', error);
+    }
+  }
+
+  private async warnIfAgentReplyChangedAfterFailure(
+    file: TFile,
+    before: string,
+    annotationFrom: number,
+  ): Promise<void> {
+    try {
+      const after = await this.app.vault.adapter.read(file.path);
+      if (after === before) return;
+
+      const verification = verifyOnlyTargetAnnotationChanged(
+        before,
+        after,
+        annotationFrom,
+      );
+      this.refreshActiveMarkdownView(file, after, before, '评论回应');
+
+      if (!verification.onlyTargetChanged) {
+        new Notice('评论回应：AI 应答失败，且检测到目标评论外内容变化，请检查文档', 10000);
+      } else if (!verification.appendedReply) {
+        new Notice('评论回应：AI 应答失败，但文件内容已有变化，请检查目标评论', 10000);
+      }
+    } catch (error) {
+      console.warn('ILC: failed to inspect agent reply after failure', error);
+    }
   }
 
   private buildGlobalThreadPrompt(
@@ -347,6 +526,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     file: TFile,
     latestContent: string,
     expectedBeforeAI: string,
+    contextLabel = '文档对话',
   ): void {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     if (!view || view.file?.path !== file.path) return;
@@ -358,7 +538,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       return;
     }
 
-    new Notice('文档对话：当前编辑器已有新改动，未强制刷新视图', 8000);
+    new Notice(`${contextLabel}：当前编辑器已有新改动，未强制刷新视图`, 8000);
   }
 
   /** Inject dynamic CSS for custom (non-builtin) type IDs */
@@ -423,6 +603,24 @@ function todayIsoDate(): string {
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function localMinuteTimestamp(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hour = String(now.getHours()).padStart(2, '0');
+  const minute = String(now.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hour}:${minute}`;
+}
+
+function buildLogField(value: string): string {
+  return value.replace(/\s+/g, ' ').replace(/\|/g, '｜').trim();
+}
+
+function safePathSegment(value: string): string {
+  return value.replace(/[/:\\]/g, '_').trim() || 'agent';
 }
 
 function hasFullPathAdapter(
