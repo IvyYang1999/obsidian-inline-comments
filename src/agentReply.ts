@@ -29,7 +29,7 @@ export function parseAtMention(
   return null;
 }
 
-/** Build the headless Claude prompt for appending one reply to one annotation. */
+/** Build the headless Claude prompt for generating one reply body. */
 export function buildAgentReplyPrompt(params: {
   absolutePath: string;
   agentName: string;
@@ -38,21 +38,38 @@ export function buildAgentReplyPrompt(params: {
   date: string;
 }): string {
   return [
-    '你正在为 Obsidian Markdown 文件中的一条划线评论追加 @Agent 回复。',
+    '你正在为 Obsidian Markdown 文件中的一条划线评论生成 @Agent 回复正文。',
     `文件绝对路径：${JSON.stringify(params.absolutePath)}`,
+    '你可以读取该文件理解上下文，但只能只读：不要修改、保存、创建或删除任何文件。',
     '',
     '目标 annotation 用以下信息唯一定位：',
     `高亮文字：${JSON.stringify(params.highlightText)}`,
     `已有评论 JSON：${JSON.stringify(params.existingComments, null, 2)}`,
     '',
     '任务：',
-    '1. 读取并只编辑上面的原文件。',
+    '1. 读取文件并理解目标 annotation 的上下文。',
     '2. 找到高亮文字和已有评论序列完全匹配的那一条 `{==...==}{>>...<<}` annotation。',
-    `3. 只在该 annotation 末尾追加一条回复，格式必须等价于调用 parser.ts 的 appendReply：{>>${params.agentName}|${params.date}|reply: 你的回复<<}`,
-    '4. 只追加不改其它任何字符：不要改正文、不要改其它评论、不要改目标 annotation 的高亮文字和已有评论。',
-    '5. 回复正文中不要写入 `<<` 或 `>>`；如必须表达，请改写为安全文本。',
-    '6. 直接保存原文件；不要创建新文件，不要输出整篇文档。',
+    '3. 只在 stdout 输出你的回复正文纯文本。',
+    '4. 不要编辑任何文件；不要输出整篇文档、Markdown 代码块、JSON、解释、标题或其它格式标记。',
+    `5. 不要输出 {>>...<<} 包裹，也不要输出作者、日期或 type；插件会以 ${JSON.stringify(params.agentName)}、${JSON.stringify(params.date)}、reply 强制写回。`,
+    '6. 回复正文正常写即可；插件会转义 `<<` 和 `>>`，但能避开时请改写为安全表达。',
   ].join('\n');
+}
+
+export function cleanReplyText(raw: string): string {
+  let text = raw.trim();
+
+  const fenced = text.match(/^```[^\r\n]*\r?\n([\s\S]*?)\r?\n```\s*$/);
+  if (fenced) {
+    text = fenced[1].trim();
+  }
+
+  const wrappedBlock = text.match(/^\{>>[^|]+?\|[^|]+?\|[^:]+:\s*([\s\S]*?)<<\}$/);
+  if (wrappedBlock) {
+    text = wrappedBlock[1].trim();
+  }
+
+  return text;
 }
 
 /** Verify that only the target annotation changed, and that a reply was appended. */

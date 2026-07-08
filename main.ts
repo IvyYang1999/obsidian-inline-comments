@@ -3,13 +3,13 @@ import { promises as fsp } from 'fs';
 import { join } from 'path';
 import { MarkdownView, Plugin, PluginSettingTab, App, Setting, Notice } from 'obsidian';
 import type { TFile } from 'obsidian';
-import { buildAgentReplyPrompt, verifyOnlyTargetAnnotationChanged } from './src/agentReply.ts';
+import { buildAgentReplyPrompt, cleanReplyText } from './src/agentReply.ts';
 import { buildCommentExtension, type ICommentHost, type AnnotationPosition } from './src/editor/cmExtension.ts';
 import { CommentPanel, VIEW_TYPE_COMMENTS } from './src/views/CommentPanel.ts';
 import { HistoryModal } from './src/views/HistoryModal.ts';
 import { GlobalThreadModal } from './src/modal/GlobalThreadModal.ts';
-import { parseAnnotations } from './src/parser.ts';
-import type { CommentTypeConfig, AIAgentConfig, DeletedRecord } from './src/types.ts';
+import { appendReply, parseAnnotations } from './src/parser.ts';
+import type { CommentEntry, CommentTypeConfig, AIAgentConfig, DeletedRecord } from './src/types.ts';
 import { BUILTIN_TYPE_IDS, typeBgColor } from './src/types.ts';
 import {
   GLOBAL_THREAD_END_MARKER,
@@ -345,11 +345,9 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     const cwd = getParentDir(absolutePath);
     const date = todayIsoDate();
     let before = '';
-    let hasBefore = false;
 
     try {
       before = await this.app.vault.read(file);
-      hasBefore = true;
       const annotation = parseAnnotations(before).find(
         (item) => item.from === annotationFrom,
       );
@@ -371,42 +369,41 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       });
 
       new Notice(`评论回应：正在请求 ${registeredAgent.agent.name}...`);
-      await runHeadlessCommand(
+      const replyOutput = await runHeadlessCommandCapture(
         'claude',
         ['--print', '--resume', registeredAgent.sessionId, '-p', prompt],
         cwd,
       );
+      const replyText = cleanReplyText(replyOutput);
 
-      const after = await this.app.vault.adapter.read(file.path);
-      const verification = verifyOnlyTargetAnnotationChanged(
-        before,
-        after,
-        annotationFrom,
-      );
-      this.refreshActiveMarkdownView(file, after, before, '评论回应');
-
-      if (!verification.onlyTargetChanged) {
-        new Notice('评论回应：AI 已返回，但检测到目标评论外内容变化，请检查文档', 10000);
-      } else if (!verification.appendedReply) {
-        new Notice('评论回应：AI 已返回，但未检测到新增回复', 10000);
-      } else {
-        new Notice('评论回应：AI 回复已写回');
-        await this.appendAgentReplyLog(
-          cwd,
-          registeredAgent.agent.name,
-          file,
-          annotation.highlightText,
-        );
+      if (!replyText) {
+        new Notice('评论回应：Agent 未返回内容', 10000);
+        return;
       }
+
+      const reply: CommentEntry = {
+        author: registeredAgent.agent.name,
+        date,
+        type: 'reply',
+        text: replyText,
+      };
+      const current = await this.app.vault.read(file);
+      if (current !== before) {
+        new Notice('评论回应：文档已变更，请重试', 10000);
+        return;
+      }
+      const after = appendReply(before, annotationFrom, reply);
+      await this.app.vault.modify(file, after);
+      this.refreshActiveMarkdownView(file, after, before, '评论回应');
+      await this.appendAgentReplyLog(
+        cwd,
+        registeredAgent.agent.name,
+        file,
+        annotation.highlightText,
+      );
+      new Notice('评论回应：AI 回复已写回');
     } catch (error) {
       const messageText = formatProcessError(error);
-      if (hasBefore) {
-        await this.warnIfAgentReplyChangedAfterFailure(
-          file,
-          before,
-          annotationFrom,
-        );
-      }
       console.error('ILC: agent reply failed:', messageText);
       new Notice(`评论回应：AI 应答失败：${messageText}`, 10000);
     } finally {
@@ -464,32 +461,6 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       await fsp.appendFile(join(logDir, 'log.md'), `${line}\n`, 'utf8');
     } catch (error) {
       console.warn('ILC: failed to append agent reply log', error);
-    }
-  }
-
-  private async warnIfAgentReplyChangedAfterFailure(
-    file: TFile,
-    before: string,
-    annotationFrom: number,
-  ): Promise<void> {
-    try {
-      const after = await this.app.vault.adapter.read(file.path);
-      if (after === before) return;
-
-      const verification = verifyOnlyTargetAnnotationChanged(
-        before,
-        after,
-        annotationFrom,
-      );
-      this.refreshActiveMarkdownView(file, after, before, '评论回应');
-
-      if (!verification.onlyTargetChanged) {
-        new Notice('评论回应：AI 应答失败，且检测到目标评论外内容变化，请检查文档', 10000);
-      } else if (!verification.appendedReply) {
-        new Notice('评论回应：AI 应答失败，但文件内容已有变化，请检查目标评论', 10000);
-      }
-    } catch (error) {
-      console.warn('ILC: failed to inspect agent reply after failure', error);
     }
   }
 
@@ -665,6 +636,39 @@ function runHeadlessCommand(
           return;
         }
         resolve();
+      },
+    );
+  });
+}
+
+function runHeadlessCommandCapture(
+  command: string,
+  args: string[],
+  cwd?: string,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      command,
+      args,
+      {
+        cwd,
+        timeout: 10 * 60 * 1000,
+        maxBuffer: 8 * 1024 * 1024,
+        encoding: 'utf8',
+      },
+      (error, stdout) => {
+        if (error) {
+          const err = error as NodeJS.ErrnoException & {
+            killed?: boolean;
+            signal?: NodeJS.Signals | string | null;
+          };
+          const reason = err.killed
+            ? 'timeout'
+            : `code=${err.code ?? 'unknown'} signal=${err.signal ?? 'none'}`;
+          reject(new Error(reason));
+          return;
+        }
+        resolve(stdout);
       },
     );
   });

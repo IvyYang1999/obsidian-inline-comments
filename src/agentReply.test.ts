@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildAgentReplyPrompt,
+  cleanReplyText,
   parseAtMention,
   verifyOnlyTargetAnnotationChanged,
 } from './agentReply.ts';
@@ -33,7 +34,7 @@ describe('parseAtMention', () => {
 });
 
 describe('buildAgentReplyPrompt', () => {
-  it('contains the file path, agent name, and append-only instruction', () => {
+  it('contains the file path, agent name, and stdout-only instruction', () => {
     const prompt = buildAgentReplyPrompt({
       absolutePath: '/tmp/vault/note.md',
       agentName: '回声',
@@ -43,8 +44,27 @@ describe('buildAgentReplyPrompt', () => {
     });
 
     expect(prompt).toContain('/tmp/vault/note.md');
-    expect(prompt).toContain('{>>回声|2026-07-08|reply: 你的回复<<}');
-    expect(prompt).toContain('只追加不改其它任何字符');
+    expect(prompt).toContain('只在 stdout 输出你的回复正文纯文本');
+    expect(prompt).toContain('不要编辑任何文件');
+    expect(prompt).toContain('不要输出 {>>...<<} 包裹');
+    expect(prompt).toContain('"回声"');
+    expect(prompt).toContain('"2026-07-08"');
+  });
+});
+
+describe('cleanReplyText', () => {
+  it('trims plain reply text', () => {
+    expect(cleanReplyText('\n  已处理  \n')).toBe('已处理');
+  });
+
+  it('unwraps a single fenced code block', () => {
+    expect(cleanReplyText('```markdown\n已处理\n```')).toBe('已处理');
+  });
+
+  it('unwraps a mistakenly emitted comment block', () => {
+    expect(cleanReplyText('{>>回声|2026-07-08|reply: 已处理<<}')).toBe(
+      '已处理',
+    );
   });
 });
 
