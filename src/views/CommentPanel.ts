@@ -11,6 +11,7 @@ import {
 } from '../parser.ts';
 import { HistoryModal } from './HistoryModal.ts';
 import type { AnnotationPosition } from '../editor/cmExtension.ts';
+import { parseAtMention } from '../agentReply.ts';
 import type InlineCommentsPlugin from '../../main.ts';
 
 export const VIEW_TYPE_COMMENTS = 'ilc-comments-panel';
@@ -630,6 +631,32 @@ export class CommentPanel extends ItemView {
 
     if (comment.text) {
       entry.createEl('div', { cls: 'ilc-entry-body', text: comment.text });
+    }
+
+    // @Agent reply button: detect @mention of a registered (has sessionId) agent
+    const registeredNames = this.plugin.settings.aiAgents
+      .filter((a) => a.sessionId)
+      .map((a) => a.name);
+    const mentionedAgent = parseAtMention(comment.text, registeredNames);
+    if (mentionedAgent && mentionedAgent.toLowerCase() !== comment.author.toLowerCase()) {
+      const btn = entry.createEl('button', {
+        cls: 'ilc-agent-reply-btn',
+        text: `🗨 请 ${mentionedAgent} 回应`,
+      });
+      const agentName = mentionedAgent;
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        btn.disabled = true;
+        btn.textContent = `${agentName} 思考中…`;
+        btn.addClass('ilc-agent-reply-pending');
+        try {
+          await this.plugin.requestAgentReply(file, ann.from, agentName);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = `🗨 请 ${agentName} 回应`;
+          btn.removeClass('ilc-agent-reply-pending');
+        }
+      });
     }
   }
 

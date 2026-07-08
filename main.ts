@@ -889,6 +889,30 @@ class ILCSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
       });
 
+      const sessionIn = row.createEl('input', {
+        cls: 'ilc-settings-input-session',
+        attr: {
+          type: 'text',
+          value: agent.sessionId ?? '',
+          title: '会话 ID',
+          placeholder: 'claude session id（填了才能 @它回应）',
+        },
+      }) as HTMLInputElement;
+      sessionIn.addEventListener('change', async () => {
+        const val = sessionIn.value.trim();
+        agent.sessionId = val || undefined;
+        agent.resumeType = val ? 'claude-resume' : undefined;
+        await this.plugin.saveSettings();
+      });
+
+      if (agent.sessionId) {
+        row.createEl('span', {
+          cls: 'ilc-settings-session-tag',
+          text: 'claude-resume',
+          attr: { title: '会话类型' },
+        });
+      }
+
       const delBtn = row.createEl('button', {
         cls: 'ilc-settings-del-btn',
         text: '×',
