@@ -11,6 +11,7 @@ import { GlobalThreadModal } from './src/modal/GlobalThreadModal.ts';
 import { appendReply, parseAnnotations } from './src/parser.ts';
 import type { CommentEntry, CommentTypeConfig, AIAgentConfig, DeletedRecord } from './src/types.ts';
 import { BUILTIN_TYPE_IDS, typeBgColor } from './src/types.ts';
+import { UnreadTracker } from './src/unreadTracker.ts';
 import {
   GLOBAL_THREAD_END_MARKER,
   GLOBAL_THREAD_START_MARKER,
@@ -45,6 +46,7 @@ interface ILCSettings {
   aiAgents:       AIAgentConfig[];
   defaultAIAgent: string; // id of the default AI agent to request
   globalThreadEngine: GlobalThreadEngine;
+  enableUnreadSignal: boolean;
 }
 
 const DEFAULT_SETTINGS: ILCSettings = {
@@ -54,6 +56,7 @@ const DEFAULT_SETTINGS: ILCSettings = {
   aiAgents:       DEFAULT_AI_AGENTS,
   defaultAIAgent: 'claude',
   globalThreadEngine: 'claude',
+  enableUnreadSignal: true,
 };
 
 // ─── Plugin ───────────────────────────────────────────────────────────────────
@@ -62,6 +65,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
   settings: ILCSettings = DEFAULT_SETTINGS;
   private runningGlobalThreads = new Set<string>();
   private runningAgentReplies = new Set<string>();
+  unreadTracker!: UnreadTracker;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -129,6 +133,20 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
 
     // Settings tab
     this.addSettingTab(new ILCSettingTab(this.app, this));
+
+    // Unread reply tracker
+    this.unreadTracker = new UnreadTracker(
+      this.app,
+      this.manifest.dir ?? '.obsidian/plugins/obsidian-inline-comments',
+      () => this.settings.enableUnreadSignal,
+    );
+    this.unreadTracker.init();
+
+    this.registerEvent(
+      this.app.vault.on('modify', () => {
+        this.unreadTracker.scheduleRecompute();
+      }),
+    );
   }
 
   onunload(): void {
@@ -793,6 +811,20 @@ class ILCSettingTab extends PluginSettingTab {
         });
         return drop;
       });
+
+    // ── Unread signal ──
+    new Setting(containerEl)
+      .setName('产出未读信号')
+      .setDesc('产出 unread-replies.json 供目录树红点插件使用')
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableUnreadSignal)
+          .onChange(async (value) => {
+            this.plugin.settings.enableUnreadSignal = value;
+            await this.plugin.saveSettings();
+            if (value) this.plugin.unreadTracker.recompute();
+          }),
+      );
   }
 
   private renderTypesList(container: HTMLElement): void {

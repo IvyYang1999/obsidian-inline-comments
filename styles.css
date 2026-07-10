@@ -942,3 +942,115 @@
 .theme-dark .ilc-card-active {
   border-color: #ffe8a3;
 }
+
+/* ─── @selector dropdown ────────────────────────────────────────────────────── */
+.ilc-draft-input-wrapper,
+.ilc-reply-input-row {
+  position: relative;
+}
+
+.ilc-card.ilc-at-active {
+  overflow: visible;
+}
+
+.ilc-at-dropdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--ilc-radius-btn);
+  box-shadow: var(--ilc-shadow-md);
+}
+
+.ilc-at-notify-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  font-size: 11px;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.ilc-at-notify-row input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--interactive-accent);
+}
+
+.ilc-at-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.ilc-at-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.ilc-at-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--interactive-accent);
+}
+
+.ilc-at-role {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* ─── Read/unread button ─────────────────────────────────────────────────── */
+.ilc-read-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 4px 0 2px 28px;
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: var(--ilc-radius-btn);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.ilc-read-btn-unread {
+  color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-primary));
+  border-color: color-mix(in srgb, var(--interactive-accent) 25%, transparent);
+}
+
+.ilc-read-btn-unread:hover {
+  background: color-mix(in srgb, var(--interactive-accent) 14%, var(--background-primary));
+}
+
+.ilc-read-btn-read {
+  color: var(--text-faint);
+  background: transparent;
+  border-color: transparent;
+  cursor: default;
+  font-size: 10px;
+}
+
+/* Unread reply: small red dot indicator */
+.ilc-entry-reply.ilc-entry-unread {
+  position: relative;
+}
+
+.ilc-entry-reply.ilc-entry-unread::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 14px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-error, #e53935);
+}

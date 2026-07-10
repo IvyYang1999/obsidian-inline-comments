@@ -13,6 +13,8 @@ import { HistoryModal } from './HistoryModal.ts';
 import type { AnnotationPosition } from '../editor/cmExtension.ts';
 import { parseAtMention } from '../agentReply.ts';
 import type InlineCommentsPlugin from '../../main.ts';
+import { attachAtSelector } from '../atSelector.ts';
+import { computeReadKey } from '../unreadTracker.ts';
 
 export const VIEW_TYPE_COMMENTS = 'ilc-comments-panel';
 
@@ -455,6 +457,7 @@ export class CommentPanel extends ItemView {
       attr: { placeholder: '添加评论（可选）…', rows: '3' },
     });
     this.draftInputEl = input;
+    attachAtSelector(input, inputWrapper, this.app);
 
     // ── 5. Action buttons (always visible) ──
     const actionRow = card.createEl('div', { cls: 'ilc-draft-actions' });
@@ -579,6 +582,8 @@ export class CommentPanel extends ItemView {
       await this.app.vault.modify(file, appendReply(currentContent, ann.from, reply));
     });
 
+    attachAtSelector(input, inputRow, this.app);
+
     return card;
   }
 
@@ -657,6 +662,29 @@ export class CommentPanel extends ItemView {
           btn.removeClass('ilc-agent-reply-pending');
         }
       });
+    }
+
+    // Read/unread indicator for reply entries
+    if (comment.type === 'reply') {
+      const readKey = computeReadKey(file.path, ann.highlightText, comment.author, comment.date, comment.text);
+      const isAlreadyRead = this.plugin.unreadTracker?.isRead(readKey) ?? false;
+
+      if (!isAlreadyRead) {
+        entry.addClass('ilc-entry-unread');
+      }
+
+      const readBtn = entry.createEl('button', {
+        cls: `ilc-read-btn ${isAlreadyRead ? 'ilc-read-btn-read' : 'ilc-read-btn-unread'}`,
+        text: isAlreadyRead ? '已读' : '✓ 已读',
+      });
+
+      if (!isAlreadyRead) {
+        readBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await this.plugin.unreadTracker?.markAsRead(readKey);
+          await this.refresh();
+        });
+      }
     }
   }
 
