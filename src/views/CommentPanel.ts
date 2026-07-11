@@ -420,6 +420,7 @@ export class CommentPanel extends ItemView {
     avatar.style.background = this.plugin.settings.avatarBg;
     avatar.style.color = '#fff';
     avatar.style.border = 'none';
+    this.tryUpgradeAvatarToImage(avatar, this.plugin.settings.authorName);
     authorRow.createEl('span', {
       cls: 'ilc-draft-author-name',
       text: this.plugin.settings.authorName,
@@ -613,7 +614,7 @@ export class CommentPanel extends ItemView {
 
     const header = entry.createEl('div', { cls: 'ilc-entry-header' });
 
-    // Avatar — use AI agent config or user's avatar settings
+    // Avatar — letter fallback first, then async upgrade to image if png exists
     const agentConfig = this.plugin.getAIAgent(comment.author);
     const avatarEl = header.createEl('div', { cls: 'ilc-entry-avatar' });
     if (agentConfig) {
@@ -625,6 +626,7 @@ export class CommentPanel extends ItemView {
       avatarEl.style.background = this.plugin.settings.avatarBg;
       avatarEl.style.color = '#fff';
     }
+    this.tryUpgradeAvatarToImage(avatarEl, comment.author);
 
     header.createEl('span', { cls: 'ilc-entry-author', text: comment.author });
     header.createEl('span', { cls: 'ilc-entry-emoji',  text: emoji });
@@ -685,6 +687,31 @@ export class CommentPanel extends ItemView {
           await this.refresh();
         });
       }
+    }
+  }
+
+  // ── Avatar image upgrade ──────────────────────────────────────────────────────
+
+  private async tryUpgradeAvatarToImage(avatarEl: HTMLElement, authorName: string): Promise<void> {
+    const vaultPath = `_os/花名册形象/${authorName}.png`;
+    try {
+      const exists = await this.app.vault.adapter.exists(vaultPath);
+      if (!exists) return;
+      if (!avatarEl.isConnected) return;
+
+      const url = this.app.vault.adapter.getResourcePath(vaultPath);
+      const img = document.createElement('img');
+      img.className = 'ilc-entry-avatar-img';
+      img.src = url;
+      img.alt = authorName;
+      img.addEventListener('error', () => { img.remove(); });
+
+      avatarEl.empty();
+      avatarEl.appendChild(img);
+      avatarEl.style.background = 'none';
+      avatarEl.style.color = 'transparent';
+    } catch {
+      // Silently fall back to letter avatar
     }
   }
 
