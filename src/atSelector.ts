@@ -1,4 +1,4 @@
-import type { App, TFile } from 'obsidian';
+import type { App } from 'obsidian';
 
 export interface RosterEntry {
   name: string;
@@ -10,9 +10,7 @@ const ROSTER_PATH = '_os/花名册.md';
 
 export async function loadRoster(app: App): Promise<RosterEntry[]> {
   try {
-    const abstractFile = app.vault.getAbstractFileByPath(ROSTER_PATH);
-    if (!abstractFile) return [];
-    const content = await app.vault.read(abstractFile as TFile);
+    const content = await app.vault.adapter.read(ROSTER_PATH);
     return parseRosterContent(content);
   } catch {
     return [];

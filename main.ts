@@ -93,8 +93,11 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
         const panel = this.getPanel();
         if (!panel) return;
 
+        const to = from + sel.length;
         panel.showDraftCard(sel, from, (markup: string) => {
-          editor.replaceSelection(markup);
+          const fromPos = editor.offsetToPos(from);
+          const toPos   = editor.offsetToPos(to);
+          editor.replaceRange(markup, fromPos, toPos);
         });
       },
     });
