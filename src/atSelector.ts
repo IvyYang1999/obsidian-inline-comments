@@ -12,6 +12,15 @@ export interface RosterEntry {
 const ROSTER_PATH = '_os/花名册.md';
 const PRESENCE_PATH = '_os/在场.md';
 
+/** 把 session-state.py 的客观状态值归一化成 UI 三态。
+ *  真实值举例：运行中/在线/工作中 → 在线；闲置/等待输入/等额度 → 闲置；下线/离线/超时 → 离线。 */
+function normalizeStatus(raw: string | undefined): AgentStatus {
+  if (!raw) return '离线';
+  if (/运行|在线|工作|活跃/.test(raw)) return '在线';
+  if (/下线|离线|超时|退出/.test(raw)) return '离线';
+  return '闲置'; // 闲置/等待输入/等额度等，默认视作在场但空闲
+}
+
 export async function loadRoster(app: App): Promise<RosterEntry[]> {
   try {
     const content = await app.vault.adapter.read(ROSTER_PATH);
@@ -40,12 +49,12 @@ async function loadPresenceStatus(app: App): Promise<Map<string, AgentStatus>> {
     map.clear();
     for (const line of content.split('\n')) {
       // Format: - **花名**（...）｜ ... ｜ 状态: <状态> ｜ ...
+      // 真实状态值由 session-state.py 客观探测，取值如：运行中/闲置/下线/等待输入/等额度…
       const nameMatch = line.match(/\*\*(.+?)\*\*/);
-      const statusMatch = line.match(/状态:\s*(在线|闲置|离线)/);
+      const statusMatch = line.match(/状态:\s*([^\s｜|]+)/);
       if (nameMatch) {
         const name = nameMatch[1].trim();
-        const status: AgentStatus = (statusMatch?.[1] as AgentStatus) ?? '离线';
-        map.set(name, status);
+        map.set(name, normalizeStatus(statusMatch?.[1]));
       }
     }
   } catch {
