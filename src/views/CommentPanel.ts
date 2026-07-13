@@ -492,6 +492,9 @@ export class CommentPanel extends ItemView {
     const markup = buildAnnotationMarkup(this.draft.highlightText, entries);
     this.draft.onPost(markup);
     this.cancelDraft();
+
+    // Force panel refresh after document modification so the new comment card appears immediately
+    setTimeout(() => this.refresh(), 150);
   }
 
   private cancelDraft(): void {

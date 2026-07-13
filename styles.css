@@ -1014,6 +1014,38 @@
   margin-left: auto;
 }
 
+/* ─── @-selector status badges ──────────────────────────────────────────── */
+.ilc-at-badge {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ilc-at-badge-online {
+  background: #34d058;
+}
+
+.ilc-at-badge-idle {
+  background: #f0b429;
+}
+
+.ilc-at-badge-offline {
+  width: auto;
+  height: auto;
+  border-radius: 3px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: 10px;
+  padding: 1px 4px;
+  line-height: 1.2;
+}
+
+.ilc-at-item.ilc-at-status-offline .ilc-at-name {
+  color: var(--text-muted);
+}
+
 /* ─── Read/unread button ─────────────────────────────────────────────────── */
 .ilc-read-btn {
   display: inline-flex;
