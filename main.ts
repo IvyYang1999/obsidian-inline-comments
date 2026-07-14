@@ -11,6 +11,7 @@ import { GlobalThreadModal } from './src/modal/GlobalThreadModal.ts';
 import { appendReply, parseAnnotations } from './src/parser.ts';
 import type { CommentEntry, CommentTypeConfig, AIAgentConfig, DeletedRecord } from './src/types.ts';
 import { BUILTIN_TYPE_IDS, typeBgColor } from './src/types.ts';
+import { AgentSuggest } from './src/AgentSuggest.ts';
 import { UnreadTracker } from './src/unreadTracker.ts';
 import {
   GLOBAL_THREAD_END_MARKER,
@@ -133,6 +134,9 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     this.addRibbonIcon('message-square', '评论面板', async () => {
       await this.activatePanel();
     });
+
+    // Editor @-mention suggest (body text)
+    this.registerEditorSuggest(new AgentSuggest(this.app, this));
 
     // Settings tab
     this.addSettingTab(new ILCSettingTab(this.app, this));
