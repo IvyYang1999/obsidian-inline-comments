@@ -13,6 +13,7 @@ import type { CommentEntry, CommentTypeConfig, AIAgentConfig, DeletedRecord } fr
 import { BUILTIN_TYPE_IDS, typeBgColor } from './src/types.ts';
 import { AgentSuggest } from './src/AgentSuggest.ts';
 import { UnreadTracker } from './src/unreadTracker.ts';
+import { renderAgentRegistrySection } from './src/settings/agentRegistrySection.ts';
 import {
   GLOBAL_THREAD_END_MARKER,
   GLOBAL_THREAD_START_MARKER,
@@ -818,6 +819,9 @@ class ILCSettingTab extends PluginSettingTab {
         });
         return drop;
       });
+
+    // ── Agent registry (评论互动成员) ──
+    renderAgentRegistrySection(containerEl, this.app);
 
     // ── Unread signal ──
     new Setting(containerEl)
