@@ -11,7 +11,10 @@ import {
 } from '../parser.ts';
 import { HistoryModal } from './HistoryModal.ts';
 import type { AnnotationPosition } from '../editor/cmExtension.ts';
+import { parseAtMention } from '../agentReply.ts';
 import type InlineCommentsPlugin from '../../main.ts';
+import { attachAtSelector } from '../atSelector.ts';
+import { computeReadKey } from '../unreadTracker.ts';
 
 export const VIEW_TYPE_COMMENTS = 'ilc-comments-panel';
 
@@ -417,6 +420,7 @@ export class CommentPanel extends ItemView {
     avatar.style.background = this.plugin.settings.avatarBg;
     avatar.style.color = '#fff';
     avatar.style.border = 'none';
+    this.tryUpgradeAvatarToImage(avatar, this.plugin.settings.authorName);
     authorRow.createEl('span', {
       cls: 'ilc-draft-author-name',
       text: this.plugin.settings.authorName,
@@ -454,6 +458,7 @@ export class CommentPanel extends ItemView {
       attr: { placeholder: '添加评论（可选）…', rows: '3' },
     });
     this.draftInputEl = input;
+    attachAtSelector(input, inputWrapper, this.app);
 
     // ── 5. Action buttons (always visible) ──
     const actionRow = card.createEl('div', { cls: 'ilc-draft-actions' });
@@ -487,6 +492,9 @@ export class CommentPanel extends ItemView {
     const markup = buildAnnotationMarkup(this.draft.highlightText, entries);
     this.draft.onPost(markup);
     this.cancelDraft();
+
+    // Force panel refresh after document modification so the new comment card appears immediately
+    setTimeout(() => this.refresh(), 150);
   }
 
   private cancelDraft(): void {
@@ -578,6 +586,8 @@ export class CommentPanel extends ItemView {
       await this.app.vault.modify(file, appendReply(currentContent, ann.from, reply));
     });
 
+    attachAtSelector(input, inputRow, this.app);
+
     return card;
   }
 
@@ -607,7 +617,7 @@ export class CommentPanel extends ItemView {
 
     const header = entry.createEl('div', { cls: 'ilc-entry-header' });
 
-    // Avatar — use AI agent config or user's avatar settings
+    // Avatar — letter fallback first, then async upgrade to image if png exists
     const agentConfig = this.plugin.getAIAgent(comment.author);
     const avatarEl = header.createEl('div', { cls: 'ilc-entry-avatar' });
     if (agentConfig) {
@@ -619,6 +629,7 @@ export class CommentPanel extends ItemView {
       avatarEl.style.background = this.plugin.settings.avatarBg;
       avatarEl.style.color = '#fff';
     }
+    this.tryUpgradeAvatarToImage(avatarEl, comment.author);
 
     header.createEl('span', { cls: 'ilc-entry-author', text: comment.author });
     header.createEl('span', { cls: 'ilc-entry-emoji',  text: emoji });
@@ -630,6 +641,80 @@ export class CommentPanel extends ItemView {
 
     if (comment.text) {
       entry.createEl('div', { cls: 'ilc-entry-body', text: comment.text });
+    }
+
+    // @Agent reply button: detect @mention of a registered (has sessionId) agent
+    const registeredNames = this.plugin.settings.aiAgents
+      .filter((a) => a.sessionId)
+      .map((a) => a.name);
+    const mentionedAgent = parseAtMention(comment.text, registeredNames);
+    if (mentionedAgent && mentionedAgent.toLowerCase() !== comment.author.toLowerCase()) {
+      const btn = entry.createEl('button', {
+        cls: 'ilc-agent-reply-btn',
+        text: `🗨 请 ${mentionedAgent} 回应`,
+      });
+      const agentName = mentionedAgent;
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        btn.disabled = true;
+        btn.textContent = `${agentName} 思考中…`;
+        btn.addClass('ilc-agent-reply-pending');
+        try {
+          await this.plugin.requestAgentReply(file, ann.from, agentName);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = `🗨 请 ${agentName} 回应`;
+          btn.removeClass('ilc-agent-reply-pending');
+        }
+      });
+    }
+
+    // Read/unread indicator for reply entries
+    if (comment.type === 'reply') {
+      const readKey = computeReadKey(file.path, ann.highlightText, comment.author, comment.date, comment.text);
+      const isAlreadyRead = this.plugin.unreadTracker?.isRead(readKey) ?? false;
+
+      if (!isAlreadyRead) {
+        entry.addClass('ilc-entry-unread');
+      }
+
+      const readBtn = entry.createEl('button', {
+        cls: `ilc-read-btn ${isAlreadyRead ? 'ilc-read-btn-read' : 'ilc-read-btn-unread'}`,
+        text: isAlreadyRead ? '已读' : '✓ 已读',
+      });
+
+      if (!isAlreadyRead) {
+        readBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await this.plugin.unreadTracker?.markAsRead(readKey);
+          await this.refresh();
+        });
+      }
+    }
+  }
+
+  // ── Avatar image upgrade ──────────────────────────────────────────────────────
+
+  private async tryUpgradeAvatarToImage(avatarEl: HTMLElement, authorName: string): Promise<void> {
+    const vaultPath = `_os/花名册形象/${authorName}.png`;
+    try {
+      const exists = await this.app.vault.adapter.exists(vaultPath);
+      if (!exists) return;
+      if (!avatarEl.isConnected) return;
+
+      const url = this.app.vault.adapter.getResourcePath(vaultPath);
+      const img = document.createElement('img');
+      img.className = 'ilc-entry-avatar-img';
+      img.src = url;
+      img.alt = authorName;
+      img.addEventListener('error', () => { img.remove(); });
+
+      avatarEl.empty();
+      avatarEl.appendChild(img);
+      avatarEl.style.background = 'none';
+      avatarEl.style.color = 'transparent';
+    } catch {
+      // Silently fall back to letter avatar
     }
   }
 

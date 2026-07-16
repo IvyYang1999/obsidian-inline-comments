@@ -107,7 +107,7 @@ export function appendReply(
 
 /** Escape `<<` and `>>` inside a comment body to prevent parser confusion */
 function escapeBody(text: string): string {
-  return text.replace(/<</, '‹‹').replace(/>>/, '››');
+  return text.replace(/<</g, '‹‹').replace(/>>/g, '››');
 }
 
 /**

@@ -36,6 +36,8 @@ export interface AIAgentConfig {
   name:       string; // shown as author in comments
   avatarChar: string; // single char displayed in avatar
   avatarBg:   string; // hex background color of avatar
+  sessionId?:  string; // Claude session id used by registered @Agent replies
+  resumeType?: 'claude-resume'; // MVP supports Claude CLI --resume only
 }
 
 // ─── Utilities ─────────────────────────────────────────────────────────────────
