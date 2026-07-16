@@ -53,11 +53,26 @@ export class AgentSuggest extends EditorSuggest<RosterEntry> {
   ): Promise<RosterEntry[]> {
     const entries = await loadRoster(this.app);
     const q = context.query.toLowerCase();
-    if (!q) return entries;
-    return entries.filter((e) => e.name.toLowerCase().includes(q));
+    const filtered = q ? entries.filter((e) => e.name.toLowerCase().includes(q)) : entries;
+
+    const manageAction: RosterEntry = {
+      name: '⚙ 管理成员…',
+      shortId: '',
+      role: '',
+      status: '离线',
+      source: 'roster',
+      isAction: true,
+    };
+    return [...filtered, manageAction];
   }
 
   renderSuggestion(entry: RosterEntry, el: HTMLElement): void {
+    if (entry.isAction) {
+      el.addClass('ilc-at-item', 'ilc-at-manage');
+      el.createEl('span', { text: entry.name });
+      return;
+    }
+
     el.addClass('ilc-at-item');
     const statusClass =
       entry.status === '在线'
@@ -67,14 +82,19 @@ export class AgentSuggest extends EditorSuggest<RosterEntry> {
           : 'ilc-at-status-offline';
     el.addClass(statusClass);
 
-    const badgeCls =
-      entry.status === '在线'
-        ? 'ilc-at-badge-online'
-        : entry.status === '闲置'
-          ? 'ilc-at-badge-idle'
-          : 'ilc-at-badge-offline';
-    const badge = el.createEl('span', { cls: `ilc-at-badge ${badgeCls}` });
-    if (entry.status === '离线') badge.setText('离线');
+    if (entry.source === 'registry') {
+      const label = `自助·${entry.harness ?? ''}`;
+      el.createEl('span', { cls: 'ilc-at-badge ilc-at-badge-idle', text: label });
+    } else {
+      const badgeCls =
+        entry.status === '在线'
+          ? 'ilc-at-badge-online'
+          : entry.status === '闲置'
+            ? 'ilc-at-badge-idle'
+            : 'ilc-at-badge-offline';
+      const badge = el.createEl('span', { cls: `ilc-at-badge ${badgeCls}` });
+      if (entry.status === '离线') badge.setText('离线');
+    }
 
     el.createEl('span', { cls: 'ilc-at-name', text: `@${entry.name}` });
     if (entry.role) {
@@ -83,6 +103,12 @@ export class AgentSuggest extends EditorSuggest<RosterEntry> {
   }
 
   selectSuggestion(entry: RosterEntry, _evt: MouseEvent | KeyboardEvent): void {
+    if (entry.isAction) {
+      (this.app as any).setting.open();
+      (this.app as any).setting.openTabById('obsidian-inline-comments');
+      return;
+    }
+
     const ctx = this.context;
     if (!ctx) return;
 

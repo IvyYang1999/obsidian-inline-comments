@@ -7,10 +7,26 @@ export interface RosterEntry {
   shortId: string;
   role: string;
   status: AgentStatus;
+  source: 'roster' | 'registry';
+  harness?: string;
+  /** When true, this item is a UI action (e.g. "管理成员"), not a real agent. */
+  isAction?: boolean;
+}
+
+interface RegistryAgent {
+  name: string;
+  sessionId: string;
+  harness: string;
+  joinedAt: string;
+}
+
+interface RegistryFile {
+  agents: RegistryAgent[];
 }
 
 const ROSTER_PATH = '_os/花名册.md';
 const PRESENCE_PATH = '_os/在场.md';
+export const REGISTRY_PATH = '_os/comment-agents.json';
 
 /** 把 session-state.py 的客观状态值归一化成 UI 三态。
  *  真实值举例：运行中/在线/工作中 → 在线；闲置/等待输入/等额度 → 闲置；下线/离线/超时 → 离线。 */
@@ -22,21 +38,48 @@ function normalizeStatus(raw: string | undefined): AgentStatus {
 }
 
 export async function loadRoster(app: App): Promise<RosterEntry[]> {
+  // Source 1: 花名册 + 在场板
+  let rosterEntries: RosterEntry[] = [];
   try {
     const content = await app.vault.adapter.read(ROSTER_PATH);
-    const entries = parseRosterContent(content);
+    rosterEntries = parseRosterContent(content);
 
-    // Load presence status from 在场.md
     const statusMap = await loadPresenceStatus(app);
-    for (const entry of entries) {
+    for (const entry of rosterEntries) {
       entry.status = statusMap.get(entry.name) ?? '离线';
     }
+  } catch {
+    // roster file missing — treat as empty
+  }
 
-    // Sort: online/idle first, offline last
-    const statusOrder: Record<AgentStatus, number> = { '在线': 0, '闲置': 1, '离线': 2 };
-    entries.sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
+  // Source 2: 自助注册表
+  const registryEntries = await loadRegistry(app);
 
-    return entries;
+  // Merge: same name → registry wins
+  const byName = new Map<string, RosterEntry>();
+  for (const e of rosterEntries) byName.set(e.name, e);
+  for (const e of registryEntries) byName.set(e.name, e);
+
+  const merged = Array.from(byName.values());
+  const statusOrder: Record<AgentStatus, number> = { '在线': 0, '闲置': 1, '离线': 2 };
+  merged.sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
+
+  return merged;
+}
+
+async function loadRegistry(app: App): Promise<RosterEntry[]> {
+  try {
+    const raw = await app.vault.adapter.read(REGISTRY_PATH);
+    const data: RegistryFile = JSON.parse(raw);
+    if (!Array.isArray(data?.agents)) return [];
+    return data.agents.map((a) => ({
+      name: a.name,
+      shortId: a.sessionId.slice(0, 8),
+      role: '',
+      status: '闲置' as AgentStatus,
+      source: 'registry' as const,
+      harness: a.harness || undefined,
+    }));
   } catch {
     return [];
   }
@@ -79,6 +122,7 @@ export function parseRosterContent(content: string): RosterEntry[] {
       shortId: m[2].trim().slice(0, 8),
       role: m[3]?.trim() ?? '',
       status: '离线',
+      source: 'roster',
     });
   }
 
@@ -156,9 +200,15 @@ export function attachAtSelector(
 
     for (const entry of entries) {
       const item = dropdown.createEl('div', { cls: `ilc-at-item ilc-at-status-${entry.status === '在线' ? 'online' : entry.status === '闲置' ? 'idle' : 'offline'}` });
-      const statusCls = entry.status === '在线' ? 'ilc-at-badge-online'
-        : entry.status === '闲置' ? 'ilc-at-badge-idle' : 'ilc-at-badge-offline';
-      item.createEl('span', { cls: `ilc-at-badge ${statusCls}`, text: entry.status === '离线' ? '离线' : '' });
+
+      if (entry.source === 'registry') {
+        const label = `自助·${entry.harness ?? ''}`;
+        item.createEl('span', { cls: 'ilc-at-badge ilc-at-badge-idle', text: label });
+      } else {
+        const statusCls = entry.status === '在线' ? 'ilc-at-badge-online'
+          : entry.status === '闲置' ? 'ilc-at-badge-idle' : 'ilc-at-badge-offline';
+        item.createEl('span', { cls: `ilc-at-badge ${statusCls}`, text: entry.status === '离线' ? '离线' : '' });
+      }
       item.createEl('span', { cls: 'ilc-at-name', text: `@${entry.name}` });
       if (entry.role) {
         item.createEl('span', { cls: 'ilc-at-role', text: entry.role });
@@ -184,6 +234,16 @@ export function attachAtSelector(
         dismiss();
       });
     }
+
+    // "管理成员" action item
+    const manageItem = dropdown.createEl('div', { cls: 'ilc-at-item ilc-at-manage' });
+    manageItem.createEl('span', { text: '⚙ 管理成员…' });
+    manageItem.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dismiss();
+      (app as any).setting.open();
+      (app as any).setting.openTabById('obsidian-inline-comments');
+    });
 
     outsideClickHandler = (ev: MouseEvent) => {
       if (dropdown && !dropdown.contains(ev.target as Node) && ev.target !== textarea) {
