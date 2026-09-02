@@ -87,6 +87,18 @@
   position: relative;
 }
 
+/* Panel header with comment count */
+.ilc-panel-header {
+  padding: 6px 12px 2px;
+  position: relative;
+  z-index: 2;
+}
+.ilc-panel-count {
+  font-size: var(--ilc-font-meta);
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
 .ilc-empty {
   padding: 40px 20px;
   color: var(--text-muted);
@@ -107,7 +119,6 @@
   cursor: pointer;
   box-shadow: var(--ilc-shadow-xs);
   transition: box-shadow 0.18s ease, transform 0.12s ease, border-color 0.18s ease, top 0.15s ease-out;
-  overflow: hidden;
 }
 .ilc-card:hover {
   box-shadow: var(--ilc-shadow-sm);
@@ -1044,6 +1055,18 @@
 
 .ilc-at-item.ilc-at-status-offline .ilc-at-name {
   color: var(--text-muted);
+}
+
+/* ─── @mention in comment body ──────────────────────────────────────────── */
+.ilc-mention {
+  color: var(--interactive-accent);
+  font-weight: 600;
+  cursor: default;
+}
+.ilc-mention-notify {
+  background: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+  border-radius: 3px;
+  padding: 0 3px;
 }
 
 /* ─── Read/unread button ─────────────────────────────────────────────────── */

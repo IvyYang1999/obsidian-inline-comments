@@ -36,6 +36,19 @@ interface DraftState {
   onPost:         (markup: string) => void;
 }
 
+/** Strip common markdown formatting for preview display */
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '$1')   // bold
+    .replace(/__(.+?)__/g, '$1')        // bold alt
+    .replace(/\*(.+?)\*/g, '$1')        // italic
+    .replace(/_(.+?)_/g, '$1')          // italic alt
+    .replace(/~~(.+?)~~/g, '$1')        // strikethrough
+    .replace(/==(.+?)==/g, '$1')        // highlight
+    .replace(/`(.+?)`/g, '$1')          // inline code
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1'); // links → text only
+}
+
 // ─── Panel ───────────────────────────────────────────────────────────────────
 
 export class CommentPanel extends ItemView {
@@ -59,6 +72,8 @@ export class CommentPanel extends ItemView {
   private syncingScroll = false;
   /** Temporarily ignore editor scroll sync (e.g. during jumpToAnnotation) */
   private ignoreEditorScrollUntil = 0;
+  /** Observe card size changes to trigger relayout */
+  private resizeObserver: ResizeObserver | null = null;
 
   constructor(leaf: WorkspaceLeaf, private plugin: InlineCommentsPlugin) {
     super(leaf);
@@ -77,6 +92,11 @@ export class CommentPanel extends ItemView {
     // History button in the view header (top-right clock icon)
     this.addAction('clock', '删除历史', () => {
       new HistoryModal(this.app, this.plugin).open();
+    });
+
+    // Observe card size changes (text reflow, reply box expand/collapse)
+    this.resizeObserver = new ResizeObserver(() => {
+      this.layoutCards();
     });
 
     await this.refresh();
@@ -99,6 +119,8 @@ export class CommentPanel extends ItemView {
   }
 
   async onClose(): Promise<void> {
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
     this.cancelDraft();
     this.panelContainer.empty();
   }
@@ -218,6 +240,14 @@ export class CommentPanel extends ItemView {
       });
     }
 
+    if (this.annotations.length > 0) {
+      const header = this.cardsZone.createEl('div', { cls: 'ilc-panel-header' });
+      header.createEl('span', {
+        cls: 'ilc-panel-count',
+        text: `${this.annotations.length} 条评论`,
+      });
+    }
+
     for (const ann of this.annotations) {
       const card = this.renderCard(this.cardsZone, ann, file);
       this.cardEls.set(ann.id, card);
@@ -281,76 +311,53 @@ export class CommentPanel extends ItemView {
   private layoutCards(): void {
     const items: LayoutItem[] = [];
 
-    // Build position map from last known positions
     const posMap = new Map<string, number>();
     for (const p of this.lastPositions) {
       posMap.set(p.annotationId, p.topInEditor);
     }
 
-    // Determine if we have any position data at all
     const hasPositionData = this.lastPositions.length > 0;
 
-    // Add annotation cards — always include all, estimate position if missing
-    let lastKnownTop = 0;
+    let estimateTop = 0;
     for (const ann of this.annotations) {
       const cardEl = this.cardEls.get(ann.id);
       if (!cardEl) continue;
 
+      const h = cardEl.offsetHeight || 60;
       let idealTop: number;
       if (hasPositionData) {
-        // Use CM6 position if available; estimate from document order if not
-        idealTop = posMap.get(ann.id) ?? lastKnownTop;
+        idealTop = posMap.get(ann.id) ?? estimateTop;
       } else {
-        // No position data: stack sequentially
-        idealTop = lastKnownTop;
+        idealTop = estimateTop;
       }
-      lastKnownTop = idealTop + (cardEl.offsetHeight || 100) + 8;
+      estimateTop = idealTop + h + 8;
 
-      items.push({
-        id: ann.id,
-        idealTop,
-        el: cardEl,
-        height: cardEl.offsetHeight || 100,
-        actualTop: 0,
-      });
+      items.push({ id: ann.id, idealTop, el: cardEl, height: h, actualTop: 0 });
     }
 
-    // Add draft card if present
     if (this.draft && this.draftEl) {
-      const draftIdealTop = this.getDraftIdealTop();
-      items.push({
-        id: '__draft__',
-        idealTop: draftIdealTop,
-        el: this.draftEl,
-        height: this.draftEl.offsetHeight || 200,
-        actualTop: 0,
-      });
+      const h = this.draftEl.offsetHeight || 200;
+      items.push({ id: '__draft__', idealTop: this.getDraftIdealTop(), el: this.draftEl, height: h, actualTop: 0 });
     }
 
     if (items.length === 0) return;
 
-    // Sort by idealTop (preserves document order when positions are correct)
     items.sort((a, b) => a.idealTop - b.idealTop);
 
-    // Greedy collision resolution with max gap cap
+    // No-overlap greedy: each card sits at its anchor or below the previous card, whichever is lower
     const GAP = 8;
-    const MAX_GAP = 40; // don't let cards drift too far apart
     let nextAvailable = 8;
 
     for (const item of items) {
-      // Use idealTop but cap the gap from previous card
-      const capped = Math.min(item.idealTop, nextAvailable + MAX_GAP);
-      item.actualTop = Math.max(capped, nextAvailable);
+      item.actualTop = Math.max(item.idealTop, nextAvailable);
       nextAvailable = item.actualTop + item.height + GAP;
     }
 
-    // Set cardsZone min-height
     const lastItem = items[items.length - 1];
     if (lastItem) {
       this.cardsZone.style.minHeight = `${lastItem.actualTop + lastItem.height + 60}px`;
     }
 
-    // Apply positions
     for (const item of items) {
       item.el.style.top = `${item.actualTop}px`;
     }
@@ -395,9 +402,10 @@ export class CommentPanel extends ItemView {
 
     // ── 1. Preview text + ⋯ button ──
     const previewBar = card.createEl('div', { cls: 'ilc-card-preview' });
+    const draftPreviewText = stripMarkdown(d.highlightText);
     previewBar.createEl('span', {
       cls: 'ilc-card-preview-text',
-      text: d.highlightText.slice(0, 50) + (d.highlightText.length > 50 ? '…' : ''),
+      text: draftPreviewText.slice(0, 50) + (draftPreviewText.length > 50 ? '…' : ''),
     });
     const cardMoreBtn = previewBar.createEl('button', {
       cls: 'ilc-more-btn',
@@ -472,6 +480,8 @@ export class CommentPanel extends ItemView {
     cancelBtn.addEventListener('click', (e) => { e.stopPropagation(); this.cancelDraft(); });
     postBtn.addEventListener('click', (e) => { e.stopPropagation(); this.submitDraft(input.value); });
 
+    this.resizeObserver?.observe(card);
+
     // Schedule layout
     requestAnimationFrame(() => this.layoutCards());
   }
@@ -529,9 +539,10 @@ export class CommentPanel extends ItemView {
 
     // Preview with card-level ⋯ menu
     const preview = card.createEl('div', { cls: 'ilc-card-preview' });
+    const previewText = stripMarkdown(ann.highlightText);
     preview.createEl('span', {
       cls: 'ilc-card-preview-text',
-      text: ann.highlightText.slice(0, 60) + (ann.highlightText.length > 60 ? '…' : ''),
+      text: previewText.slice(0, 60) + (previewText.length > 60 ? '…' : ''),
     });
     const cardMoreBtn = preview.createEl('button', {
       cls: 'ilc-more-btn',
@@ -588,6 +599,8 @@ export class CommentPanel extends ItemView {
 
     attachAtSelector(input, inputRow, this.app);
 
+    this.resizeObserver?.observe(card);
+
     return card;
   }
 
@@ -632,7 +645,9 @@ export class CommentPanel extends ItemView {
     this.tryUpgradeAvatarToImage(avatarEl, comment.author);
 
     header.createEl('span', { cls: 'ilc-entry-author', text: comment.author });
-    header.createEl('span', { cls: 'ilc-entry-emoji',  text: emoji });
+    const emojiLabel = typeConfig?.label ?? builtinMeta?.label ?? comment.type;
+    const emojiEl = header.createEl('span', { cls: 'ilc-entry-emoji', text: emoji });
+    emojiEl.setAttribute('title', emojiLabel);
     header.createEl('span', { cls: 'ilc-entry-date',   text: comment.date });
 
     // ⋯ button (appears on hover)
@@ -640,7 +655,8 @@ export class CommentPanel extends ItemView {
     moreBtn.addEventListener('click', (e) => { e.stopPropagation(); this.showEntryMenu(e, ann, entryIndex, file); });
 
     if (comment.text) {
-      entry.createEl('div', { cls: 'ilc-entry-body', text: comment.text });
+      const body = entry.createEl('div', { cls: 'ilc-entry-body' });
+      this.renderCommentText(body, comment.text);
     }
 
     // @Agent reply button: detect @mention of a registered (has sessionId) agent
@@ -690,6 +706,33 @@ export class CommentPanel extends ItemView {
           await this.refresh();
         });
       }
+    }
+  }
+
+  // ── Rich text rendering for comment body ──────────────────────────────────────
+
+  private renderCommentText(container: HTMLElement, text: string): void {
+    // Match structured @mentions: [@Name](agent:id) or [@Name](agent:id?notify)
+    const mentionRe = /\[@([^\]]+)\]\(agent:[^)]+\)/g;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = mentionRe.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        container.appendText(text.slice(lastIndex, match.index));
+      }
+      const name = match[1];
+      const isNotify = match[0].includes('?notify');
+      const span = container.createEl('span', {
+        cls: `ilc-mention${isNotify ? ' ilc-mention-notify' : ''}`,
+        text: `@${name}`,
+      });
+      span.setAttribute('title', isNotify ? '通知此人' : '仅引用');
+      lastIndex = match.index + match[0].length;
+    }
+
+    if (lastIndex < text.length) {
+      container.appendText(text.slice(lastIndex));
     }
   }
 
