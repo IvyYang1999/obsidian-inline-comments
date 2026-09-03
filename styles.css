@@ -19,9 +19,12 @@
 
   /* Surfaces & lines */
   --ilc-surface:        var(--background-primary);
-  --ilc-surface-sunken: color-mix(in srgb, var(--text-normal) 5%, var(--background-primary));
-  --ilc-hairline:       var(--background-modifier-border);
-  --ilc-hairline-soft:  color-mix(in srgb, var(--background-modifier-border) 45%, transparent);
+  --ilc-surface-sunken: color-mix(in srgb, var(--text-normal) 6%, var(--background-primary));
+  /* Lines are mixed from text × background so they survive themes whose
+     --background-modifier-border is nearly transparent. */
+  --ilc-hairline:        color-mix(in srgb, var(--text-normal) 14%, var(--background-primary));
+  --ilc-hairline-strong: color-mix(in srgb, var(--text-normal) 26%, var(--background-primary));
+  --ilc-hairline-soft:   color-mix(in srgb, var(--text-normal) 9%, var(--background-primary));
 
   /* Shadows — reserved for elevated states only */
   --ilc-shadow-xs: 0 1px 2px rgba(15, 15, 15, 0.06);
@@ -131,11 +134,11 @@
   transition: top 0.18s ease-out, border-color var(--ilc-trans-std), box-shadow var(--ilc-trans-std);
 }
 .ilc-card:hover {
-  border-color: var(--background-modifier-border-hover, var(--background-modifier-border));
+  border-color: var(--ilc-hairline-strong);
   box-shadow: var(--ilc-shadow-sm);
 }
 .ilc-card-active {
-  border-color: var(--background-modifier-border-hover, var(--background-modifier-border));
+  border-color: var(--ilc-hairline-strong);
   box-shadow: var(--ilc-shadow-sm);
   z-index: 1;
 }
@@ -334,7 +337,7 @@
 .ilc-reply-input:focus,
 .ilc-draft-input:focus {
   outline: none;
-  border-color: var(--background-modifier-border-hover, var(--ilc-hairline));
+  border-color: var(--ilc-hairline-strong);
   background: var(--ilc-surface);
   box-shadow: none;
 }
@@ -348,6 +351,9 @@
 }
 .ilc-reply-submit,
 .ilc-draft-post {
+  height: auto !important;
+  min-height: 0 !important;
+  line-height: 1.4;
   font-size: var(--ilc-font-meta);
   font-weight: 600;
   padding: 5px 14px;
@@ -367,6 +373,8 @@
   flex-shrink: 0;
   opacity: 0;
   width: 0;
+  height: 18px !important;
+  min-height: 0 !important;
   overflow: hidden;
   background: none !important;
   border: none !important;
@@ -376,11 +384,12 @@
   color: var(--text-faint);
   font-size: 14px;
   padding: 0;
-  line-height: 1.2;
+  line-height: 18px;
   transition: opacity var(--ilc-trans-std), color var(--ilc-trans-std);
   margin-left: 0;
 }
 .ilc-card-preview .ilc-more-btn { align-self: flex-start; }
+/* The rule follows the text height; the ⋯ button is capped at 18px so it can't stretch the row */
 .ilc-card-preview:hover .ilc-more-btn,
 .ilc-entry-header:hover .ilc-entry-more-btn,
 .ilc-pending-row:hover .ilc-entry-more-btn { opacity: 1; width: auto; padding: 0 2px; margin-left: 6px; }
@@ -391,7 +400,7 @@
 
 /* ─── Draft card ─────────────────────────────────────────────────────────────── */
 .ilc-card-draft {
-  border-color: color-mix(in srgb, var(--ilc-accent) 45%, var(--background-modifier-border));
+  border-color: color-mix(in srgb, var(--ilc-accent) 45%, var(--ilc-hairline));
   box-shadow: var(--ilc-shadow-md);
   cursor: default;
   z-index: 10;
@@ -433,7 +442,8 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 22px;
+  height: 22px !important;
+  min-height: 0 !important;
   padding: 0 9px 0 7px !important;
   border-radius: var(--ilc-radius-pill) !important;
   border: 1px solid var(--ilc-hairline) !important;
@@ -492,6 +502,9 @@
   padding: 4px var(--ilc-gutter) 12px;
 }
 .ilc-draft-cancel {
+  height: auto !important;
+  min-height: 0 !important;
+  line-height: 1.4;
   padding: 5px 10px;
   border-radius: var(--ilc-radius-pill);
   border: none !important;
@@ -745,6 +758,8 @@
 
 /* ─── Agent reply button ─────────────────────────────────────────────────── */
 .ilc-agent-reply-btn {
+  height: auto !important;
+  min-height: 0 !important;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -964,6 +979,9 @@
 
 /* ─── Mark-as-read action ────────────────────────────────────────────────── */
 .ilc-read-btn {
+  height: auto !important;
+  min-height: 0 !important;
+  line-height: 1.4;
   font-size: var(--ilc-font-small);
   font-weight: 500;
   color: var(--interactive-accent) !important;
