@@ -317,15 +317,16 @@
   flex-direction: column;
   gap: 8px;
 }
-.ilc-reply-input,
-.ilc-draft-input {
+.ilc-panel .ilc-reply-input,
+.ilc-panel .ilc-draft-input {
   width: 100%;
   min-height: 56px;
   font-size: var(--ilc-font-body);
   line-height: 1.5;
   border-radius: 8px;
-  border: 1px solid var(--ilc-hairline);
-  background: var(--ilc-surface-sunken);
+  border: 1px solid var(--ilc-hairline) !important;
+  background: var(--ilc-surface-sunken) !important;
+  box-shadow: none !important;
   color: var(--text-normal);
   padding: 8px 10px;
   box-sizing: border-box;
@@ -334,12 +335,12 @@
 }
 .ilc-reply-input { resize: vertical; }
 .ilc-draft-input { resize: none; }
-.ilc-reply-input:focus,
-.ilc-draft-input:focus {
+.ilc-panel .ilc-reply-input:focus,
+.ilc-panel .ilc-draft-input:focus {
   outline: none;
-  border-color: var(--ilc-hairline-strong);
-  background: var(--ilc-surface);
-  box-shadow: none;
+  border-color: var(--ilc-hairline-strong) !important;
+  background: var(--ilc-surface) !important;
+  box-shadow: none !important;
 }
 .ilc-reply-input::placeholder,
 .ilc-draft-input::placeholder { color: var(--text-faint); }
@@ -874,9 +875,9 @@
 .ilc-reply-input-row {
   position: relative;
 }
-
 .ilc-card.ilc-at-active {
   overflow: visible;
+  z-index: 20; /* above draft card (10) so the dropdown is never covered */
 }
 
 .ilc-at-dropdown {
@@ -884,86 +885,158 @@
   left: 0;
   right: 0;
   z-index: 100;
-  max-height: 220px;
-  overflow-y: auto;
-  background: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--ilc-radius-btn);
+  display: flex;
+  flex-direction: column;
+  max-height: 280px;
+  background: var(--ilc-surface);
+  border: 1px solid var(--ilc-hairline);
+  border-radius: var(--ilc-radius-card);
   box-shadow: var(--ilc-shadow-md);
+  overflow: hidden;
+  font-size: var(--ilc-font-meta);
 }
 
-.ilc-at-notify-row {
+/* head: notify toggle + key hint */
+.ilc-at-head {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 10px;
-  border-bottom: 1px solid var(--background-modifier-border);
-  font-size: 11px;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--ilc-hairline-soft);
   color: var(--text-muted);
-  user-select: none;
+  font-size: var(--ilc-font-small);
 }
-
-.ilc-at-notify-row input[type="checkbox"] {
+.ilc-at-notify {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-normal);
+}
+.ilc-at-notify input[type="checkbox"] {
+  margin: 0;
   cursor: pointer;
   accent-color: var(--interactive-accent);
 }
+.ilc-at-hint {
+  color: var(--text-faint);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
 
+/* list */
+.ilc-at-list {
+  overflow-y: auto;
+  padding: 4px;
+}
 .ilc-at-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
+  gap: 9px;
+  padding: 6px 8px;
+  border-radius: 7px;
   cursor: pointer;
-  transition: background 0.1s ease;
+  min-width: 0;
 }
-
-.ilc-at-item:hover {
+.ilc-at-item.is-active {
   background: var(--background-modifier-hover);
 }
-
-.ilc-at-name {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--interactive-accent);
-}
-
-.ilc-at-role {
+.ilc-at-avatar {
+  position: relative;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: #fff;
   font-size: 11px;
-  color: var(--text-muted);
-  margin-left: auto;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
-
-/* ─── @-selector status badges ──────────────────────────────────────────── */
-.ilc-at-badge {
-  display: inline-block;
+.ilc-at-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  border: 2px solid var(--ilc-surface);
+  background: var(--text-faint);
+}
+.ilc-at-dot-online { background: #34d058; }
+.ilc-at-dot-idle   { background: #f0b429; }
+.ilc-at-dot-offline{ background: var(--text-faint); }
+
+.ilc-at-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.ilc-at-name {
+  font-size: var(--ilc-font-body);
+  font-weight: 600;
+  color: var(--text-normal);
+  white-space: nowrap;
   flex-shrink: 0;
 }
-
-.ilc-at-badge-online {
-  background: #34d058;
-}
-
-.ilc-at-badge-idle {
-  background: #f0b429;
-}
-
-.ilc-at-badge-offline {
-  width: auto;
-  height: auto;
-  border-radius: 3px;
-  background: var(--background-modifier-border);
+.ilc-at-role {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--ilc-font-small);
   color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ilc-at-source {
+  flex-shrink: 0;
   font-size: 10px;
-  padding: 1px 4px;
-  line-height: 1.2;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: var(--ilc-radius-pill);
+  color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+  white-space: nowrap;
+}
+.ilc-at-source-muted {
+  color: var(--text-faint);
+  background: var(--ilc-surface-sunken);
+}
+.ilc-at-item.ilc-at-status-offline .ilc-at-name { color: var(--text-muted); font-weight: 500; }
+.ilc-at-item.ilc-at-status-offline .ilc-at-avatar { opacity: 0.55; }
+
+.ilc-at-empty {
+  padding: 14px 10px;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: var(--ilc-font-small);
 }
 
-.ilc-at-item.ilc-at-status-offline .ilc-at-name {
-  color: var(--text-muted);
+/* foot */
+.ilc-at-foot {
+  border-top: 1px solid var(--ilc-hairline-soft);
+  padding: 4px;
 }
+.ilc-at-manage {
+  width: 100%;
+  height: auto !important;
+  min-height: 0 !important;
+  padding: 6px 8px;
+  text-align: left;
+  font-size: var(--ilc-font-small);
+  color: var(--text-muted);
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.ilc-at-manage:hover { background: var(--background-modifier-hover) !important; color: var(--text-normal); }
 
 /* ─── @mention in comment body ──────────────────────────────────────────── */
 .ilc-mention {
