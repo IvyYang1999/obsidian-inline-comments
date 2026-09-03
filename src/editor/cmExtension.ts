@@ -7,7 +7,7 @@ import {
   type ViewUpdate,
   WidgetType,
 } from '@codemirror/view';
-import { RangeSetBuilder } from '@codemirror/state';
+import { RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
 import { parseAnnotations } from '../parser.ts';
 import type { Annotation } from '../types.ts';
 
@@ -237,11 +237,39 @@ class CommentViewPlugin implements PluginValue {
   }
 }
 
+// ─── Draft range: temporary highlight while a comment is being written ───────
+
+export interface DraftRange { from: number; to: number }
+
+/** Dispatch with `{ from, to }` to show the pending selection, `null` to clear */
+export const setDraftRange = StateEffect.define<DraftRange | null>();
+
+const draftMark = Decoration.mark({ class: 'ilc-draft-highlight' });
+
+export const draftRangeField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(deco, tr) {
+    deco = deco.map(tr.changes);
+    for (const e of tr.effects) {
+      if (e.is(setDraftRange)) {
+        if (!e.value || e.value.to <= e.value.from) return Decoration.none;
+        const to = Math.min(e.value.to, tr.newDoc.length);
+        return Decoration.set([draftMark.range(Math.max(0, e.value.from), to)]);
+      }
+    }
+    return deco;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
 export function buildCommentExtension(host: ICommentHost) {
-  return ViewPlugin.define(
-    (view) => new CommentViewPlugin(view, host),
-    { decorations: (v) => v.decorations },
-  );
+  return [
+    ViewPlugin.define(
+      (view) => new CommentViewPlugin(view, host),
+      { decorations: (v) => v.decorations },
+    ),
+    draftRangeField,
+  ];
 }

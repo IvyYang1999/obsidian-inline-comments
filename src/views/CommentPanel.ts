@@ -10,7 +10,7 @@ import {
   deleteCommentEntry,
 } from '../parser.ts';
 import { HistoryModal } from './HistoryModal.ts';
-import type { AnnotationPosition } from '../editor/cmExtension.ts';
+import { setDraftRange, type AnnotationPosition } from '../editor/cmExtension.ts';
 import { parseAtMention } from '../agentReply.ts';
 import type InlineCommentsPlugin from '../../main.ts';
 import { attachAtSelector } from '../atSelector.ts';
@@ -154,6 +154,7 @@ export class CommentPanel extends ItemView {
     };
 
     this.renderDraftCardEl();
+    this.setEditorDraftRange({ from, to: from + highlightText.length });
     // Scroll panel to show the draft card
     setTimeout(() => {
       this.draftInputEl?.focus();
@@ -204,7 +205,13 @@ export class CommentPanel extends ItemView {
 
   /** Receive annotation positions from CM6 */
   syncPositions(positions: AnnotationPosition[]): void {
-    this.lastPositions = positions;
+    // The extension measures inside the editor scroller; re-base onto cardsZone
+    let delta = 0;
+    try {
+      const cm = (this.findMarkdownView() as any)?.editor?.cm as EditorView | undefined;
+      if (cm) delta = this.originDelta(cm.scrollDOM.getBoundingClientRect());
+    } catch { /* ignore */ }
+    this.lastPositions = positions.map((p) => ({ ...p, topInEditor: p.topInEditor + delta }));
     this.layoutCards();
   }
 
@@ -342,6 +349,7 @@ export class CommentPanel extends ItemView {
 
       const scrollerRect = cmEditor.scrollDOM.getBoundingClientRect();
       const positions: AnnotationPosition[] = [];
+      const delta = this.originDelta(scrollerRect);
       // document-top → scroller coordinate base (for the out-of-viewport fallback)
       const docBase = cmEditor.documentTop - scrollerRect.top + cmEditor.scrollDOM.scrollTop;
 
@@ -356,6 +364,7 @@ export class CommentPanel extends ItemView {
           // Outside the rendered viewport — CM6 height-map estimate (accurate to the line block)
           topInEditor = cmEditor.lineBlockAt(hlStart).top + docBase;
         }
+        topInEditor += delta;
 
         positions.push({
           annotationId: ann.id,
@@ -469,7 +478,7 @@ export class CommentPanel extends ItemView {
           const coords = cmEditor.coordsAtPos(this.draft.from);
           if (coords) {
             const scrollerRect = cmEditor.scrollDOM.getBoundingClientRect();
-            return coords.top - scrollerRect.top + cmEditor.scrollDOM.scrollTop;
+            return coords.top - scrollerRect.top + cmEditor.scrollDOM.scrollTop + this.originDelta(scrollerRect);
           }
         }
         // Fallback: estimate from line number
@@ -605,7 +614,26 @@ export class CommentPanel extends ItemView {
     setTimeout(() => this.refresh(), 150);
   }
 
+  /** Show / clear the temporary "being commented" highlight in the editor */
+  private setEditorDraftRange(range: { from: number; to: number } | null): void {
+    try {
+      const cm = (this.findMarkdownView() as any)?.editor?.cm as EditorView | undefined;
+      cm?.dispatch({ effects: setDraftRange.of(range) });
+    } catch { /* editor gone */ }
+  }
+
+  /**
+   * Cards are positioned inside cardsZone, anchors are measured inside the
+   * editor's scroller. The two containers rarely start at the same screen Y
+   * (panel header, view headers) — this is the correction to add to anchors.
+   */
+  private originDelta(scrollerRect: DOMRect): number {
+    const zoneTop = this.cardsZone.getBoundingClientRect().top + this.panelContainer.scrollTop;
+    return scrollerRect.top - zoneTop;
+  }
+
   private cancelDraft(): void {
+    this.setEditorDraftRange(null);
     if (this.clickAwayHandler) {
       document.removeEventListener('mousedown', this.clickAwayHandler);
       this.clickAwayHandler = null;

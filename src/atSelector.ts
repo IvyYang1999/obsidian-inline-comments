@@ -294,7 +294,24 @@ export function attachAtSelector(
     card?.classList.add('ilc-at-active');
 
     dropdown = wrapper.createEl('div', { cls: 'ilc-at-dropdown' });
-    dropdown.style.top = `${textarea.offsetTop + textarea.offsetHeight + 4}px`;
+    // Place below the textarea if there is room inside the panel viewport,
+    // otherwise above; cap the height so head + list + foot always fit.
+    {
+      const panel = wrapper.closest('.ilc-panel') as HTMLElement | null;
+      const panelRect = panel?.getBoundingClientRect();
+      const taRect = textarea.getBoundingClientRect();
+      const spaceBelow = panelRect ? panelRect.bottom - taRect.bottom - 12 : Infinity;
+      const spaceAbove = panelRect ? taRect.top - panelRect.top - 12 : 0;
+      const WANT = 280;
+      if (spaceBelow < 220 && spaceAbove > spaceBelow) {
+        dropdown.style.bottom = `${wrapper.clientHeight - textarea.offsetTop + 4}px`;
+        dropdown.style.maxHeight = `${Math.max(160, Math.min(WANT, spaceAbove))}px`;
+        dropdown.addClass('ilc-at-dropdown-up');
+      } else {
+        dropdown.style.top = `${textarea.offsetTop + textarea.offsetHeight + 4}px`;
+        dropdown.style.maxHeight = `${Math.max(160, Math.min(WANT, spaceBelow))}px`;
+      }
+    }
 
     // Head: notify toggle (default on) + key hint
     const head = dropdown.createEl('div', { cls: 'ilc-at-head' });

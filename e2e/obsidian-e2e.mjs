@@ -80,40 +80,48 @@ async function run() {
     });
     check('日期贴右', dateGap <= 4, `gap=${dateGap.toFixed(1)}px`);
 
-    // Cards follow anchors: never above the anchor; a card with room above sits on it
+    // Cards follow anchors (screen space): never above the highlighted text
     const anchorCheck = await page.evaluate(() => {
       const view = app.workspace.getLeavesOfType('markdown')[0].view;
       const cm = view.editor.cm;
-      const scroller = cm.scrollDOM.getBoundingClientRect();
       return [...document.querySelectorAll('.ilc-card')].map((card) => {
         const from = Number(card.dataset.annotationId.replace('ann-', ''));
         const c = cm.coordsAtPos(from + 3);
-        const anchor = c ? c.top - scroller.top + cm.scrollDOM.scrollTop : null;
-        return { top: parseFloat(card.style.top), anchor };
+        return { top: card.getBoundingClientRect().top, anchor: c ? c.top : null };
       });
     });
     const neverAbove = anchorCheck.every((c) => c.anchor === null || c.top >= c.anchor - 4);
     check('未选中时卡片不高于锚点', neverAbove, anchorCheck.map((c) => `${Math.round(c.top)}/${c.anchor === null ? '?' : Math.round(c.anchor)}`).join(' '));
 
-    // Focused card must sit exactly on its anchor (cards above yield upward)
+    // Screen-space alignment: card top must meet the highlighted text's top (not just scroller coords)
+    const screenAlign = await page.evaluate(() => {
+      const view = app.workspace.getLeavesOfType('markdown')[0].view;
+      const cm = view.editor.cm;
+      const card = document.querySelector('.ilc-card');
+      const from = Number(card.dataset.annotationId.replace('ann-', ''));
+      const c = cm.coordsAtPos(from + 3);
+      return { card: card.getBoundingClientRect().top, text: c?.top ?? null };
+    });
+    check('首张卡片与划线文字在屏幕上对齐（±6px）', screenAlign.text !== null && Math.abs(screenAlign.card - screenAlign.text) <= 6, `card=${Math.round(screenAlign.card)} text=${screenAlign.text === null ? '?' : Math.round(screenAlign.text)}`);
+
+    // Focused card must sit exactly on its anchor (cards above yield upward) — screen space
     await page.locator('.ilc-card').last().click();
     await sleep(400);
     const focusAlign = await page.evaluate(() => {
       const view = app.workspace.getLeavesOfType('markdown')[0].view;
       const cm = view.editor.cm;
-      const scroller = cm.scrollDOM.getBoundingClientRect();
       const card = document.querySelector('.ilc-card-active');
       const from = Number(card.dataset.annotationId.replace('ann-', ''));
       const c = cm.coordsAtPos(from + 3);
-      const anchor = c ? c.top - scroller.top + cm.scrollDOM.scrollTop : null;
       const cards = [...document.querySelectorAll('.ilc-card')].sort((a, b) => parseFloat(a.style.top) - parseFloat(b.style.top));
       const rects = cards.map((e) => e.getBoundingClientRect());
       let overlap = false;
       for (let i = 1; i < rects.length; i++) if (rects[i].top < rects[i - 1].bottom - 1) overlap = true;
-      // minimal top the focused card can reach: everything above stacked from 8px
-      let feasible = 8;
-      for (const c of cards) { if (c === card) break; feasible += c.offsetHeight + 8; }
-      return { top: parseFloat(card.style.top), anchor, overlap, feasible };
+      // minimal screen top the focused card can reach: everything above stacked from 8px
+      const zoneTop = document.querySelector('.ilc-cards-zone').getBoundingClientRect().top;
+      let feasible = zoneTop + 8;
+      for (const e of cards) { if (e === card) break; feasible += e.offsetHeight + 8; }
+      return { top: card.getBoundingClientRect().top, anchor: c ? c.top : null, overlap, feasible };
     });
     const expected = Math.max(focusAlign.anchor ?? 0, focusAlign.feasible);
     check('选中的卡片贴着锚点（上方卡片让位）', focusAlign.anchor !== null && Math.abs(focusAlign.top - expected) < 4, `top=${Math.round(focusAlign.top)} anchor=${Math.round(focusAlign.anchor ?? -1)} feasible=${Math.round(focusAlign.feasible)}`);
@@ -192,6 +200,13 @@ async function run() {
     await page.keyboard.type('@');
     await page.waitForSelector('.ilc-at-dropdown', { timeout: 5000 });
     await sleep(200);
+    const ddGeom = await page.evaluate(() => {
+      const d = document.querySelector('.ilc-at-dropdown').getBoundingClientRect();
+      const p = document.querySelector('.ilc-panel').getBoundingClientRect();
+      const foot = document.querySelector('.ilc-at-manage').getBoundingClientRect();
+      return { inside: d.top >= p.top - 1 && d.bottom <= p.bottom + 1, footInside: foot.bottom <= p.bottom + 1 && foot.top >= p.top, d: [Math.round(d.top), Math.round(d.bottom)], p: [Math.round(p.top), Math.round(p.bottom)] };
+    });
+    check('@ 下拉完整落在面板可视区内（管理成员可见）', ddGeom.inside && ddGeom.footInside, JSON.stringify(ddGeom));
     const dd = await page.evaluate(() => {
       const d = document.querySelector('.ilc-at-dropdown');
       const cs = getComputedStyle(d);
@@ -302,8 +317,22 @@ async function run() {
         await page.waitForSelector('.ilc-card-draft', { timeout: 5000 });
         await sleep(300);
         check('草稿卡片出现', (await page.locator('.ilc-card-draft').count()) === 1);
-        await shot(page, '05-draft-card', '.ilc-card-draft');
+        const draftState = await page.evaluate(() => {
+          const view = app.workspace.getLeavesOfType('markdown')[0].view;
+          const cm = view.editor.cm;
+          const hl = document.querySelector('.cm-editor .ilc-draft-highlight');
+          const card = document.querySelector('.ilc-card-draft');
+          const from = view.editor.posToOffset({ line: 2, ch: 0 });
+          const c = cm.coordsAtPos(from);
+          return { hlText: hl?.textContent ?? null, cardTop: card.getBoundingClientRect().top, textTop: c?.top ?? null };
+        });
+        check('草稿期间划线文字有临时高亮', draftState.hlText === '这是一段没有评论', `hl=${draftState.hlText}`);
+        check('草稿卡片与划线文字对齐（±6px）', draftState.textTop !== null && Math.abs(draftState.cardTop - draftState.textTop) <= 6, `card=${Math.round(draftState.cardTop)} text=${draftState.textTop === null ? '?' : Math.round(draftState.textTop)}`);
+        await shot(page, '05-draft-card', '.workspace-leaf-content[data-type="ilc-comments-panel"]');
         await page.keyboard.press('Escape');
+        await sleep(150);
+        const hlGone = (await page.locator('.cm-editor .ilc-draft-highlight').count()) === 0;
+        check('取消草稿后临时高亮消失', hlGone);
       }
     } catch (e) {
       await shot(page, '04-context-menu-CRASH').catch(() => {});
