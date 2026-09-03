@@ -65,9 +65,14 @@ export function setupVault() {
 
 /** Launch Obsidian with remote debugging and attach Playwright */
 export async function launch(userdata) {
+  const home = path.join(WORK, 'home');
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  // Pre-existing foreign hook: the installer must keep it intact
+  fs.writeFileSync(path.join(home, '.claude', 'settings.json'), JSON.stringify({ theme: 'dark', hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo other-tool' }] }] } }, null, 2));
   const proc = spawn(OBSIDIAN_BIN, [`--user-data-dir=${userdata}`, `--remote-debugging-port=${PORT}`], {
     stdio: 'ignore',
     detached: false,
+    env: { ...process.env, ILC_HOME: home },
   });
   const deadline = Date.now() + 40000;
   while (Date.now() < deadline) {
@@ -115,8 +120,13 @@ export async function openSampleWithPanel(page) {
 export async function shot(page, name, selector) {
   fs.mkdirSync(OUT, { recursive: true });
   const file = path.join(OUT, `${name}.png`);
-  if (selector) await page.locator(selector).first().screenshot({ path: file });
-  else await page.screenshot({ path: file });
+  try {
+    if (selector) await page.locator(selector).first().screenshot({ path: file, timeout: 8000, animations: 'disabled' });
+    else await page.screenshot({ path: file, timeout: 8000 });
+  } catch (e) {
+    // a screenshot is evidence, not a gate — never let it abort the run
+    console.warn(`  (screenshot ${name} skipped: ${String(e.message).split('\n')[0]})`);
+  }
   return file;
 }
 

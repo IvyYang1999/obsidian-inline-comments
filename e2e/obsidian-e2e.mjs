@@ -19,7 +19,9 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { OUT, PLUGIN_ID, sleep, setupVault, launch, waitForPlugin, shot } from './lib.mjs';
+import { OUT, PLUGIN_ID, WORK, sleep, setupVault, launch, waitForPlugin, shot } from './lib.mjs';
+import { spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 
 const results = [];
 function check(name, ok, detail = '') {
@@ -152,7 +154,7 @@ async function run() {
     check('yyt 的 @费宝（question）投递 1 封', delivery.feibao === 1, `feibao=${delivery.feibao}`);
     check('yyt 在回复里 @审计员 也投递', delivery.shenji === 1, `shenji=${delivery.shenji}`);
     check('Agent 的 reply 里 @费宝 不投（防自触发）', delivery.feibao === 1 && delivery.processed === 2, `processed=${delivery.processed}`);
-    check('信的 frontmatter 契约', /^---\nfrom: comment-scanner\nto: 44444444-0000-1111\nurgency: 普通\nwake: true\nstatus: 未读\ncreated: /.test(delivery.letter), delivery.letter.split('\n').slice(0, 7).join(' | '));
+    check('信的 frontmatter 契约', /^---\nfrom: comment-scanner\nto: 44444444-0000-1111\nto_name: 费宝\nurgency: 普通\nwake: true\nstatus: 未读\ncreated: /.test(delivery.letter), delivery.letter.split('\n').slice(0, 7).join(' | '));
     await page.evaluate(() => app.plugins.plugins['obsidian-inline-comments'].mentionDelivery.sweep(false));
     await sleep(300);
     const again = await page.evaluate(async () => (await app.vault.adapter.list('Agent协作空间/信箱/44444444')).files.length);
@@ -182,6 +184,55 @@ async function run() {
       app.workspace.setActiveLeaf(app.workspace.getLeavesOfType('markdown')[0], { focus: true });
     });
     await sleep(600);
+
+    // ── Mailbox hook: install into (isolated) ~/.claude/settings.json, then drive the script
+    const hook = await page.evaluate(async () => {
+      const p = app.plugins.plugins['obsidian-inline-comments'];
+      const res = await p.installHooks();
+      const st = await p.hookStatus();
+      return { ...res, ...st };
+    });
+    const settingsJson = JSON.parse(fs.readFileSync(hook.settingsPath, 'utf8'));
+    const ours = (ev) => (settingsJson.hooks?.[ev] ?? []).filter((e) => e.hooks?.some((h) => h.command.includes('ilc-mailbox-hook.sh'))).length;
+    check('hook 写入隔离 HOME 的 settings.json（三事件各一条）', ours('UserPromptSubmit') === 1 && ours('Stop') === 1 && ours('SessionStart') === 1, JSON.stringify(Object.keys(settingsJson.hooks ?? {})));
+    check('保留原有其它 hook 与设置', settingsJson.theme === 'dark' && (settingsJson.hooks.Stop ?? []).some((e) => e.hooks?.[0]?.command === 'echo other-tool'));
+    check('安装前备份了原文件', !!hook.backup && fs.existsSync(hook.backup), hook.backup ?? '');
+    await page.evaluate(async () => app.plugins.plugins['obsidian-inline-comments'].installHooks());
+    const againSettings = JSON.parse(fs.readFileSync(hook.settingsPath, 'utf8'));
+    check('重复安装幂等（不重复追加）', (againSettings.hooks.Stop ?? []).filter((e) => e.hooks?.some((h) => h.command.includes('ilc-mailbox-hook.sh'))).length === 1);
+    check('hook 脚本已写出且可执行', hook.scriptExists && (fs.statSync(hook.scriptPath).mode & 0o111) !== 0, hook.scriptPath);
+
+    // Drive the script like Claude Code would: 费宝 (44444444…) has one unread letter from the sweep above
+    const mailboxRoot = path.join(WORK, 'vault', 'Agent协作空间', '信箱');
+    const runHook = (event, extra = '') => spawnSync('bash', [hook.scriptPath, '--root', mailboxRoot], {
+      input: `{"session_id":"44444444-0000-1111","hook_event_name":"${event}","cwd":"/tmp"${extra}}`, encoding: 'utf8',
+    });
+    const r1 = runHook('UserPromptSubmit');
+    check('UserPromptSubmit：信 + 回复指南注入 stdout', r1.status === 0 && r1.stdout.includes('留言内容') && r1.stdout.includes('reply:') && r1.stdout.includes('费宝'), `status=${r1.status} len=${r1.stdout.length}`);
+    const letterFile = fs.readdirSync(path.join(mailboxRoot, '44444444')).find((f) => f.endsWith('.md'));
+    const marked = fs.readFileSync(path.join(mailboxRoot, '44444444', letterFile), 'utf8').includes('status: 已读（hook代标）');
+    check('递交后信标为 已读（hook代标）', marked);
+    const r2 = runHook('UserPromptSubmit');
+    check('再次触发不重复注入', r2.status === 0 && r2.stdout.trim() === '', `len=${r2.stdout.length}`);
+    // Stop with a fresh unread letter → exit 2 + stderr (Claude keeps working)
+    fs.writeFileSync(path.join(mailboxRoot, '44444444', '2026-09-03-0000-来自comment-scanner-普通-文档留言-test.md'), '---\nfrom: comment-scanner\nto: 44444444-0000-1111\nto_name: 费宝\nurgency: 普通\nwake: true\nstatus: 未读\ncreated: 2026-09-03 00:00\n---\n- 文档：sample.md\n- 留言内容：Stop 测试\n');
+    const r3 = runHook('Stop');
+    check('Stop：有未读时 exit 2 并把信写到 stderr', r3.status === 2 && r3.stderr.includes('Stop 测试'), `status=${r3.status}`);
+    const r4 = runHook('Stop', ',"stop_hook_active":true');
+    check('stop_hook_active 时不再拦截（防循环）', r4.status === 0);
+
+    // Optional: prove Claude Code itself receives the letter (needs claude CLI + login)
+    if (process.env.ILC_E2E_LIVE) {
+      const sid = crypto.randomUUID();
+      const box = path.join(mailboxRoot, sid.slice(0, 8));
+      fs.mkdirSync(box, { recursive: true });
+      fs.writeFileSync(path.join(box, '2026-09-03-0001-来自comment-scanner-普通-文档留言-live.md'), `---\nfrom: comment-scanner\nto: ${sid}\nto_name: 测试员\nurgency: 普通\nwake: true\nstatus: 未读\ncreated: 2026-09-03 00:01\n---\n- 文档：sample.md\n- 划线原文：今天入职\n- 留言内容：暗号是 菠萝蜜 [@测试员](agent:${sid.slice(0, 8)}?notify)\n- 留言者：yyt｜2026-09-03\n`);
+      const settings = JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: hook.command }] }] } });
+      // A clean login environment: drop any harness-scoped tokens / nesting markers from this process
+      const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(ANTHROPIC_|CLAUDE_|CLAUDECODE)/.test(k)));
+      const live = spawnSync('claude', ['-p', '你刚才收到了几封留言？留言里的暗号是什么？只用一句话回答。', '--session-id', sid, '--settings', settings, '--output-format', 'text'], { encoding: 'utf8', timeout: 150000, cwd: WORK, env: { ...cleanEnv, ILC_HOME: path.join(WORK, 'home') } });
+      check('【真机】claude -p 通过 hook 收到留言并复述暗号', (live.stdout ?? '').includes('菠萝蜜'), `status=${live.status} out=${(live.stdout ?? '').slice(0, 120).replace(/\n/g, ' ')} err=${(live.stderr ?? '').slice(0, 120)}`);
+    }
 
     // ── Badge click → focus card, editor stays untouched (no raw markup reveal)
     const badgeCountBefore = await page.locator('.cm-editor .ilc-badge').count();
@@ -269,8 +320,8 @@ async function run() {
     const firstId = await page.evaluate(() => document.querySelector('.ilc-members-session .ilc-members-sub')?.textContent?.match(/[0-9a-f]{8}$/)?.[0] ?? '');
     await page.locator('.ilc-members-search').fill(firstId);
     await sleep(150);
-    const filteredSessions = await page.locator('.ilc-members-session').count();
-    check('会话列表可按短 id 搜索', firstId.length === 8 && filteredSessions === 1, `q=${firstId} rows=${filteredSessions}`);
+    const filteredRows = await page.evaluate((q) => [...document.querySelectorAll('.ilc-members-session')].map((r) => (r.textContent ?? '').toLowerCase().includes(q)), firstId);
+    check('会话列表可按短 id 搜索', firstId.length === 8 && filteredRows.length >= 1 && filteredRows.length < (modal.sessionRows ?? 0) && filteredRows.every(Boolean), `q=${firstId} rows=${filteredRows.length}/${modal.sessionRows}`);
     await page.locator('.ilc-members-search').fill('');
     await sleep(150);
     await shot(page, '07-members-modal', '.ilc-members-modal-shell');

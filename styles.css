@@ -1145,3 +1145,14 @@ body {
   border: 1px solid var(--ilc-hairline) !important; background: var(--ilc-surface-sunken) !important; box-shadow: none !important;
 }
 .ilc-members-search:focus { border-color: var(--ilc-hairline-strong) !important; background: var(--ilc-surface) !important; outline: none; }
+
+.ilc-members-delivery { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ilc-members-ok { color: var(--text-success, #3fb950); font-weight: 600; }
+.ilc-members-warn { color: var(--text-warning, #d4a24c); font-weight: 600; }
+.ilc-members-warn-hint { flex-basis: 100%; color: var(--text-faint); }
+.ilc-members-resume {
+  height: 26px !important; min-height: 0 !important; padding: 0 10px !important; font-size: var(--ilc-font-small);
+  border-radius: var(--ilc-radius-pill) !important; border: 1px solid var(--ilc-hairline) !important;
+  background: transparent !important; color: var(--text-muted) !important; box-shadow: none !important; cursor: pointer;
+}
+.ilc-members-resume:hover { color: var(--text-normal) !important; border-color: var(--ilc-hairline-strong) !important; }

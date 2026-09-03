@@ -26,6 +26,7 @@ export class MentionDelivery {
     private app: App,
     private settings: () => DeliverySettings,
     private notice: (msg: string) => void = () => {},
+    private onDelivered: (c: Candidate, relPath: string, letterPath: string) => void = () => {},
   ) {}
 
   private get mailboxRoot(): string {
@@ -137,13 +138,14 @@ export class MentionDelivery {
           if (this.processed.has(key)) continue;
 
           const now = new Date();
-          const letter = buildLetter(candidate!.sessionId, relPath, ann.highlightText, c.text, c.author, c.date, now);
+          const letter = buildLetter(candidate!.sessionId, relPath, ann.highlightText, c.text, c.author, c.date, now, candidate!.name);
           const written = await this.writeLetter(candidate!, relPath, letter, key, now);
           this.processed.add(key);
           dirty = true;
           if (written) {
             delivered++;
             if (!quiet) this.notice(`已投信给 @${m.name}`);
+            try { this.onDelivered(candidate!, relPath, written); } catch { /* notification is best-effort */ }
           }
         }
       }

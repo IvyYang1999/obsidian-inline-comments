@@ -17,6 +17,8 @@ import { AgentSuggest } from './src/AgentSuggest.ts';
 import { UnreadTracker } from './src/unreadTracker.ts';
 import { DEFAULT_MAILBOX_ROOT } from './src/mentionDelivery.ts';
 import { MentionDelivery } from './src/mentionDeliveryService.ts';
+import { getHookStatus, installClaudeHooks, uninstallClaudeHooks, type HookStatus } from './src/hookInstaller.ts';
+import { HOOK_SCRIPT_NAME } from './src/hookScript.ts';
 import { renderAgentRegistrySection } from './src/settings/agentRegistrySection.ts';
 import {
   GLOBAL_THREAD_END_MARKER,
@@ -183,6 +185,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       this.app,
       () => ({ enabled: this.settings.enableMentionDelivery, mailboxRoot: this.settings.mailboxRoot }),
       (msg) => new Notice(msg),
+      (c, relPath) => this.notifyDesktop(`评论区有新留言给 ${c.name}`, `${relPath.split('/').pop()} · 它下一次说话/收尾时会看到`),
     );
     this.mentionDelivery.init();
 
@@ -193,6 +196,68 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
         this.mentionDelivery.schedule(file as TFile);
       }),
     );
+  }
+
+  // ── Mailbox hook (Claude Code) ────────────────────────────────────────────────
+
+  /** Absolute vault path (desktop adapters only) */
+  vaultBasePath(): string | null {
+    const base = (this.app.vault.adapter as any)?.basePath;
+    return typeof base === 'string' ? base : null;
+  }
+
+  mailboxRootAbs(): string | null {
+    const base = this.vaultBasePath();
+    return base ? join(base, this.settings.mailboxRoot) : null;
+  }
+
+  hookScriptPath(): string | null {
+    const base = this.vaultBasePath();
+    const dir = this.manifest.dir ?? '.obsidian/plugins/obsidian-inline-comments';
+    return base ? join(base, dir, 'hooks', HOOK_SCRIPT_NAME) : null;
+  }
+
+  async hookStatus(): Promise<HookStatus | null> {
+    const script = this.hookScriptPath();
+    const root = this.mailboxRootAbs();
+    if (!script || !root) return null;
+    try { return await getHookStatus(script, root); } catch { return null; }
+  }
+
+  /** Write the hook script and register it in ~/.claude/settings.json (idempotent, backed up) */
+  async installHooks(): Promise<{ backup?: string; settingsPath: string } | null> {
+    const script = this.hookScriptPath();
+    const root = this.mailboxRootAbs();
+    if (!script || !root) { new Notice('仅桌面端支持安装唤醒 hook'); return null; }
+    const res = await installClaudeHooks(script, root);
+    new Notice(`唤醒 hook 已安装到 ${res.settingsPath}${res.backup ? '（原文件已备份）' : ''}`);
+    return res;
+  }
+
+  async uninstallHooks(): Promise<void> {
+    await uninstallClaudeHooks();
+    new Notice('唤醒 hook 已移除');
+  }
+
+  /** macOS notification (best-effort, desktop only) */
+  notifyDesktop(title: string, body: string): void {
+    if (process.platform !== 'darwin') return;
+    const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    try {
+      execFile('osascript', ['-e', `display notification "${esc(body)}" with title "${esc(title)}"`], () => {});
+    } catch { /* ignore */ }
+  }
+
+  /** Open a terminal that resumes the given session in its own directory (macOS) */
+  resumeInTerminal(sessionId: string, cwd?: string): void {
+    if (process.platform !== 'darwin') { new Notice('仅 macOS 支持在终端恢复会话'); return; }
+    const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+    const cmd = `${cwd ? `cd ${q(cwd)} && ` : ''}claude --resume ${q(sessionId)}`;
+    const script = `tell application "Terminal"
+  activate
+  do script "${cmd.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"
+end tell`;
+    try { execFile('osascript', ['-e', script], () => {}); } catch { /* ignore */ }
   }
 
   /** Open the draft card for the current editor selection */
@@ -914,6 +979,29 @@ class ILCSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }),
       );
+    const hookSetting = new Setting(containerEl)
+      .setName('唤醒 hook（Claude Code）')
+      .setDesc('装进 ~/.claude/settings.json 的三条 hook：会话说话前 / 收尾时 / 恢复时自动把新留言递给它并附回复方法。只添加自己的条目，安装前自动备份原文件。');
+    void (async () => {
+      const st = await this.plugin.hookStatus();
+      if (!st) { hookSetting.setDesc('仅桌面端可用。'); return; }
+      hookSetting.setDesc(`${st.installed ? (st.stale ? '已安装（路径已变，建议重装）' : '已安装') : '未安装'} · ${st.settingsPath}`);
+      hookSetting.addButton((b) =>
+        b.setButtonText(st.installed ? '重新安装' : '安装').setCta().onClick(async () => {
+          await this.plugin.installHooks();
+          this.display();
+        }),
+      );
+      if (st.installed) {
+        hookSetting.addButton((b) =>
+          b.setButtonText('移除').onClick(async () => {
+            await this.plugin.uninstallHooks();
+            this.display();
+          }),
+        );
+      }
+    })();
+
     new Setting(containerEl)
       .setName('信箱根目录')
       .setDesc(`vault 内相对路径，信放在 <根目录>/<会话短 id>/ 下。默认 ${DEFAULT_MAILBOX_ROOT}。`)

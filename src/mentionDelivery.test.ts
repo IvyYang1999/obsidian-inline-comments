@@ -56,8 +56,8 @@ describe('mentionKey', () => {
 describe('buildLetter', () => {
   it('writes the mailbox frontmatter contract', () => {
     const now = new Date(2026, 8, 3, 9, 5);
-    const letter = buildLetter(cand.sessionId, '项目/x.md', '今天入职', '欢迎 [@费宝](agent:44444444?notify)', 'yyt', '2026-07-13', now);
-    expect(letter.startsWith('---\nfrom: comment-scanner\nto: 44444444-0000-1111-2222-333333333333\nurgency: 普通\nwake: true\nstatus: 未读\ncreated: 2026-09-03 09:05\n---\n')).toBe(true);
+    const letter = buildLetter(cand.sessionId, '项目/x.md', '今天入职', '欢迎 [@费宝](agent:44444444?notify)', 'yyt', '2026-07-13', now, '费宝');
+    expect(letter.startsWith('---\nfrom: comment-scanner\nto: 44444444-0000-1111-2222-333333333333\nto_name: 费宝\nurgency: 普通\nwake: true\nstatus: 未读\ncreated: 2026-09-03 09:05\n---\n')).toBe(true);
     expect(letter).toContain('- 文档：项目/x.md');
     expect(letter).toContain('- 划线原文：今天入职');
     expect(letter).toContain('- 留言者：yyt｜2026-07-13');

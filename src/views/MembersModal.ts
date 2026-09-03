@@ -37,18 +37,8 @@ export class MembersModal extends Modal {
       cls: 'ilc-members-intro',
       text: '在评论里输入 @ 可以点名一个 AI 会话。勾选「通知对方」，插件会把这条评论写成一封信放进它的信箱，它看到后会把回复写回这里。',
     });
-    const status = contentEl.createEl('p', { cls: 'ilc-members-hint ilc-members-delivery' });
-    void (async () => {
-      const plugin = (this.app as any).plugins?.plugins?.['obsidian-inline-comments'];
-      const root: string = plugin?.settings?.mailboxRoot || DEFAULT_MAILBOX_ROOT;
-      const enabled: boolean = plugin?.settings?.enableMentionDelivery ?? true;
-      const exists = await this.app.vault.adapter.exists(root);
-      status.setText(
-        enabled
-          ? `投递：已开启 · 信箱根目录 ${root}${exists ? '' : '（还不存在，首次投信时自动创建）'}`
-          : '投递：已关闭（设置里可开启）',
-      );
-    })();
+    const status = contentEl.createEl('div', { cls: 'ilc-members-hint ilc-members-delivery' });
+    void this.renderDeliveryStatus(status);
 
     // ── Members
     const s1 = contentEl.createEl('section', { cls: 'ilc-members-section' });
@@ -86,6 +76,43 @@ export class MembersModal extends Modal {
 
   onClose(): void {
     this.contentEl.empty();
+  }
+
+  private get plugin(): any {
+    return (this.app as any).plugins?.plugins?.['obsidian-inline-comments'];
+  }
+
+  /** "投递 … · 唤醒 hook …" line with an install button when needed */
+  private async renderDeliveryStatus(el: HTMLElement): Promise<void> {
+    el.empty();
+    const plugin = this.plugin;
+    const root: string = plugin?.settings?.mailboxRoot || DEFAULT_MAILBOX_ROOT;
+    const enabled: boolean = plugin?.settings?.enableMentionDelivery ?? true;
+    const exists = await this.app.vault.adapter.exists(root);
+    el.createEl('span', {
+      text: enabled
+        ? `投递：已开启 · 信箱 ${root}${exists ? '' : '（首次投信时自动创建）'}`
+        : '投递：已关闭（设置里可开启）',
+    });
+    const st = await plugin?.hookStatus?.();
+    if (!st) return;
+    el.appendText(' · 唤醒 hook：');
+    if (st.installed && !st.stale) {
+      el.createEl('span', { cls: 'ilc-members-ok', text: '已安装' });
+      el.setAttribute('title', `会话说话前 / 收尾时 / 恢复时自动收到留言 · ${st.settingsPath}`);
+      return;
+    }
+    el.createEl('span', { cls: 'ilc-members-warn', text: st.installed ? '需要重装' : '未安装' });
+    const btn = el.createEl('button', { cls: 'ilc-members-join', text: st.installed ? '重装' : '安装' });
+    btn.setAttribute('title', `写入 ${st.settingsPath}（只加自己的条目，先备份）`);
+    btn.addEventListener('click', async () => {
+      await plugin.installHooks();
+      await this.renderDeliveryStatus(el);
+    });
+    el.createEl('div', {
+      cls: 'ilc-members-warn-hint',
+      text: '没有 hook 时信照样会投到信箱，但会话不会自动看到，得它自己去读。',
+    });
   }
 
   // ── Members list ─────────────────────────────────────────────────────────────
@@ -194,6 +221,11 @@ export class MembersModal extends Modal {
     const action = row.createEl('div', { cls: 'ilc-members-action' });
     if (joinedAs) {
       action.createEl('span', { cls: 'ilc-members-joined', text: `已加入 · ${joinedAs}` });
+      if (!s.running && s.harness === 'claude') {
+        const resume = action.createEl('button', { cls: 'ilc-members-resume', text: '在终端恢复' });
+        resume.setAttribute('title', '打开终端运行 claude --resume，恢复的是这个会话本身；它一启动就会收到未读留言');
+        resume.addEventListener('click', () => this.plugin?.resumeInTerminal?.(s.sessionId, s.cwd));
+      }
       return;
     }
     const input = action.createEl('input', {
@@ -208,6 +240,11 @@ export class MembersModal extends Modal {
       if (!res.ok) { new Notice(res.error); input.focus(); return; }
       new Notice(`「${input.value.trim()}」已加入，评论里输入 @ 即可点名`);
       await Promise.all([this.renderMembers(), this.renderSessions()]);
+      // First member ever → offer the hook right away so the loop closes
+      const st = await this.plugin?.hookStatus?.();
+      if (st && !st.installed && s.harness === 'claude') {
+        new Notice('提示：装上「唤醒 hook」后，这个会话下一次说话时就会自动看到你的留言（弹窗顶部可安装）', 8000);
+      }
     };
     btn.addEventListener('click', () => void submit());
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); void submit(); } });

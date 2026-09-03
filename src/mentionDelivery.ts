@@ -60,10 +60,11 @@ export function buildLetter(
   author: string,
   commentDate: string,
   now: Date,
+  toName = '',
 ): string {
   return `---
 from: comment-scanner
-to: ${sessionId}
+to: ${sessionId}${toName ? `\nto_name: ${toName}` : ''}
 urgency: 普通
 wake: true
 status: 未读
