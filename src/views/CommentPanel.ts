@@ -583,7 +583,10 @@ export class CommentPanel extends ItemView {
 
     input.addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); this.submitDraft(input.value); }
-      if (e.key === 'Escape') { e.preventDefault(); this.cancelDraft(); }
+    });
+    // Esc cancels from anywhere inside the draft card (type chips included)
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); this.cancelDraft(); }
     });
     cancelBtn.addEventListener('click', (e) => { e.stopPropagation(); this.cancelDraft(); });
     postBtn.addEventListener('click', (e) => { e.stopPropagation(); this.submitDraft(input.value); });

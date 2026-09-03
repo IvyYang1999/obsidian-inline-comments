@@ -341,6 +341,7 @@ async function run() {
         await sleep(100);
         const hlAfter = await page.evaluate(() => document.querySelector('.cm-editor .ilc-draft-highlight')?.className ?? '');
         check('切换类型后临时高亮跟着换色', /ilc-hl-question/.test(hlAfter), hlAfter);
+        // Esc must work with focus still on the chip (not only in the textarea)
         check('草稿卡片与划线文字对齐（±6px）', draftState.textTop !== null && Math.abs(draftState.cardTop - draftState.textTop) <= 6, `card=${Math.round(draftState.cardTop)} text=${draftState.textTop === null ? '?' : Math.round(draftState.textTop)}`);
         await shot(page, '05-draft-card', '.workspace-leaf-content[data-type="ilc-comments-panel"]');
         await page.keyboard.press('Escape');

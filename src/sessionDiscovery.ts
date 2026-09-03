@@ -83,7 +83,7 @@ function parseHead(text: string): { cwd?: string; title?: string } {
     try { cwd = JSON.parse(`"${m[1]}"`); } catch { cwd = m[1]; }
   }
   // Candidate texts in order of appearance: text parts and plain string contents
-  const re = /"(?:text|content)":"((?:[^"\\]|\\.){2,400})"/g;
+  const re = /"(?:text|content)":"((?:[^"\\]|\\.){2,6000})"/g;
   let title: string | undefined;
   for (const mm of text.matchAll(re)) {
     let raw: string;
