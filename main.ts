@@ -2,6 +2,7 @@ import { execFile } from 'child_process';
 import { promises as fsp } from 'fs';
 import { join } from 'path';
 import { MarkdownView, Plugin, PluginSettingTab, App, Setting, Notice } from 'obsidian';
+import type { EditorView } from '@codemirror/view';
 import type { TFile, Editor } from 'obsidian';
 import { buildAgentReplyPrompt, cleanReplyText } from './src/agentReply.ts';
 import { buildCommentExtension, type ICommentHost, type AnnotationPosition } from './src/editor/cmExtension.ts';
@@ -228,18 +229,20 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
   }
 
   /** Called by CM6 extension when editor cursor enters an annotation */
-  onEditorCursorInAnnotation(annotationId: string): void {
-    this.getPanel()?.highlightCard(annotationId);
+  onEditorCursorInAnnotation(annotationId: string, view?: EditorView): void {
+    const panel = this.getPanel();
+    if (!panel || !panel.isCurrentEditor(view)) return;
+    panel.highlightCard(annotationId);
   }
 
   /** Called by CM6 extension when annotation positions change */
-  onPositionsUpdated(positions: AnnotationPosition[]): void {
-    this.getPanel()?.syncPositions(positions);
+  onPositionsUpdated(positions: AnnotationPosition[], view?: EditorView): void {
+    this.getPanel()?.syncPositions(positions, view);
   }
 
   /** Called by CM6 extension when the editor scrolls */
-  onEditorScroll(scrollTop: number): void {
-    this.getPanel()?.syncEditorScroll(scrollTop);
+  onEditorScroll(scrollTop: number, view?: EditorView): void {
+    this.getPanel()?.syncEditorScroll(scrollTop, view);
   }
 
   /** Get the active CommentPanel instance (if any) */

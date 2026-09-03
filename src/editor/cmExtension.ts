@@ -24,9 +24,9 @@ export interface AnnotationPosition {
 
 /** Callback interface to avoid circular import with main.ts */
 export interface ICommentHost {
-  onEditorCursorInAnnotation(annotationId: string): void;
-  onPositionsUpdated(positions: AnnotationPosition[]): void;
-  onEditorScroll(scrollTop: number): void;
+  onEditorCursorInAnnotation(annotationId: string, view?: EditorView): void;
+  onPositionsUpdated(positions: AnnotationPosition[], view?: EditorView): void;
+  onEditorScroll(scrollTop: number, view?: EditorView): void;
   /** Badge after a highlight was clicked → reveal + focus the matching card */
   onBadgeClick?(annotationId: string): void;
 }
@@ -106,7 +106,7 @@ class CommentViewPlugin implements PluginValue {
       this.scrollRAF = requestAnimationFrame(() => {
         this.scrollRAF = 0;
         try {
-          this.host.onEditorScroll(this.view.scrollDOM.scrollTop);
+          this.host.onEditorScroll(this.view.scrollDOM.scrollTop, this.view);
         } catch { /* panel may not be ready */ }
       });
     };
@@ -137,7 +137,7 @@ class CommentViewPlugin implements PluginValue {
       const anns = parseAnnotations(content);
       const active = anns.find((a) => pos >= a.from && pos <= a.to);
       if (active) {
-        this.host.onEditorCursorInAnnotation(active.id);
+        this.host.onEditorCursorInAnnotation(active.id, update.view);
       }
     }
   }
@@ -172,7 +172,7 @@ class CommentViewPlugin implements PluginValue {
       positions.push({ annotationId: ann.id, topInEditor, from: ann.from });
     }
 
-    this.host.onPositionsUpdated(positions);
+    this.host.onPositionsUpdated(positions, view);
   }
 
   // ── Decorations ────────────────────────────────────────────────────────────

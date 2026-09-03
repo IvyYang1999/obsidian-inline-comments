@@ -84,6 +84,8 @@ export class CommentPanel extends ItemView {
   private ignoreEditorScrollUntil = 0;
   /** Observe card size changes to trigger relayout */
   private resizeObserver: ResizeObserver | null = null;
+  /** Editor instance the panel is currently aligned with (same note may be open in several panes) */
+  private alignedCm: EditorView | undefined;
 
   constructor(leaf: WorkspaceLeaf, private plugin: InlineCommentsPlugin) {
     super(leaf);
@@ -115,11 +117,14 @@ export class CommentPanel extends ItemView {
 
     this.registerEvent(
       this.app.workspace.on('active-leaf-change', () => {
-        // Only refresh if the active file actually changed
         const newFile = this.app.workspace.getActiveFile();
         if (newFile?.path !== this.currentFilePath) {
           this.refresh();
+          return;
         }
+        // Same note, but possibly a different pane: re-align with that editor
+        const cm = this.currentCm();
+        if (cm && cm !== this.alignedCm) this.alignWith(cm);
       }),
     );
     this.registerEvent(
@@ -204,11 +209,12 @@ export class CommentPanel extends ItemView {
   }
 
   /** Receive annotation positions from CM6 */
-  syncPositions(positions: AnnotationPosition[]): void {
+  syncPositions(positions: AnnotationPosition[], view?: EditorView): void {
+    if (!this.isCurrentEditor(view)) return; // a background tab of the same note
     // The extension measures inside the editor scroller; re-base onto cardsZone
     let delta = 0;
     try {
-      const cm = (this.findMarkdownView() as any)?.editor?.cm as EditorView | undefined;
+      const cm = view ?? this.currentCm();
       if (cm) delta = this.originDelta(cm.scrollDOM.getBoundingClientRect());
     } catch { /* ignore */ }
     this.lastPositions = positions.map((p) => ({ ...p, topInEditor: p.topInEditor + delta }));
@@ -216,7 +222,8 @@ export class CommentPanel extends ItemView {
   }
 
   /** Sync panel scroll with editor scroll */
-  syncEditorScroll(scrollTop: number): void {
+  syncEditorScroll(scrollTop: number, view?: EditorView): void {
+    if (!this.isCurrentEditor(view)) return;
     // Skip if we're in a user-initiated scroll (e.g. after clicking a card)
     if (Date.now() < this.ignoreEditorScrollUntil) return;
     this.syncingScroll = true;
@@ -275,6 +282,7 @@ export class CommentPanel extends ItemView {
     }
 
     // Compute positions directly from the editor (don't wait for async CM6 callback)
+    this.alignedCm = this.currentCm();
     this.computePositionsFromEditor();
     this.layoutCards();
     // The editor may still be re-measuring (sidebar just opened, fonts loading):
@@ -943,19 +951,47 @@ export class CommentPanel extends ItemView {
 
   // ── Navigation ────────────────────────────────────────────────────────────────
 
-  /** Find the MarkdownView for the current file (not getActiveViewOfType which may return null when panel is focused) */
+  /**
+   * The MarkdownView the user is actually looking at for the current file.
+   * The same note is often open in several tabs; a background tab's editor has
+   * no meaningful geometry, so prefer active → most-recent → visible → any.
+   */
   private findMarkdownView(): MarkdownView | null {
     const file = this.app.workspace.getActiveFile();
     if (!file) return null;
-    // Search all leaves for a MarkdownView showing this file
-    const leaves = this.app.workspace.getLeavesOfType('markdown');
-    for (const leaf of leaves) {
-      const view = leaf.view;
-      if (view instanceof MarkdownView && view.file?.path === file.path) {
-        return view;
-      }
-    }
-    return null;
+    const matches = (v: unknown): v is MarkdownView => v instanceof MarkdownView && v.file?.path === file.path;
+
+    const active = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (active && matches(active)) return active;
+    const recent = this.app.workspace.getMostRecentLeaf()?.view;
+    if (matches(recent)) return recent;
+
+    const candidates = this.app.workspace.getLeavesOfType('markdown').map((l) => l.view).filter(matches);
+    const visible = candidates.find((v) => v.containerEl.offsetParent !== null && v.containerEl.getBoundingClientRect().width > 0);
+    return visible ?? candidates[0] ?? null;
+  }
+
+  /** Current CM6 EditorView for the file, or undefined */
+  private currentCm(): EditorView | undefined {
+    return (this.findMarkdownView() as any)?.editor?.cm as EditorView | undefined;
+  }
+
+  /** Adopt an editor instance: mirror its scroll position and re-measure every anchor */
+  private alignWith(cm: EditorView): void {
+    this.alignedCm = cm;
+    this.syncingScroll = true;
+    this.panelContainer.scrollTop = cm.scrollDOM.scrollTop;
+    requestAnimationFrame(() => { this.syncingScroll = false; });
+    this.computePositionsFromEditor();
+    this.layoutCards();
+    setTimeout(() => this.layoutCards(), 200);
+  }
+
+  /** Whether an editor instance is the one this panel is aligned with */
+  isCurrentEditor(view?: EditorView): boolean {
+    if (!view) return true;
+    const cur = this.currentCm();
+    return !cur || cur === view;
   }
 
   private jumpToAnnotation(ann: Annotation): void {

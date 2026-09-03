@@ -158,6 +158,31 @@ async function run() {
     const again = await page.evaluate(async () => (await app.vault.adapter.list('Agent协作空间/信箱/44444444')).files.length);
     check('重扫不重复投信', again === 1, `letters=${again}`);
 
+    // ── Same note open in two panes: cards must follow the pane the user is in
+    await page.evaluate(async () => {
+      const file = app.vault.getAbstractFileByPath('sample.md');
+      const leaf = app.workspace.getLeaf('split', 'vertical');
+      await leaf.openFile(file);
+      app.workspace.setActiveLeaf(leaf, { focus: true });
+      leaf.view.editor.cm.scrollDOM.scrollTop = 0;
+    });
+    await sleep(900);
+    const twoPanes = await page.evaluate(() => {
+      const active = app.workspace.activeLeaf.view;
+      const cm = active.editor.cm;
+      const card = document.querySelector('.ilc-card');
+      const from = Number(card.dataset.annotationId.replace('ann-', ''));
+      const c = cm.coordsAtPos(from + 3);
+      return { panes: app.workspace.getLeavesOfType('markdown').length, card: card.getBoundingClientRect().top, text: c?.top ?? null };
+    });
+    check('同一笔记开两个窗格时卡片跟随当前窗格', twoPanes.panes === 2 && twoPanes.text !== null && Math.abs(twoPanes.card - twoPanes.text) <= 6, JSON.stringify(twoPanes));
+    await page.evaluate(() => {
+      const leaves = app.workspace.getLeavesOfType('markdown');
+      leaves[leaves.length - 1].detach();
+      app.workspace.setActiveLeaf(app.workspace.getLeavesOfType('markdown')[0], { focus: true });
+    });
+    await sleep(600);
+
     // ── Badge click → focus card, editor stays untouched (no raw markup reveal)
     const badgeCountBefore = await page.locator('.cm-editor .ilc-badge').count();
     const thirdId = await page.locator('.ilc-card').nth(2).getAttribute('data-annotation-id');
