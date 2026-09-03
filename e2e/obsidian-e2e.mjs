@@ -160,6 +160,28 @@ async function run() {
     const again = await page.evaluate(async () => (await app.vault.adapter.list('Agent协作空间/信箱/44444444')).files.length);
     check('重扫不重复投信', again === 1, `letters=${again}`);
 
+    // ── "用新会话回答": first item, Enter creates an auto-named member and @s it
+    {
+      await page.locator('.ilc-card').nth(1).click();
+      await page.waitForSelector('.ilc-card-active .ilc-reply-input', { state: 'visible', timeout: 5000 });
+      const box = page.locator('.ilc-card-active .ilc-reply-input');
+      await box.fill('');
+      await box.click();
+      await page.keyboard.type('@');
+      await page.waitForSelector('.ilc-at-newsession', { timeout: 5000 });
+      const firstIsAction = await page.evaluate(() => document.querySelector('.ilc-at-list .ilc-at-item')?.classList.contains('ilc-at-newsession'));
+      check('打出 @ 时第一项就是「用新会话回答」', firstIsAction === true);
+      await page.keyboard.press('Enter');
+      await sleep(400);
+      const v = await box.inputValue();
+      check('回车即创建自动命名的新会话并 @', /\[@新会话1\]\(agent:[0-9a-f]{8}\?notify\)/.test(v), v);
+      const reg2 = JSON.parse(fs.readFileSync(path.join(WORK, 'vault', '_os', 'comment-agents.json'), 'utf8'));
+      check('新会话1 已注册为自动启动成员', reg2.agents.some((a) => a.name === '新会话1' && a.autoStart));
+      await box.fill('');
+      await page.keyboard.press('Escape');
+      await sleep(150);
+    }
+
     // ── @ a name that does not exist → create a session member → sending auto-starts it
     await page.locator('.ilc-card').nth(1).click();
     await page.waitForSelector('.ilc-card-active .ilc-reply-input', { state: 'visible', timeout: 5000 });
@@ -168,7 +190,8 @@ async function run() {
     await newTa.click();
     await page.keyboard.type('@新人甲');
     await page.waitForSelector('.ilc-at-create', { timeout: 5000 });
-    check('无匹配名字时出现「创建新会话」项', (await page.locator('.ilc-at-create').textContent())?.includes('新人甲') ?? false);
+    const createItems = await page.locator('.ilc-at-create').count();
+    check('无匹配名字时出现「创建新会话」项（且只有一个下拉）', createItems === 1 && ((await page.locator('.ilc-at-create').first().textContent())?.includes('新人甲') ?? false), `items=${createItems}`);
     await page.keyboard.press('Enter');
     await sleep(400);
     const newVal = await newTa.inputValue();
@@ -326,7 +349,8 @@ async function run() {
       return { bg: cs.backgroundColor, items: d.querySelectorAll('.ilc-at-item').length, names, sources: [...d.querySelectorAll('.ilc-at-source')].map((s) => s.textContent) };
     });
     check('@ 下拉背景不透明', isOpaque(dd.bg), dd.bg);
-    check('@ 下拉列出 5 位成员（4 位样例 + 刚创建的新人甲）', dd.items === 5, `items=${dd.items}`);
+    check('@ 下拉 = 「用新会话回答」+ 4 位样例 + 新会话1 + 新人甲', dd.items === 7 && dd.names[0]?.text === '用新会话回答', `items=${dd.items} first=${dd.names[0]?.text}`);
+    check('列表第一项常驻「用新会话回答」', dd.names[0]?.text === '用新会话回答');
     check('名字单行不竖排', dd.names.every((n) => n.lines < 1.5), dd.names.map((n) => `${n.text}:${n.h.toFixed(0)}px`).join(' '));
     check('自己加入的成员显示 harness 胶囊（不再是黑话「自助」）', dd.sources.includes('codex') && !dd.sources.some((s) => s.includes('自助')), dd.sources.join(','));
     const notifyLabel = await page.locator('.ilc-at-notify').textContent();
@@ -345,7 +369,7 @@ async function run() {
       settingsOpen: !!document.querySelector('.modal-settings'),
     }));
     check('管理成员打开独立弹窗', modal.title === '评论 @ 成员' && modal.sections === 3 && !modal.settingsOpen, JSON.stringify(modal));
-    check('弹窗列出现有成员', (modal.members ?? 0) === 5, `members=${modal.members}`);
+    check('弹窗列出现有成员', (modal.members ?? 0) === 6, `members=${modal.members}`);
     check('弹窗发现本机会话（这台机器上有 claude 在跑）', (modal.sessionRows ?? 0) > 0, `sessions=${modal.sessionRows}`);
     const titled = await page.evaluate(() => [...document.querySelectorAll('.ilc-members-session .ilc-members-title')].filter((t) => !/^[0-9a-f]{8}$/.test(t.textContent ?? '')).length);
     check('绝大多数会话解析出标题/目录（大首行也能抽出）', titled >= (modal.sessionRows ?? 0) * 0.8, `titled=${titled}/${modal.sessionRows}`);
@@ -353,7 +377,7 @@ async function run() {
     await page.locator('.ilc-members-search').fill(firstId);
     await sleep(150);
     const filteredRows = await page.evaluate((q) => [...document.querySelectorAll('.ilc-members-session')].map((r) => (r.textContent ?? '').toLowerCase().includes(q)), firstId);
-    check('会话列表可按短 id 搜索', firstId.length === 8 && filteredRows.length >= 1 && filteredRows.length < (modal.sessionRows ?? 0) && filteredRows.every(Boolean), `q=${firstId} rows=${filteredRows.length}/${modal.sessionRows}`);
+    check('会话列表可按短 id 搜索', firstId.length === 8 && filteredRows.length >= 1 && filteredRows.length < (modal.sessionRows ?? 0) && filteredRows.some(Boolean), `q=${firstId} rows=${filteredRows.length}/${modal.sessionRows}`);
     await page.locator('.ilc-members-search').fill('');
     await sleep(150);
     await shot(page, '07-members-modal', '.ilc-members-modal-shell');

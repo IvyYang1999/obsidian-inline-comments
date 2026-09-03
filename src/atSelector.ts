@@ -2,7 +2,7 @@ import type { App } from 'obsidian';
 import { REGISTRY_PATH, readRegistry } from './registry.ts';
 import { MembersModal } from './views/MembersModal.ts';
 import { NewSessionModal, createSessionMember, defaultSessionCwd } from './views/NewSessionModal.ts';
-import { validateName } from './registry.ts';
+import { validateName, nextAutoSessionName } from './registry.ts';
 
 export { REGISTRY_PATH };
 
@@ -141,6 +141,16 @@ function avatarColor(name: string): string {
   return `hsl(${h % 360} 42% 52%)`;
 }
 
+/** Pseudo-entry shown first in the list: pick it to answer with a brand-new session */
+const NEW_SESSION_ACTION: RosterEntry = {
+  name: '用新会话回答',
+  shortId: '',
+  role: '自动起名并启动一个新的 Claude Code 会话来回复',
+  status: '在线',
+  source: 'registry',
+  isAction: true,
+};
+
 /** Strip a leading role prefix like "@审计员" so the role column reads as a job title, not a mention */
 function cleanRole(role: string): string {
   return role.replace(/^@/, '').trim();
@@ -166,6 +176,8 @@ export function attachAtSelector(
   let activeIndex = 0;
   /** typed name with no match → offer to create a session with it */
   let createCandidate: string | null = null;
+  /** monotonically increasing id of the latest roster load (guards concurrent loads) */
+  let loadSeq = 0;
   let outsideClickHandler: ((ev: MouseEvent) => void) | null = null;
 
   const dismiss = () => {
@@ -186,6 +198,7 @@ export function attachAtSelector(
   };
 
   const insertMention = (entry: RosterEntry, atPos = activeAtPos, notifyOn = notifyCb?.checked ?? true) => {
+    if (entry.isAction) { void createAndMention(nextAutoSessionName(allEntries.map((e) => e.name))); return; }
     if (atPos < 0) return;
     const notify = notifyOn ? '?notify' : '';
     const mention = `[@${entry.name}](agent:${entry.shortId}${notify}) `;
@@ -209,9 +222,11 @@ export function attachAtSelector(
     listEl.empty();
 
     const q = query.trim().toLowerCase();
-    visible = q
+    const matches = q
       ? allEntries.filter((e) => e.name.toLowerCase().includes(q) || cleanRole(e.role).toLowerCase().includes(q))
       : allEntries;
+    // "用新会话回答" leads the list whenever nothing specific is typed (or the label itself matches)
+    visible = !q || NEW_SESSION_ACTION.name.includes(query.trim()) ? [NEW_SESSION_ACTION, ...matches] : matches;
     activeIndex = Math.min(activeIndex, Math.max(0, visible.length - 1));
 
     createCandidate = q && !validateName(query.trim()) ? query.trim() : null;
@@ -235,19 +250,23 @@ export function attachAtSelector(
 
     visible.forEach((entry, i) => {
       const item = listEl!.createEl('div', {
-        cls: `ilc-at-item ilc-at-status-${STATUS_CLS[entry.status]}${i === activeIndex ? ' is-active' : ''}`,
+        cls: `ilc-at-item ilc-at-status-${STATUS_CLS[entry.status]}${i === activeIndex ? ' is-active' : ''}${entry.isAction ? ' ilc-at-newsession' : ''}`,
       });
 
-      const avatar = item.createEl('span', { cls: 'ilc-at-avatar', text: entry.name.charAt(0) });
-      avatar.style.background = avatarColor(entry.name);
-      avatar.createEl('span', { cls: `ilc-at-dot ilc-at-dot-${STATUS_CLS[entry.status]}` });
+      const avatar = item.createEl('span', { cls: `ilc-at-avatar${entry.isAction ? ' ilc-at-avatar-new' : ''}`, text: entry.isAction ? '＋' : entry.name.charAt(0) });
+      if (!entry.isAction) {
+        avatar.style.background = avatarColor(entry.name);
+        avatar.createEl('span', { cls: `ilc-at-dot ilc-at-dot-${STATUS_CLS[entry.status]}` });
+      }
 
       const main = item.createEl('span', { cls: 'ilc-at-main' });
       main.createEl('span', { cls: 'ilc-at-name', text: entry.name });
       const role = cleanRole(entry.role);
       if (role) main.createEl('span', { cls: 'ilc-at-role', text: role });
 
-      if (entry.source === 'registry') {
+      if (entry.isAction) {
+        // no source pill
+      } else if (entry.source === 'registry') {
         const pill = item.createEl('span', { cls: 'ilc-at-source', text: entry.harness ?? '会话' });
         pill.setAttribute('title', `${entry.harness ?? ''} 会话 ${entry.shortId}，自己加入的成员`);
       } else if (entry.status === '离线') {
@@ -319,8 +338,13 @@ export function attachAtSelector(
 
     dismiss();
     activeAtPos = atPos;
+    const loadToken = ++loadSeq;
 
-    allEntries = await loadRoster(app);
+    const entries = await loadRoster(app);
+    // Superseded (user moved on / another load finished first)? Just refresh the query.
+    if (activeAtPos !== atPos || loadToken !== loadSeq) { if (dropdown) renderList(currentQuery()); return; }
+    if (dropdown) { renderList(currentQuery()); return; }
+    allEntries = entries;
 
     const card = wrapper.closest('.ilc-card');
     card?.classList.add('ilc-at-active');

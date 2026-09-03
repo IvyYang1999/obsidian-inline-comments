@@ -41,6 +41,16 @@ export async function writeRegistry(app: App, data: RegistryFile): Promise<void>
   await app.vault.adapter.write(REGISTRY_PATH, JSON.stringify(data, null, 2));
 }
 
+/** 新会话1, 新会话2, … — first name not already taken */
+export function nextAutoSessionName(taken: Iterable<string>): string {
+  const set = new Set([...taken]);
+  for (let i = 1; i < 1000; i++) {
+    const n = `新会话${i}`;
+    if (!set.has(n)) return n;
+  }
+  return `新会话${Date.now() % 100000}`;
+}
+
 /** 2–12 chars, no whitespace or slashes */
 export function validateName(name: string): string | null {
   const n = name.trim();
