@@ -239,15 +239,15 @@ async function run() {
     check('管理成员打开独立弹窗', modal.title === '评论 @ 成员' && modal.sections === 3 && !modal.settingsOpen, JSON.stringify(modal));
     check('弹窗列出现有成员', (modal.members ?? 0) === 4, `members=${modal.members}`);
     check('弹窗发现本机会话（这台机器上有 claude 在跑）', (modal.sessionRows ?? 0) > 0, `sessions=${modal.sessionRows}`);
+    const titled = await page.evaluate(() => [...document.querySelectorAll('.ilc-members-session .ilc-members-title')].filter((t) => !/^[0-9a-f]{8}$/.test(t.textContent ?? '')).length);
+    check('绝大多数会话解析出标题/目录（大首行也能抽出）', titled >= (modal.sessionRows ?? 0) * 0.8, `titled=${titled}/${modal.sessionRows}`);
     const firstId = await page.evaluate(() => document.querySelector('.ilc-members-session .ilc-members-sub')?.textContent?.match(/[0-9a-f]{8}$/)?.[0] ?? '');
     await page.locator('.ilc-members-search').fill(firstId);
     await sleep(150);
     const filteredSessions = await page.locator('.ilc-members-session').count();
     check('会话列表可按短 id 搜索', firstId.length === 8 && filteredSessions === 1, `q=${firstId} rows=${filteredSessions}`);
-    const titled = await page.evaluate(() => [...document.querySelectorAll('.ilc-members-session .ilc-members-title')].filter((t) => !/^[0-9a-f]{8}$/.test(t.textContent ?? '')).length);
     await page.locator('.ilc-members-search').fill('');
     await sleep(150);
-    check('至少有会话解析出标题（大首行也能抽出 cwd/文字）', titled >= 1, `titled=${titled}`);
     await shot(page, '07-members-modal', '.ilc-members-modal-shell');
     await page.keyboard.press('Escape');
     await sleep(200);

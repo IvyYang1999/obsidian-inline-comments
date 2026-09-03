@@ -65,7 +65,7 @@ function cleanTitle(s: string | undefined): string | undefined {
   const t = s.replace(/\s+/g, ' ').replace(/^<[^>]+>\s*/g, '').trim();
   if (!t) return undefined;
   // compaction / resume / harness boilerplate says nothing about the session
-  if (/^This session is being continued|^<system-reminder>|^Caveat:|^<local-command|^<command-|^\[Image|^MemoraX|^Base directory|^You are|^# |^\{/i.test(t)) return undefined;
+  if (/^This session is being continued|^<system-reminder>|^Caveat:|^<local-command|^<command-|^\[Image|^MemoraX|^Base directory|^You are|^# |^\{|^Filesystem sandboxing|^<environment_context>|^<user_instructions>|^<permissions/i.test(t)) return undefined;
   if (/^[a-z0-9_-]{6,}$/i.test(t)) return undefined; // ids / slugs
   return t.length > 48 ? `${t.slice(0, 48)}…` : t;
 }
