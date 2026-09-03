@@ -48,7 +48,7 @@ body {
   --ilc-radius-avatar: 50%;
   --ilc-radius-mark:   2px;
   --ilc-avatar: 24px;
-  --ilc-gutter: 12px;                               /* card horizontal padding */
+  --ilc-gutter: 10px;                               /* card horizontal padding */
   --ilc-indent: calc(var(--ilc-avatar) + 8px);      /* body offset under avatar */
 
   /* Transitions */
@@ -94,8 +94,11 @@ body {
 .ilc-badge:hover { opacity: 1; }
 
 /* ─── Panel ──────────────────────────────────────────────────────────────────── */
+/* Obsidian pads every .view-content by 12px; in a 300px sidebar that is 8% of
+   the width per side. Reclaim it — the cards carry their own inset. */
+.workspace-leaf-content .view-content.ilc-panel,
 .ilc-panel {
-  padding: 0 0 24px;
+  padding: 0 0 24px !important;
   overflow-y: auto;
   height: 100%;
   box-sizing: border-box;
@@ -106,7 +109,7 @@ body {
   display: flex;
   align-items: baseline;
   gap: 6px;
-  padding: 10px 14px 4px;
+  padding: 10px 12px 4px;
   font-size: var(--ilc-font-meta);
   color: var(--text-muted);
 }
@@ -128,8 +131,8 @@ body {
 .ilc-card {
   --ilc-accent: var(--text-muted);
   position: absolute;
-  left: 10px;
-  right: 10px;
+  left: 8px;
+  right: 8px;
   background: var(--ilc-surface);
   background: rgb(from var(--background-primary) r g b); /* strip theme alpha: cards must be opaque */
   border: 1px solid var(--ilc-hairline);

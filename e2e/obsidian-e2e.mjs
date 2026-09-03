@@ -17,129 +17,15 @@
  *         ILC_CDP_PORT   default 9444
  *         ILC_KEEP=1     keep Obsidian running after the run
  */
-import { chromium } from 'playwright-core';
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const OUT = path.join(ROOT, 'e2e', 'out');
-const WORK = process.env.ILC_E2E_DIR || path.join(os.tmpdir(), 'ilc-e2e');
-const REAL_VAULT = process.env.ILC_REAL_VAULT || path.join(os.homedir(), 'Vaults', 'main');
-const PORT = Number(process.env.ILC_CDP_PORT || 9444);
-const OBSIDIAN_BIN = '/Applications/Obsidian.app/Contents/MacOS/Obsidian';
-const PLUGIN_ID = 'obsidian-inline-comments';
+import { OUT, PLUGIN_ID, sleep, setupVault, launch, waitForPlugin, shot } from './lib.mjs';
 
 const results = [];
 function check(name, ok, detail = '') {
   results.push({ name, ok, detail });
   console.log(`${ok ? '  ✓' : '  ✗'} ${name}${detail ? `  — ${detail}` : ''}`);
 }
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-// ─── 1. Build the isolated vault + user-data-dir ─────────────────────────────
-function setupVault() {
-  fs.rmSync(WORK, { recursive: true, force: true });
-  const vault = path.join(WORK, 'vault');
-  const userdata = path.join(WORK, 'userdata');
-  const obs = path.join(vault, '.obsidian');
-  const pluginDir = path.join(obs, 'plugins', PLUGIN_ID);
-  fs.mkdirSync(pluginDir, { recursive: true });
-  fs.mkdirSync(userdata, { recursive: true });
-
-  for (const f of ['main.js', 'manifest.json', 'styles.css']) {
-    fs.copyFileSync(path.join(ROOT, f), path.join(pluginDir, f));
-  }
-  fs.writeFileSync(path.join(pluginDir, 'data.json'), JSON.stringify({ authorName: 'yyt' }, null, 2));
-  fs.writeFileSync(path.join(obs, 'community-plugins.json'), JSON.stringify([PLUGIN_ID]));
-
-  // Mirror the real vault's look: theme choice, snippets, app settings
-  const realObs = path.join(REAL_VAULT, '.obsidian');
-  for (const f of ['appearance.json', 'app.json']) {
-    const src = path.join(realObs, f);
-    if (fs.existsSync(src)) fs.copyFileSync(src, path.join(obs, f));
-  }
-  // Native (macOS) menus live outside the DOM — force Obsidian's own .menu so the
-  // right-click flow can be observed. Everything else stays as the user has it.
-  try {
-    const ap = path.join(obs, 'appearance.json');
-    const cfg = fs.existsSync(ap) ? JSON.parse(fs.readFileSync(ap, 'utf8')) : {};
-    cfg.nativeMenus = false;
-    fs.writeFileSync(ap, JSON.stringify(cfg, null, 2));
-  } catch {}
-  for (const d of ['themes', 'snippets']) {
-    const src = path.join(realObs, d);
-    if (fs.existsSync(src)) fs.cpSync(src, path.join(obs, d), { recursive: true });
-  }
-
-  fs.cpSync(path.join(ROOT, 'e2e', 'fixtures'), vault, { recursive: true });
-
-  fs.writeFileSync(
-    path.join(userdata, 'obsidian.json'),
-    JSON.stringify({ vaults: { e2e: { path: vault, ts: Date.now(), open: true } } }),
-  );
-  return { vault, userdata };
-}
-
-// ─── 2. Launch Obsidian and attach over CDP ──────────────────────────────────
-async function launch(userdata) {
-  const proc = spawn(OBSIDIAN_BIN, [`--user-data-dir=${userdata}`, `--remote-debugging-port=${PORT}`], {
-    stdio: 'ignore',
-    detached: false,
-  });
-  const deadline = Date.now() + 40000;
-  while (Date.now() < deadline) {
-    try {
-      const r = await fetch(`http://127.0.0.1:${PORT}/json/version`);
-      if (r.ok) break;
-    } catch {}
-    await sleep(400);
-  }
-  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${PORT}`);
-  const ctx = browser.contexts()[0];
-  let page = null;
-  const pageDeadline = Date.now() + 30000;
-  while (Date.now() < pageDeadline && !page) {
-    page = ctx.pages().find((p) => p.url().startsWith('app://')) ?? null;
-    if (!page) await sleep(300);
-  }
-  if (!page) throw new Error('Obsidian window not found over CDP');
-  return { proc, browser, page };
-}
-
-async function waitForPlugin(page) {
-  try {
-    await page.waitForFunction(
-      (id) => !!globalThis.app?.plugins?.plugins?.[id],
-      PLUGIN_ID,
-      { timeout: 20000 },
-    );
-  } catch {
-    // Restricted mode on a fresh vault — enable community plugins programmatically
-    await page.evaluate(async (id) => {
-      await app.plugins.setEnable(true);
-      await app.plugins.enablePlugin(id);
-    }, PLUGIN_ID);
-    await page.waitForFunction((id) => !!globalThis.app?.plugins?.plugins?.[id], PLUGIN_ID, { timeout: 20000 });
-  }
-  // Dismiss any first-run modal
-  await page.keyboard.press('Escape').catch(() => {});
-}
-
-// ─── 3. Scenarios ────────────────────────────────────────────────────────────
-async function shot(page, name, selector) {
-  const file = path.join(OUT, `${name}.png`);
-  if (selector) {
-    const el = page.locator(selector).first();
-    await el.screenshot({ path: file });
-  } else {
-    await page.screenshot({ path: file });
-  }
-  return file;
-}
-
 const isOpaque = (rgba) => !/rgba\(/.test(rgba) || /,\s*1\)$/.test(rgba);
 
 async function run() {
@@ -157,6 +43,17 @@ async function run() {
     // ── Panel basics
     const cardCount = await page.locator('.ilc-card').count();
     check('4 张卡片渲染', cardCount === 4, `count=${cardCount}`);
+
+    // Width budget: Obsidian's .view-content padding must not eat into the cards
+    const widths = await page.evaluate(() => {
+      const panel = document.querySelector('.ilc-panel');
+      const card = document.querySelector('.ilc-card');
+      const body = document.querySelector('.ilc-entry-body');
+      const cs = getComputedStyle(panel);
+      return { panel: panel.getBoundingClientRect().width, card: card.getBoundingClientRect().width, body: body.getBoundingClientRect().width, padL: cs.paddingLeft, padR: cs.paddingRight };
+    });
+    check('面板无多余内边距', widths.padL === '0px' && widths.padR === '0px', `${widths.padL}/${widths.padR}`);
+    check('卡片占满面板宽度（≥ 面板 − 20）', widths.card >= widths.panel - 20, `panel=${widths.panel} card=${widths.card} body=${widths.body}`);
 
     const previews = await page.locator('.ilc-card-preview-text').allTextContents();
     check('预览条无原始 markdown', previews.every((t) => !t.includes('**')), previews.join(' | '));
