@@ -147,12 +147,13 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       this.app,
       this.manifest.dir ?? '.obsidian/plugins/obsidian-inline-comments',
       () => this.settings.enableUnreadSignal,
+      () => this.settings.authorName,
     );
     this.unreadTracker.init();
 
     this.registerEvent(
-      this.app.vault.on('modify', () => {
-        this.unreadTracker.scheduleRecompute();
+      this.app.vault.on('modify', (file) => {
+        if ((file as TFile).extension === 'md') this.unreadTracker.scheduleRecompute(file as TFile);
       }),
     );
   }
@@ -555,7 +556,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       .map((t) => {
         const bg = typeBgColor(t.color);
         const id = CSS.escape(t.id);
-        return `.ilc-hl-${id} { background: ${bg}; }\n.ilc-card-${id} { border-left: 3px solid ${t.color}; }`;
+        return `.ilc-hl-${id} { background: ${bg}; }\n.ilc-card-${id} { --ilc-accent: ${t.color}; }`;
       })
       .join('\n');
   }

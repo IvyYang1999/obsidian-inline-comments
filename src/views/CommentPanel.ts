@@ -36,6 +36,15 @@ interface DraftState {
   onPost:         (markup: string) => void;
 }
 
+/** Accent colors for built-in types (fallback when settings carry no color) */
+const BUILTIN_TYPE_COLORS: Record<string, string> = {
+  agree:     '#4CAF50',
+  disagree:  '#F44336',
+  question:  '#FF9800',
+  important: '#2196F3',
+  note:      '#9E9E9E',
+};
+
 /** Strip common markdown formatting for preview display */
 function stripMarkdown(text: string): string {
   return text
@@ -57,6 +66,7 @@ export class CommentPanel extends ItemView {
   private cardEls: Map<string, HTMLElement> = new Map();
 
   private cardsZone!: HTMLElement;
+  private headerEl!: HTMLElement;
   private panelContainer!: HTMLElement;
 
   private draft: DraftState | null = null;
@@ -87,6 +97,7 @@ export class CommentPanel extends ItemView {
     this.panelContainer = this.containerEl.children[1] as HTMLElement;
     this.panelContainer.addClass('ilc-panel');
 
+    this.headerEl = this.panelContainer.createEl('div', { cls: 'ilc-panel-header ilc-hidden' });
     this.cardsZone = this.panelContainer.createEl('div', { cls: 'ilc-cards-zone' });
 
     // History button in the view header (top-right clock icon)
@@ -223,6 +234,7 @@ export class CommentPanel extends ItemView {
     }
 
     if (!file || file.extension !== 'md') {
+      this.headerEl.addClass('ilc-hidden');
       this.cardsZone.createEl('div', {
         cls: 'ilc-empty',
         text: '请打开一篇 Markdown 笔记',
@@ -240,13 +252,7 @@ export class CommentPanel extends ItemView {
       });
     }
 
-    if (this.annotations.length > 0) {
-      const header = this.cardsZone.createEl('div', { cls: 'ilc-panel-header' });
-      header.createEl('span', {
-        cls: 'ilc-panel-count',
-        text: `${this.annotations.length} 条评论`,
-      });
-    }
+    this.updateHeader(file);
 
     for (const ann of this.annotations) {
       const card = this.renderCard(this.cardsZone, ann, file);
@@ -261,6 +267,43 @@ export class CommentPanel extends ItemView {
     // Compute positions directly from the editor (don't wait for async CM6 callback)
     this.computePositionsFromEditor();
     this.layoutCards();
+  }
+
+  // ── Header & accent helpers ──────────────────────────────────────────────────
+
+  /** Resolve the accent color for a comment type (settings first, then built-in) */
+  private typeAccent(typeId: string): string {
+    const cfg = this.plugin.settings.commentTypes.find((t) => t.id === typeId);
+    if (cfg?.color) return cfg.color;
+    return BUILTIN_TYPE_COLORS[typeId] ?? 'var(--text-muted)';
+  }
+
+  /** Render "N 条评论 · M 未读" above the cards */
+  private updateHeader(file: TFile): void {
+    this.headerEl.empty();
+    const total = this.annotations.length;
+    if (total === 0) {
+      this.headerEl.addClass('ilc-hidden');
+      return;
+    }
+    this.headerEl.removeClass('ilc-hidden');
+
+    const tracker = this.plugin.unreadTracker;
+    let unread = 0;
+    for (const ann of this.annotations) {
+      for (const c of ann.comments) {
+        if (c.type !== 'reply' || !tracker?.isTrackable(c.author)) continue;
+        const key = computeReadKey(file.path, ann.highlightText, c.author, c.date, c.text);
+        if (!tracker.isRead(key)) unread++;
+      }
+    }
+
+    const count = this.headerEl.createEl('span', { cls: 'ilc-panel-count' });
+    count.createEl('strong', { text: String(total) });
+    count.appendText(' 条评论');
+    if (unread > 0) {
+      this.headerEl.createEl('span', { cls: 'ilc-panel-unread', text: `· ${unread} 未读` });
+    }
   }
 
   // ── Position computation ─────────────────────────────────────────────────────
@@ -398,10 +441,12 @@ export class CommentPanel extends ItemView {
     const card = this.cardsZone.createEl('div', {
       cls: `ilc-card ilc-card-draft ilc-card-active`,
     });
+    card.style.setProperty('--ilc-accent', this.typeAccent(d.selectedType));
     this.draftEl = card;
 
     // ── 1. Preview text + ⋯ button ──
     const previewBar = card.createEl('div', { cls: 'ilc-card-preview' });
+    previewBar.createEl('span', { cls: 'ilc-card-quote-rule' });
     const draftPreviewText = stripMarkdown(d.highlightText);
     previewBar.createEl('span', {
       cls: 'ilc-card-preview-text',
@@ -443,6 +488,7 @@ export class CommentPanel extends ItemView {
         cls: `ilc-draft-type-btn ilc-draft-type-${type.id}`,
       });
       btn.createEl('span', { cls: 'ilc-draft-type-label', text: type.label });
+      btn.style.setProperty('--ilc-accent', this.typeAccent(type.id));
 
       if (type.id === d.selectedType) {
         btn.addClass('ilc-draft-type-active');
@@ -455,6 +501,7 @@ export class CommentPanel extends ItemView {
         d.selectedType = type.id;
         d.typeChanged = true;
         btn.addClass('ilc-draft-type-active');
+        card.style.setProperty('--ilc-accent', this.typeAccent(type.id));
         activeBtn = btn;
       });
     }
@@ -525,6 +572,7 @@ export class CommentPanel extends ItemView {
     card.dataset.annotationId = ann.id;
     const firstType = ann.comments[0]?.type ?? 'note';
     card.addClass(`ilc-card-${firstType}`);
+    card.style.setProperty('--ilc-accent', this.typeAccent(firstType));
 
     // Apply active state if this card is currently active
     if (ann.id === this.activeAnnotationId) {
@@ -539,6 +587,7 @@ export class CommentPanel extends ItemView {
 
     // Preview with card-level ⋯ menu
     const preview = card.createEl('div', { cls: 'ilc-card-preview' });
+    preview.createEl('span', { cls: 'ilc-card-quote-rule' });
     const previewText = stripMarkdown(ann.highlightText);
     preview.createEl('span', {
       cls: 'ilc-card-preview-text',
@@ -616,6 +665,8 @@ export class CommentPanel extends ItemView {
     const emoji = typeConfig?.emoji ?? builtinMeta?.emoji ?? '💬';
 
     const entry = container.createEl('div', { cls: `ilc-entry ilc-entry-${comment.type}` });
+    if (entryIndex > 0) entry.addClass('ilc-entry-has-prev');
+    if (entryIndex < ann.comments.length - 1) entry.addClass('ilc-entry-has-next');
 
     // pending: special rendering
     if (comment.type === 'pending') {
@@ -645,9 +696,12 @@ export class CommentPanel extends ItemView {
     this.tryUpgradeAvatarToImage(avatarEl, comment.author);
 
     header.createEl('span', { cls: 'ilc-entry-author', text: comment.author });
-    const emojiLabel = typeConfig?.label ?? builtinMeta?.label ?? comment.type;
-    const emojiEl = header.createEl('span', { cls: 'ilc-entry-emoji', text: emoji });
-    emojiEl.setAttribute('title', emojiLabel);
+    if (comment.type !== 'reply') {
+      const label = typeConfig?.label ?? builtinMeta?.label ?? comment.type;
+      const chip = header.createEl('span', { cls: 'ilc-entry-chip', text: label });
+      chip.style.setProperty('--ilc-accent', this.typeAccent(comment.type));
+      chip.setAttribute('title', `${emoji} ${label}`);
+    }
     header.createEl('span', { cls: 'ilc-entry-date',   text: comment.date });
 
     // ⋯ button (appears on hover)
@@ -685,25 +739,21 @@ export class CommentPanel extends ItemView {
       });
     }
 
-    // Read/unread indicator for reply entries
-    if (comment.type === 'reply') {
+    // Unread state for replies from others: dot on avatar + "标为已读" action.
+    // Click updates the DOM optimistically; persistence + recount run in background.
+    const tracker = this.plugin.unreadTracker;
+    if (comment.type === 'reply' && tracker?.isTrackable(comment.author)) {
       const readKey = computeReadKey(file.path, ann.highlightText, comment.author, comment.date, comment.text);
-      const isAlreadyRead = this.plugin.unreadTracker?.isRead(readKey) ?? false;
-
-      if (!isAlreadyRead) {
+      if (!tracker.isRead(readKey)) {
         entry.addClass('ilc-entry-unread');
-      }
-
-      const readBtn = entry.createEl('button', {
-        cls: `ilc-read-btn ${isAlreadyRead ? 'ilc-read-btn-read' : 'ilc-read-btn-unread'}`,
-        text: isAlreadyRead ? '已读' : '✓ 已读',
-      });
-
-      if (!isAlreadyRead) {
-        readBtn.addEventListener('click', async (e) => {
+        const footer = entry.createEl('div', { cls: 'ilc-entry-footer' });
+        const readBtn = footer.createEl('button', { cls: 'ilc-read-btn', text: '标为已读' });
+        readBtn.addEventListener('click', (e) => {
           e.stopPropagation();
-          await this.plugin.unreadTracker?.markAsRead(readKey);
-          await this.refresh();
+          entry.removeClass('ilc-entry-unread');
+          footer.remove();
+          void tracker.markAsRead(readKey, file);
+          this.updateHeader(file);
         });
       }
     }
