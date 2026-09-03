@@ -2,7 +2,7 @@ import { execFile } from 'child_process';
 import { promises as fsp } from 'fs';
 import { join } from 'path';
 import { MarkdownView, Plugin, PluginSettingTab, App, Setting, Notice } from 'obsidian';
-import type { TFile } from 'obsidian';
+import type { TFile, Editor } from 'obsidian';
 import { buildAgentReplyPrompt, cleanReplyText } from './src/agentReply.ts';
 import { buildCommentExtension, type ICommentHost, type AnnotationPosition } from './src/editor/cmExtension.ts';
 import { CommentPanel, VIEW_TYPE_COMMENTS } from './src/views/CommentPanel.ts';
@@ -49,6 +49,9 @@ interface ILCSettings {
   defaultAIAgent: string; // id of the default AI agent to request
   globalThreadEngine: GlobalThreadEngine;
   enableUnreadSignal: boolean;
+  /** Panel background: follow sidebar (theme default), follow editor, or a custom color */
+  panelBackground: 'sidebar' | 'editor' | 'custom';
+  panelBackgroundColor: string;
 }
 
 const DEFAULT_SETTINGS: ILCSettings = {
@@ -59,6 +62,8 @@ const DEFAULT_SETTINGS: ILCSettings = {
   defaultAIAgent: 'claude',
   globalThreadEngine: 'claude',
   enableUnreadSignal: true,
+  panelBackground: 'sidebar',
+  panelBackgroundColor: '#f4f4f2',
 };
 
 // ─── Plugin ───────────────────────────────────────────────────────────────────
@@ -84,25 +89,22 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       id: 'add-inline-comment',
       name: '添加划线评论',
       hotkeys: [{ modifiers: ['Mod', 'Shift'], key: 'k' }],
-      editorCallback: async (editor) => {
-        const sel = editor.getSelection();
-        if (!sel) return;
-
-        const from = editor.posToOffset(editor.getCursor('from'));
-
-        await this.activatePanel();
-
-        const panel = this.getPanel();
-        if (!panel) return;
-
-        const to = from + sel.length;
-        panel.showDraftCard(sel, from, (markup: string) => {
-          const fromPos = editor.offsetToPos(from);
-          const toPos   = editor.offsetToPos(to);
-          editor.replaceRange(markup, fromPos, toPos);
-        });
-      },
+      editorCallback: (editor) => this.addCommentFromSelection(editor),
     });
+
+    // Right-click on a selection → 添加划线评论 (no hotkey needed)
+    this.registerEvent(
+      this.app.workspace.on('editor-menu', (menu, editor) => {
+        if (!editor.getSelection()) return;
+        menu.addItem((item) =>
+          item
+            .setTitle('添加划线评论')
+            .setIcon('message-square')
+            .setSection('selection')
+            .onClick(() => this.addCommentFromSelection(editor)),
+        );
+      }),
+    );
 
     // Command: open/reveal comments panel
     this.addCommand({
@@ -156,6 +158,26 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
         if ((file as TFile).extension === 'md') this.unreadTracker.scheduleRecompute(file as TFile);
       }),
     );
+  }
+
+  /** Open the draft card for the current editor selection */
+  async addCommentFromSelection(editor: Editor): Promise<void> {
+    const sel = editor.getSelection();
+    if (!sel) return;
+
+    const from = editor.posToOffset(editor.getCursor('from'));
+
+    await this.activatePanel();
+
+    const panel = this.getPanel();
+    if (!panel) return;
+
+    const to = from + sel.length;
+    panel.showDraftCard(sel, from, (markup: string) => {
+      const fromPos = editor.offsetToPos(from);
+      const toPos   = editor.offsetToPos(to);
+      editor.replaceRange(markup, fromPos, toPos);
+    });
   }
 
   onunload(): void {
@@ -837,6 +859,32 @@ class ILCSettingTab extends PluginSettingTab {
             if (value) this.plugin.unreadTracker.recompute();
           }),
       );
+
+    const bgSetting = new Setting(containerEl)
+      .setName('面板背景')
+      .setDesc('评论面板的底色：跟随侧栏＝主题侧栏色；跟随正文＝与编辑区同色；自定义＝右侧取色。')
+      .addDropdown((d) =>
+        d
+          .addOptions({ sidebar: '跟随侧栏', editor: '跟随正文', custom: '自定义颜色' })
+          .setValue(this.plugin.settings.panelBackground)
+          .onChange(async (value) => {
+            this.plugin.settings.panelBackground = value as ILCSettings['panelBackground'];
+            await this.plugin.saveSettings();
+            this.plugin.getPanel()?.applyPanelBackground();
+            this.display();
+          }),
+      );
+    if (this.plugin.settings.panelBackground === 'custom') {
+      bgSetting.addColorPicker((c) =>
+        c
+          .setValue(this.plugin.settings.panelBackgroundColor)
+          .onChange(async (value) => {
+            this.plugin.settings.panelBackgroundColor = value;
+            await this.plugin.saveSettings();
+            this.plugin.getPanel()?.applyPanelBackground();
+          }),
+      );
+    }
   }
 
   private renderTypesList(container: HTMLElement): void {

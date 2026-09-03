@@ -1,8 +1,10 @@
 /* ─── Design tokens ──────────────────────────────────────────────────────────── */
 /* Design language: "Quiet thread" — one accent per card (the comment type),
    hairline surfaces, no decorative shadows, avatar-led threads with a
-   connector line. Everything else inherits from the Obsidian theme. */
-:root {
+   connector line. Everything else inherits from the Obsidian theme.
+   NOTE: declared on `body`, not `:root` — Obsidian's theme variables live on
+   body, and a custom property is resolved where it is declared. */
+body {
   /* Comment type: editor highlight backgrounds */
   --ilc-agree:     rgba(111,162,135, 0.20);
   --ilc-disagree:     rgba(201,108,108, 0.20);
@@ -97,7 +99,9 @@
   overflow-y: auto;
   height: 100%;
   box-sizing: border-box;
+  background: var(--ilc-panel-bg, transparent); /* transparent = theme sidebar color */
 }
+.ilc-panel-bg-editor { --ilc-panel-bg: var(--background-primary); }
 .ilc-panel-header {
   display: flex;
   align-items: baseline;
@@ -127,6 +131,7 @@
   left: 10px;
   right: 10px;
   background: var(--ilc-surface);
+  background: rgb(from var(--background-primary) r g b); /* strip theme alpha: cards must be opaque */
   border: 1px solid var(--ilc-hairline);
   border-radius: var(--ilc-radius-card);
   box-shadow: var(--ilc-shadow-xs);
@@ -391,6 +396,8 @@
 }
 .ilc-card-preview .ilc-more-btn { align-self: flex-start; }
 /* The rule follows the text height; the ⋯ button is capped at 18px so it can't stretch the row */
+/* collapsed: cancel the flex gap so the date sits flush right */
+.ilc-entry-header .ilc-entry-more-btn { margin-left: -8px; }
 .ilc-card-preview:hover .ilc-more-btn,
 .ilc-entry-header:hover .ilc-entry-more-btn,
 .ilc-pending-row:hover .ilc-entry-more-btn { opacity: 1; width: auto; padding: 0 2px; margin-left: 6px; }
@@ -889,6 +896,7 @@
   flex-direction: column;
   max-height: 280px;
   background: var(--ilc-surface);
+  background: rgb(from var(--background-primary) r g b); /* opaque even on translucent themes */
   border: 1px solid var(--ilc-hairline);
   border-radius: var(--ilc-radius-card);
   box-shadow: var(--ilc-shadow-md);

@@ -96,6 +96,7 @@ export class CommentPanel extends ItemView {
   async onOpen(): Promise<void> {
     this.panelContainer = this.containerEl.children[1] as HTMLElement;
     this.panelContainer.addClass('ilc-panel');
+    this.applyPanelBackground();
 
     this.headerEl = this.panelContainer.createEl('div', { cls: 'ilc-panel-header ilc-hidden' });
     this.cardsZone = this.panelContainer.createEl('div', { cls: 'ilc-cards-zone' });
@@ -127,6 +128,8 @@ export class CommentPanel extends ItemView {
         if (active && file.path === active.path) this.refresh();
       }),
     );
+    // Layout changes (sidebar opened/resized) re-wrap the editor and move every anchor
+    this.registerEvent(this.app.workspace.on('resize', () => this.layoutCards()));
   }
 
   async onClose(): Promise<void> {
@@ -267,6 +270,26 @@ export class CommentPanel extends ItemView {
     // Compute positions directly from the editor (don't wait for async CM6 callback)
     this.computePositionsFromEditor();
     this.layoutCards();
+    // The editor may still be re-measuring (sidebar just opened, fonts loading):
+    // settle with two deferred passes.
+    requestAnimationFrame(() => this.layoutCards());
+    setTimeout(() => this.layoutCards(), 300);
+  }
+
+  // ── Panel background (settings) ──────────────────────────────────────────────
+
+  /** Apply the "面板背景" setting: follow sidebar (default), follow editor, or custom color */
+  applyPanelBackground(): void {
+    const s = this.plugin.settings;
+    const el = this.panelContainer;
+    if (!el) return;
+    el.removeClass('ilc-panel-bg-editor');
+    el.style.removeProperty('--ilc-panel-bg');
+    if (s.panelBackground === 'editor') {
+      el.addClass('ilc-panel-bg-editor');
+    } else if (s.panelBackground === 'custom' && s.panelBackgroundColor) {
+      el.style.setProperty('--ilc-panel-bg', s.panelBackgroundColor);
+    }
   }
 
   // ── Header & accent helpers ──────────────────────────────────────────────────
@@ -319,19 +342,19 @@ export class CommentPanel extends ItemView {
 
       const scrollerRect = cmEditor.scrollDOM.getBoundingClientRect();
       const positions: AnnotationPosition[] = [];
-      const editor = mdView.editor;
+      // document-top → scroller coordinate base (for the out-of-viewport fallback)
+      const docBase = cmEditor.documentTop - scrollerRect.top + cmEditor.scrollDOM.scrollTop;
 
       for (const ann of this.annotations) {
-        const hlStart = ann.from + 3; // skip {==
+        const hlStart = Math.min(ann.from + 3, cmEditor.state.doc.length); // skip {==
         const coords = cmEditor.coordsAtPos(hlStart);
 
         let topInEditor: number;
         if (coords) {
           topInEditor = coords.top - scrollerRect.top + cmEditor.scrollDOM.scrollTop;
         } else {
-          // Annotation is outside the rendered viewport — estimate from line number
-          const pos = editor.offsetToPos(ann.from);
-          topInEditor = pos.line * 24; // rough estimate: 24px per line
+          // Outside the rendered viewport — CM6 height-map estimate (accurate to the line block)
+          topInEditor = cmEditor.lineBlockAt(hlStart).top + docBase;
         }
 
         positions.push({
@@ -353,6 +376,10 @@ export class CommentPanel extends ItemView {
 
   private layoutCards(): void {
     const items: LayoutItem[] = [];
+
+    // Anchors can change between refreshes (editor re-measures lines as they scroll
+    // into view) — re-read them; cheap, and keeps cards glued to the text.
+    this.computePositionsFromEditor();
 
     const posMap = new Map<string, number>();
     for (const p of this.lastPositions) {
@@ -387,13 +414,37 @@ export class CommentPanel extends ItemView {
 
     items.sort((a, b) => a.idealTop - b.idealTop);
 
-    // No-overlap greedy: each card sits at its anchor or below the previous card, whichever is lower
+    // Pass 1 — no-overlap greedy: each card sits at its anchor or below the previous card
     const GAP = 8;
-    let nextAvailable = 8;
+    const MIN_TOP = 8;
+    let nextAvailable = MIN_TOP;
 
     for (const item of items) {
       item.actualTop = Math.max(item.idealTop, nextAvailable);
       nextAvailable = item.actualTop + item.height + GAP;
+    }
+
+    // Pass 2 — the focused card (draft first, else active) must sit exactly on its
+    // anchor; cards above it yield upward (Feishu / Google Docs behaviour), cards
+    // below are re-flowed underneath it.
+    const focusId = this.draft ? '__draft__' : this.activeAnnotationId;
+    const fi = focusId ? items.findIndex((it) => it.id === focusId) : -1;
+    if (fi >= 0 && items[fi].actualTop > items[fi].idealTop) {
+      items[fi].actualTop = Math.max(items[fi].idealTop, MIN_TOP);
+      for (let i = fi - 1; i >= 0; i--) {
+        const limit = items[i + 1].actualTop - items[i].height - GAP;
+        items[i].actualTop = Math.min(items[i].actualTop, limit);
+      }
+      // Ran out of room at the top → push the whole cluster back down just enough
+      if (items[0].actualTop < MIN_TOP) {
+        const shift = MIN_TOP - items[0].actualTop;
+        for (let i = 0; i <= fi; i++) items[i].actualTop += shift;
+      }
+      let next = items[fi].actualTop + items[fi].height + GAP;
+      for (let i = fi + 1; i < items.length; i++) {
+        items[i].actualTop = Math.max(items[i].idealTop, next);
+        next = items[i].actualTop + items[i].height + GAP;
+      }
     }
 
     const lastItem = items[items.length - 1];

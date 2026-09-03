@@ -184,7 +184,7 @@ export function attachAtSelector(
 
   const insertMention = (entry: RosterEntry) => {
     const notify = notifyCb?.checked ? '?notify' : '';
-    const mention = `[@${entry.name}](agent:${entry.shortId}${notify})`;
+    const mention = `[@${entry.name}](agent:${entry.shortId}${notify}) `;
 
     const currentVal = textarea.value;
     const curPos = textarea.selectionStart ?? currentVal.length;
@@ -272,7 +272,8 @@ export function attachAtSelector(
     let atPos = -1;
     for (let i = pos - 1; i >= 0; i--) {
       if (val[i] === '@') {
-        if (i === 0 || !/[a-zA-Z0-9]/.test(val[i - 1])) atPos = i;
+        // `[@` is an already-inserted structured mention — never re-trigger on it
+        if (i === 0 || !/[a-zA-Z0-9[]/.test(val[i - 1])) atPos = i;
         break;
       }
       if (/\s/.test(val[i])) break;

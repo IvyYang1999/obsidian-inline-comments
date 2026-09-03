@@ -146,16 +146,19 @@ class CommentViewPlugin implements PluginValue {
     const scrollerRect = view.scrollDOM.getBoundingClientRect();
 
     const positions: AnnotationPosition[] = [];
+    // document-top → scroller coordinate base (for the out-of-viewport fallback)
+    const docBase = view.documentTop - scrollerRect.top + view.scrollDOM.scrollTop;
     for (const ann of anns) {
-      const hlStart = ann.from + 3; // skip {==
+      const hlStart = Math.min(ann.from + 3, view.state.doc.length); // skip {==
       const coords = view.coordsAtPos(hlStart);
-      if (!coords) continue;
-
-      positions.push({
-        annotationId: ann.id,
-        topInEditor: coords.top - scrollerRect.top + view.scrollDOM.scrollTop,
-        from: ann.from,
-      });
+      let topInEditor: number;
+      if (coords) {
+        topInEditor = coords.top - scrollerRect.top + view.scrollDOM.scrollTop;
+      } else {
+        // Not rendered (outside the CM6 viewport): use the height-map estimate
+        topInEditor = view.lineBlockAt(hlStart).top + docBase;
+      }
+      positions.push({ annotationId: ann.id, topInEditor, from: ann.from });
     }
 
     this.host.onPositionsUpdated(positions);
