@@ -27,6 +27,8 @@ export interface ICommentHost {
   onEditorCursorInAnnotation(annotationId: string): void;
   onPositionsUpdated(positions: AnnotationPosition[]): void;
   onEditorScroll(scrollTop: number): void;
+  /** Badge after a highlight was clicked → reveal + focus the matching card */
+  onBadgeClick?(annotationId: string): void;
 }
 
 // ─── Badge widget shown after each annotation ─────────────────────────────────
@@ -35,6 +37,7 @@ class CommentBadgeWidget extends WidgetType {
   constructor(
     private count: number,
     private annotationId: string,
+    private onClick: (annotationId: string) => void,
   ) {
     super();
   }
@@ -44,7 +47,14 @@ class CommentBadgeWidget extends WidgetType {
     el.className = 'ilc-badge';
     el.textContent = String(this.count);
     el.dataset.annotationId = this.annotationId;
-    el.title = `${this.count} 条评论`;
+    el.title = `${this.count} 条评论 · 点击定位`;
+    // Take the click ourselves: never let CodeMirror move the cursor into the markup
+    el.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+    el.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.onClick(this.annotationId);
+    });
     return el;
   }
 
@@ -54,8 +64,9 @@ class CommentBadgeWidget extends WidgetType {
     );
   }
 
-  ignoreEvent(): boolean {
-    return false;
+  /** Mouse events are handled by the widget; everything else goes to the editor */
+  ignoreEvent(event: Event): boolean {
+    return event.type === 'mousedown' || event.type === 'click';
   }
 }
 
@@ -171,10 +182,17 @@ class CommentViewPlugin implements PluginValue {
     const content = view.state.doc.toString();
     const anns = parseAnnotations(content);
 
-    // RangeSetBuilder requires ranges to be added in document order
+    // RangeSetBuilder requires ranges to be added in document order and must
+    // never see overlapping replace ranges — one malformed/nested annotation
+    // would otherwise throw and CM6 would disable every decoration in the file.
     anns.sort((a, b) => a.from - b.from);
+    const onBadgeClick = (id: string) => {
+      try { this.host.onBadgeClick?.(id); } catch { /* panel may not be ready */ }
+    };
 
+    let lastEnd = -1;
     for (const ann of anns) {
+      if (ann.from < lastEnd) continue; // overlaps the previous annotation — skip, don't crash
       const raw = content.slice(ann.from, ann.to);
 
       const hlStart    = ann.from + 3;                         // skip {==
@@ -182,30 +200,36 @@ class CommentViewPlugin implements PluginValue {
       if (eqIdx < 0) continue;
       const hlEnd      = ann.from + eqIdx;                     // end of highlight text
       const markupEnd  = ann.to;
+      if (hlEnd < hlStart || markupEnd < hlEnd) continue;
 
       const cls = highlightClass(ann);
 
-      // 1. Hide the `{==` prefix
-      builder.add(ann.from, hlStart, Decoration.replace({}));
+      try {
+        // 1. Hide the `{==` prefix
+        builder.add(ann.from, hlStart, Decoration.replace({}));
 
-      // 2. Mark the highlighted text with color
-      if (hlStart < hlEnd) {
-        builder.add(
-          hlStart,
-          hlEnd,
-          Decoration.mark({ class: `ilc-highlight ${cls}` }),
-        );
-      }
+        // 2. Mark the highlighted text with color
+        if (hlStart < hlEnd) {
+          builder.add(
+            hlStart,
+            hlEnd,
+            Decoration.mark({ class: `ilc-highlight ${cls}` }),
+          );
+        }
 
-      // 3. Replace `==}{>>...<<}` with badge widget
-      if (hlEnd < markupEnd) {
-        builder.add(
-          hlEnd,
-          markupEnd,
-          Decoration.replace({
-            widget: new CommentBadgeWidget(ann.comments.length, ann.id),
-          }),
-        );
+        // 3. Replace `==}{>>...<<}` with badge widget
+        if (hlEnd < markupEnd) {
+          builder.add(
+            hlEnd,
+            markupEnd,
+            Decoration.replace({
+              widget: new CommentBadgeWidget(ann.comments.length, ann.id, onBadgeClick),
+            }),
+          );
+        }
+        lastEnd = markupEnd;
+      } catch {
+        // malformed range — skip this annotation only
       }
     }
 

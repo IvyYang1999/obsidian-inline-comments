@@ -42,7 +42,7 @@ async function run() {
 
     // ── Panel basics
     const cardCount = await page.locator('.ilc-card').count();
-    check('4 张卡片渲染', cardCount === 4, `count=${cardCount}`);
+    check('5 张卡片渲染（含畸形嵌套段落解析出的 1 张）', cardCount === 5, `count=${cardCount}`);
 
     // Width budget: Obsidian's .view-content padding must not eat into the cards
     const widths = await page.evaluate(() => {
@@ -128,6 +128,29 @@ async function run() {
     check('卡片互不重叠', !overlap);
 
     await shot(page, '01-panel', '.workspace-leaf-content[data-type="ilc-comments-panel"]');
+
+    // ── Badge click → focus card, editor stays untouched (no raw markup reveal)
+    const badgeCountBefore = await page.locator('.cm-editor .ilc-badge').count();
+    const thirdId = await page.locator('.ilc-card').nth(2).getAttribute('data-annotation-id');
+    await page.locator(`.cm-editor .ilc-badge[data-annotation-id="${thirdId}"]`).click();
+    await sleep(500);
+    const badgeState = await page.evaluate((id) => {
+      const active = document.querySelector('.ilc-card-active');
+      const ed = app.workspace.getLeavesOfType('markdown')[0].view.editor;
+      const raw = document.querySelector('.cm-editor')?.innerText ?? '';
+      return {
+        activeId: active?.dataset.annotationId,
+        badges: document.querySelectorAll('.cm-editor .ilc-badge').length,
+        rawMarkupVisible: raw.includes('{==能同桌很暖') || raw.includes('{==今天入职'),
+        cursor: ed.getCursor(),
+      };
+    }, thirdId);
+    check('点角标 → 对应卡片激活', badgeState.activeId === thirdId, `active=${badgeState.activeId} expected=${thirdId}`);
+    check('点角标后装饰仍在（不露源码）', badgeState.badges === badgeCountBefore && !badgeState.rawMarkupVisible, `badges ${badgeCountBefore}→${badgeState.badges} raw=${badgeState.rawMarkupVisible}`);
+    const stickyHeader = await page.evaluate(() => getComputedStyle(document.querySelector('.ilc-panel-header')).position);
+    check('面板头吸顶', stickyHeader === 'sticky', stickyHeader);
+    await page.locator('.ilc-card').nth(0).click(); // reset focus state
+    await sleep(200);
 
     // ── Active card + reply box
     await page.locator('.ilc-card').nth(1).click();

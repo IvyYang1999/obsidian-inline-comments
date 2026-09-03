@@ -106,13 +106,20 @@ body {
 }
 .ilc-panel-bg-editor { --ilc-panel-bg: var(--background-primary); }
 .ilc-panel-header {
+  position: sticky;
+  top: 0;
+  z-index: 30; /* above cards (1/20) and the draft card (10) */
   display: flex;
   align-items: baseline;
   gap: 6px;
-  padding: 10px 12px 4px;
+  padding: 10px 12px 6px;
   font-size: var(--ilc-font-meta);
   color: var(--text-muted);
+  background: var(--ilc-panel-bg, var(--background-secondary));
+  background: var(--ilc-panel-bg, rgb(from var(--background-secondary) r g b));
+  box-shadow: 0 1px 0 var(--ilc-hairline-soft);
 }
+.ilc-panel-bg-editor .ilc-panel-header { background: var(--background-primary); }
 .ilc-panel-count strong { color: var(--text-normal); font-weight: 600; }
 .ilc-panel-unread { color: var(--text-error, #e5484d); }
 

@@ -185,6 +185,14 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     document.getElementById('ilc-type-styles')?.remove();
   }
 
+  /** Badge after a highlight was clicked → open the panel and focus the card */
+  onBadgeClick(annotationId: string): void {
+    void (async () => {
+      await this.activatePanel();
+      this.getPanel()?.highlightCard(annotationId);
+    })();
+  }
+
   /** Called by CM6 extension when editor cursor enters an annotation */
   onEditorCursorInAnnotation(annotationId: string): void {
     this.getPanel()?.highlightCard(annotationId);
