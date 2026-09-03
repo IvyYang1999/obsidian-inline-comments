@@ -13,6 +13,10 @@ export interface RosterEntry {
   status: AgentStatus;
   source: 'roster' | 'registry';
   harness?: string;
+  /** Full session id (roster line / registry); shortId is its first 8 chars */
+  sessionId?: string;
+  /** Vault-relative mailbox override from the registry */
+  mailbox?: string;
   /** When true, this item is a UI action (e.g. "管理成员"), not a real agent. */
   isAction?: boolean;
 }
@@ -64,6 +68,8 @@ async function loadRegistry(app: App): Promise<RosterEntry[]> {
   return data.agents.map((a) => ({
     name: a.name,
     shortId: a.sessionId.slice(0, 8),
+    sessionId: a.sessionId,
+    mailbox: a.mailbox,
     role: '',
     status: '闲置' as AgentStatus,
     source: 'registry' as const,
@@ -106,6 +112,7 @@ export function parseRosterContent(content: string): RosterEntry[] {
     entries.push({
       name: m[1].trim(),
       shortId: m[2].trim().slice(0, 8),
+      sessionId: m[2].trim(),
       role: m[3]?.trim() ?? '',
       status: '离线',
       source: 'roster',

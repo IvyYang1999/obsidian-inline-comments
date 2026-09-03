@@ -14,6 +14,8 @@ import type { CommentEntry, CommentTypeConfig, AIAgentConfig, DeletedRecord } fr
 import { BUILTIN_TYPE_IDS, typeBgColor } from './src/types.ts';
 import { AgentSuggest } from './src/AgentSuggest.ts';
 import { UnreadTracker } from './src/unreadTracker.ts';
+import { DEFAULT_MAILBOX_ROOT } from './src/mentionDelivery.ts';
+import { MentionDelivery } from './src/mentionDeliveryService.ts';
 import { renderAgentRegistrySection } from './src/settings/agentRegistrySection.ts';
 import {
   GLOBAL_THREAD_END_MARKER,
@@ -53,6 +55,10 @@ interface ILCSettings {
   /** Panel background: follow sidebar (theme default), follow editor, or a custom color */
   panelBackground: 'sidebar' | 'editor' | 'custom';
   panelBackgroundColor: string;
+  /** Deliver `[@名字](agent:id?notify)` mentions as mailbox letters (in-plugin scanner) */
+  enableMentionDelivery: boolean;
+  /** Vault-relative mailbox root; letters go to <root>/<短id>/ */
+  mailboxRoot: string;
 }
 
 const DEFAULT_SETTINGS: ILCSettings = {
@@ -65,6 +71,8 @@ const DEFAULT_SETTINGS: ILCSettings = {
   enableUnreadSignal: true,
   panelBackground: 'sidebar',
   panelBackgroundColor: '#f4f4f2',
+  enableMentionDelivery: true,
+  mailboxRoot: DEFAULT_MAILBOX_ROOT,
 };
 
 // ─── Plugin ───────────────────────────────────────────────────────────────────
@@ -74,6 +82,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
   private runningGlobalThreads = new Set<string>();
   private runningAgentReplies = new Set<string>();
   unreadTracker!: UnreadTracker;
+  mentionDelivery!: MentionDelivery;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -125,6 +134,13 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       },
     });
 
+    // Command: deliver pending @ mentions now (full sweep)
+    this.addCommand({
+      id: 'deliver-mentions-now',
+      name: '投递未送达的 @ 留言（全库扫描）',
+      callback: () => void this.mentionDelivery.sweep(true),
+    });
+
     // Command: manage @-mention members
     this.addCommand({
       id: 'manage-comment-members',
@@ -161,9 +177,19 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     );
     this.unreadTracker.init();
 
+    // @ mention → mailbox letter (replaces the external cron scanner)
+    this.mentionDelivery = new MentionDelivery(
+      this.app,
+      () => ({ enabled: this.settings.enableMentionDelivery, mailboxRoot: this.settings.mailboxRoot }),
+      (msg) => new Notice(msg),
+    );
+    this.mentionDelivery.init();
+
     this.registerEvent(
       this.app.vault.on('modify', (file) => {
-        if ((file as TFile).extension === 'md') this.unreadTracker.scheduleRecompute(file as TFile);
+        if ((file as TFile).extension !== 'md') return;
+        this.unreadTracker.scheduleRecompute(file as TFile);
+        this.mentionDelivery.schedule(file as TFile);
       }),
     );
   }
@@ -875,6 +901,27 @@ class ILCSettingTab extends PluginSettingTab {
             if (value) this.plugin.unreadTracker.recompute();
           }),
       );
+
+    new Setting(containerEl)
+      .setName('投递 @ 留言到信箱')
+      .setDesc('评论里带「通知对方」的 @ 会写成一封信放进对方信箱（插件内置，不再依赖 cron 脚本）。文档保存后约 1.5 秒投递；启动时全库补扫一次。')
+      .addToggle((t) =>
+        t.setValue(this.plugin.settings.enableMentionDelivery).onChange(async (v) => {
+          this.plugin.settings.enableMentionDelivery = v;
+          await this.plugin.saveSettings();
+        }),
+      );
+    new Setting(containerEl)
+      .setName('信箱根目录')
+      .setDesc(`vault 内相对路径，信放在 <根目录>/<会话短 id>/ 下。默认 ${DEFAULT_MAILBOX_ROOT}。`)
+      .addText((t) =>
+        t.setPlaceholder(DEFAULT_MAILBOX_ROOT).setValue(this.plugin.settings.mailboxRoot).onChange(async (v) => {
+          const clean = v.trim().replace(/^\/+|\/+$/g, '');
+          this.plugin.settings.mailboxRoot = clean.includes('..') ? DEFAULT_MAILBOX_ROOT : clean || DEFAULT_MAILBOX_ROOT;
+          await this.plugin.saveSettings();
+        }),
+      )
+      .addButton((b) => b.setButtonText('立即全库投递').onClick(() => void this.plugin.mentionDelivery.sweep(true)));
 
     const bgSetting = new Setting(containerEl)
       .setName('面板背景')

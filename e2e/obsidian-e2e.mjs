@@ -129,6 +129,27 @@ async function run() {
 
     await shot(page, '01-panel', '.workspace-leaf-content[data-type="ilc-comments-panel"]');
 
+    // ── In-plugin mention delivery (replaces the cron scanner)
+    await page.evaluate(() => app.plugins.plugins['obsidian-inline-comments'].mentionDelivery.sweep(false));
+    await sleep(500);
+    const delivery = await page.evaluate(async () => {
+      const a = app.vault.adapter;
+      const list = async (dir) => (await a.exists(dir)) ? (await a.list(dir)).files : [];
+      const feibao = await list('Agent协作空间/信箱/44444444');
+      const shenji = await list('Agent协作空间/信箱/22222222');
+      const letter = feibao[0] ? await a.read(feibao[0]) : '';
+      const state = JSON.parse(await a.read('_os/.comment-mention-state.json'));
+      return { feibao: feibao.length, shenji: shenji.length, letter, processed: state.processed.length };
+    });
+    check('yyt 的 @费宝（question）投递 1 封', delivery.feibao === 1, `feibao=${delivery.feibao}`);
+    check('yyt 在回复里 @审计员 也投递', delivery.shenji === 1, `shenji=${delivery.shenji}`);
+    check('Agent 的 reply 里 @费宝 不投（防自触发）', delivery.feibao === 1 && delivery.processed === 2, `processed=${delivery.processed}`);
+    check('信的 frontmatter 契约', /^---\nfrom: comment-scanner\nto: 44444444-0000-1111\nurgency: 普通\nwake: true\nstatus: 未读\ncreated: /.test(delivery.letter), delivery.letter.split('\n').slice(0, 7).join(' | '));
+    await page.evaluate(() => app.plugins.plugins['obsidian-inline-comments'].mentionDelivery.sweep(false));
+    await sleep(300);
+    const again = await page.evaluate(async () => (await app.vault.adapter.list('Agent协作空间/信箱/44444444')).files.length);
+    check('重扫不重复投信', again === 1, `letters=${again}`);
+
     // ── Badge click → focus card, editor stays untouched (no raw markup reveal)
     const badgeCountBefore = await page.locator('.cm-editor .ilc-badge').count();
     const thirdId = await page.locator('.ilc-card').nth(2).getAttribute('data-annotation-id');

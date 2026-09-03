@@ -2,6 +2,7 @@ import { App, Modal, Notice, Platform } from 'obsidian';
 import { loadRoster, type RosterEntry } from '../atSelector.ts';
 import { readRegistry, removeAgent, upsertAgent, validateName } from '../registry.ts';
 import { discoverLocalSessions, shortCwd, timeAgo, type LocalSession } from '../sessionDiscovery.ts';
+import { DEFAULT_MAILBOX_ROOT } from '../mentionDelivery.ts';
 
 const STATUS_CLS: Record<string, string> = { '在线': 'online', '闲置': 'idle', '离线': 'offline' };
 
@@ -31,8 +32,20 @@ export class MembersModal extends Modal {
     contentEl.createEl('h2', { text: '评论 @ 成员' });
     contentEl.createEl('p', {
       cls: 'ilc-members-intro',
-      text: '在评论里输入 @ 可以点名一个 AI 会话。勾选「通知对方」，这条评论会由后台扫描器投到它的信箱，它看到后会把回复写回这里。',
+      text: '在评论里输入 @ 可以点名一个 AI 会话。勾选「通知对方」，插件会把这条评论写成一封信放进它的信箱，它看到后会把回复写回这里。',
     });
+    const status = contentEl.createEl('p', { cls: 'ilc-members-hint ilc-members-delivery' });
+    void (async () => {
+      const plugin = (this.app as any).plugins?.plugins?.['obsidian-inline-comments'];
+      const root: string = plugin?.settings?.mailboxRoot || DEFAULT_MAILBOX_ROOT;
+      const enabled: boolean = plugin?.settings?.enableMentionDelivery ?? true;
+      const exists = await this.app.vault.adapter.exists(root);
+      status.setText(
+        enabled
+          ? `投递：已开启 · 信箱根目录 ${root}${exists ? '' : '（还不存在，首次投信时自动创建）'}`
+          : '投递：已关闭（设置里可开启）',
+      );
+    })();
 
     // ── Members
     const s1 = contentEl.createEl('section', { cls: 'ilc-members-section' });
