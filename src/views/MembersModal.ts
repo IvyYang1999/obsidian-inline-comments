@@ -139,6 +139,10 @@ export class MembersModal extends Modal {
     const line1 = main.createEl('div', { cls: 'ilc-members-line' });
     line1.createEl('span', { cls: 'ilc-at-name', text: e.name });
     if (e.harness) line1.createEl('span', { cls: 'ilc-at-source', text: e.harness });
+    if (e.autoStart) {
+      const tag = line1.createEl('span', { cls: 'ilc-at-source ilc-at-source-muted', text: '自动启动' });
+      tag.setAttribute('title', '有留言且它没在运行时，插件会在终端里启动/恢复这个会话并把留言交给它');
+    }
     line1.createEl('span', { cls: 'ilc-members-status', text: e.status });
     const line2 = main.createEl('div', { cls: 'ilc-members-sub' });
     line2.appendText(e.source === 'registry' ? '自己加入的会话' : '花名册在编');

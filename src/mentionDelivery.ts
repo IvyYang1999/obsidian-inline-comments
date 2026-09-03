@@ -32,6 +32,9 @@ export interface Candidate {
   sessionId: string;
   shortId: string;
   mailbox?: string;
+  harness?: string;
+  cwd?: string;
+  autoStart?: boolean;
 }
 
 /** Same key as the python scanner: sha1(relative_path + highlight + content + short_id) */

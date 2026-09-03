@@ -1048,7 +1048,8 @@ body {
   border-top: 1px solid var(--ilc-hairline-soft);
   padding: 4px;
 }
-.ilc-at-manage {
+.ilc-at-manage,
+.ilc-at-new {
   width: 100%;
   height: auto !important;
   min-height: 0 !important;
@@ -1062,7 +1063,7 @@ body {
   border-radius: 7px;
   cursor: pointer;
 }
-.ilc-at-manage:hover { background: var(--background-modifier-hover) !important; color: var(--text-normal); }
+.ilc-at-manage:hover, .ilc-at-new:hover { background: var(--background-modifier-hover) !important; color: var(--text-normal); }
 
 /* ─── @mention in comment body ──────────────────────────────────────────── */
 .ilc-mention {
@@ -1156,3 +1157,9 @@ body {
   background: transparent !important; color: var(--text-muted) !important; box-shadow: none !important; cursor: pointer;
 }
 .ilc-members-resume:hover { color: var(--text-normal) !important; border-color: var(--ilc-hairline-strong) !important; }
+
+.ilc-at-avatar-new { background: var(--ilc-surface-sunken) !important; color: var(--text-muted) !important; font-weight: 500; }
+.ilc-at-new { color: var(--interactive-accent) !important; }
+.ilc-at-foot { display: flex; gap: 2px; }
+.ilc-at-foot .ilc-at-manage, .ilc-at-foot .ilc-at-new { width: auto; flex: 1; }
+.ilc-newsession-modal h2 { margin: 0 0 6px; font-size: 17px; }

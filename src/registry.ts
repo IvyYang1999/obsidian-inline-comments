@@ -10,6 +10,10 @@ export interface RegistryAgent {
   joinedAt: string;
   /** Vault-relative mailbox folder; scanner falls back to defaultMailbox() when absent */
   mailbox?: string;
+  /** Working directory to start/resume the session in (absolute) */
+  cwd?: string;
+  /** Start the session in a terminal automatically when a letter arrives and it is not running */
+  autoStart?: boolean;
 }
 
 export interface RegistryFile {
@@ -68,6 +72,8 @@ export async function upsertAgent(
     harness: agent.harness,
     joinedAt: agent.joinedAt ?? new Date().toISOString(),
     ...(agent.mailbox ? { mailbox: agent.mailbox } : {}),
+    ...(agent.cwd ? { cwd: agent.cwd } : {}),
+    ...(agent.autoStart ? { autoStart: true } : {}),
   };
   const idx = data.agents.findIndex((a) => a.sessionId === agent.sessionId);
   if (idx >= 0) data.agents[idx] = { ...data.agents[idx], ...entry };

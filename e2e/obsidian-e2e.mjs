@@ -160,6 +160,38 @@ async function run() {
     const again = await page.evaluate(async () => (await app.vault.adapter.list('Agent协作空间/信箱/44444444')).files.length);
     check('重扫不重复投信', again === 1, `letters=${again}`);
 
+    // ── @ a name that does not exist → create a session member → sending auto-starts it
+    await page.locator('.ilc-card').nth(1).click();
+    await page.waitForSelector('.ilc-card-active .ilc-reply-input', { state: 'visible', timeout: 5000 });
+    const newTa = page.locator('.ilc-card-active .ilc-reply-input');
+    await newTa.fill('');
+    await newTa.click();
+    await page.keyboard.type('@新人甲');
+    await page.waitForSelector('.ilc-at-create', { timeout: 5000 });
+    check('无匹配名字时出现「创建新会话」项', (await page.locator('.ilc-at-create').textContent())?.includes('新人甲') ?? false);
+    await page.keyboard.press('Enter');
+    await sleep(400);
+    const newVal = await newTa.inputValue();
+    const newShort = newVal.match(/\[@新人甲\]\(agent:([0-9a-f]{8})\?notify\)/)?.[1] ?? '';
+    check('创建后自动插入结构化 @', newShort.length === 8, newVal);
+    const reg = JSON.parse(fs.readFileSync(path.join(WORK, 'vault', '_os', 'comment-agents.json'), 'utf8'));
+    const newAgent = reg.agents.find((a) => a.name === '新人甲');
+    check('注册表登记为自动启动成员', !!newAgent && newAgent.autoStart === true && newAgent.harness === 'claude' && newAgent.sessionId.startsWith(newShort), JSON.stringify(newAgent));
+    await page.keyboard.type(' 请你看看这段');
+    await page.locator('.ilc-card-active .ilc-reply-submit').click();
+    await sleep(3500); // vault modify → delivery (1.5s debounce) → auto-start
+    const launchLog = path.join(WORK, 'launch.log');
+    const launches = fs.existsSync(launchLog) ? fs.readFileSync(launchLog, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : [];
+    const mine = launches.find((l) => l.sessionId === newAgent?.sessionId);
+    check('发送后自动启动该会话（新会话 → --session-id）', !!mine && mine.mode === 'new' && mine.shell.includes(`--session-id '${newAgent.sessionId}'`), mine ? mine.shell.slice(0, 120) : `launches=${launches.length}`);
+    const promptTxt = mine?.promptFile && fs.existsSync(mine.promptFile) ? fs.readFileSync(mine.promptFile, 'utf8') : '';
+    check('首条消息 = 信 + 回复指南', promptTxt.includes('请你看看这段') && promptTxt.includes('{>>新人甲|'), `len=${promptTxt.length}`);
+    const newBox = path.join(WORK, 'vault', 'Agent协作空间', '信箱', newShort);
+    const newLetter = fs.existsSync(newBox) ? fs.readdirSync(newBox).find((f) => f.endsWith('.md')) : null;
+    check('信标为 已读（启动代标），hook 不会重复注入', !!newLetter && fs.readFileSync(path.join(newBox, newLetter), 'utf8').includes('status: 已读（启动代标）'));
+    await page.locator('.ilc-card').nth(0).click();
+    await sleep(300);
+
     // ── Same note open in two panes: cards must follow the pane the user is in
     await page.evaluate(async () => {
       const file = app.vault.getAbstractFileByPath('sample.md');
@@ -294,7 +326,7 @@ async function run() {
       return { bg: cs.backgroundColor, items: d.querySelectorAll('.ilc-at-item').length, names, sources: [...d.querySelectorAll('.ilc-at-source')].map((s) => s.textContent) };
     });
     check('@ 下拉背景不透明', isOpaque(dd.bg), dd.bg);
-    check('@ 下拉列出 4 位成员', dd.items === 4, `items=${dd.items}`);
+    check('@ 下拉列出 5 位成员（4 位样例 + 刚创建的新人甲）', dd.items === 5, `items=${dd.items}`);
     check('名字单行不竖排', dd.names.every((n) => n.lines < 1.5), dd.names.map((n) => `${n.text}:${n.h.toFixed(0)}px`).join(' '));
     check('自己加入的成员显示 harness 胶囊（不再是黑话「自助」）', dd.sources.includes('codex') && !dd.sources.some((s) => s.includes('自助')), dd.sources.join(','));
     const notifyLabel = await page.locator('.ilc-at-notify').textContent();
@@ -313,7 +345,7 @@ async function run() {
       settingsOpen: !!document.querySelector('.modal-settings'),
     }));
     check('管理成员打开独立弹窗', modal.title === '评论 @ 成员' && modal.sections === 3 && !modal.settingsOpen, JSON.stringify(modal));
-    check('弹窗列出现有成员', (modal.members ?? 0) === 4, `members=${modal.members}`);
+    check('弹窗列出现有成员', (modal.members ?? 0) === 5, `members=${modal.members}`);
     check('弹窗发现本机会话（这台机器上有 claude 在跑）', (modal.sessionRows ?? 0) > 0, `sessions=${modal.sessionRows}`);
     const titled = await page.evaluate(() => [...document.querySelectorAll('.ilc-members-session .ilc-members-title')].filter((t) => !/^[0-9a-f]{8}$/.test(t.textContent ?? '')).length);
     check('绝大多数会话解析出标题/目录（大首行也能抽出）', titled >= (modal.sessionRows ?? 0) * 0.8, `titled=${titled}/${modal.sessionRows}`);

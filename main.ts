@@ -19,6 +19,8 @@ import { DEFAULT_MAILBOX_ROOT } from './src/mentionDelivery.ts';
 import { MentionDelivery } from './src/mentionDeliveryService.ts';
 import { getHookStatus, installClaudeHooks, uninstallClaudeHooks, type HookStatus } from './src/hookInstaller.ts';
 import { HOOK_SCRIPT_NAME } from './src/hookScript.ts';
+import { buildLaunchPlan, buildLaunchPrompt, launchInTerminal, runningClaudeIds, sessionFileExists, writePromptFile } from './src/sessionLauncher.ts';
+import type { Candidate } from './src/mentionDelivery.ts';
 import { renderAgentRegistrySection } from './src/settings/agentRegistrySection.ts';
 import {
   GLOBAL_THREAD_END_MARKER,
@@ -185,7 +187,10 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       this.app,
       () => ({ enabled: this.settings.enableMentionDelivery, mailboxRoot: this.settings.mailboxRoot }),
       (msg) => new Notice(msg),
-      (c, relPath) => this.notifyDesktop(`评论区有新留言给 ${c.name}`, `${relPath.split('/').pop()} · 它下一次说话/收尾时会看到`),
+      (c, relPath, letterPath) => {
+        this.notifyDesktop(`评论区有新留言给 ${c.name}`, `${relPath.split('/').pop()} · 它下一次说话/收尾时会看到`);
+        void this.maybeAutoStart(c, letterPath);
+      },
     );
     this.mentionDelivery.init();
 
@@ -248,16 +253,41 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     } catch { /* ignore */ }
   }
 
-  /** Open a terminal that resumes the given session in its own directory (macOS) */
-  resumeInTerminal(sessionId: string, cwd?: string): void {
-    if (process.platform !== 'darwin') { new Notice('仅 macOS 支持在终端恢复会话'); return; }
-    const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
-    const cmd = `${cwd ? `cd ${q(cwd)} && ` : ''}claude --resume ${q(sessionId)}`;
-    const script = `tell application "Terminal"
-  activate
-  do script "${cmd.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"
-end tell`;
-    try { execFile('osascript', ['-e', script], () => {}); } catch { /* ignore */ }
+  /** Open a terminal that resumes (or starts) the given session in its directory (macOS) */
+  async resumeInTerminal(sessionId: string, cwd?: string): Promise<void> {
+    const exists = await sessionFileExists(sessionId);
+    const plan = buildLaunchPlan({ sessionId, cwd: cwd || this.vaultBasePath() || process.cwd(), exists });
+    const r = await launchInTerminal(plan);
+    if (r === 'unsupported') new Notice('仅 macOS 支持在终端启动会话');
+  }
+
+  /**
+   * A letter was delivered to a member that asked to be auto-started: if its
+   * session is not running, start (new) or resume (known) it in a terminal with
+   * the letter as the first message. The letter is marked as handed over so the
+   * hook does not inject it a second time.
+   */
+  async maybeAutoStart(c: Candidate, letterPath: string): Promise<void> {
+    if (!c.autoStart || (c.harness ?? 'claude') !== 'claude') return;
+    try {
+      const running = await runningClaudeIds();
+      if (running.has(c.sessionId.toLowerCase())) return;
+      const adapter = this.app.vault.adapter;
+      const raw = await adapter.read(letterPath);
+      if (!raw.includes('status: 未读')) return; // already handed over by the hook
+      await adapter.write(letterPath, raw.replace('status: 未读', 'status: 已读（启动代标）'));
+      const body = raw.split('\n---\n').slice(1).join('\n---\n');
+      const prompt = buildLaunchPrompt(c.name, body, todayIsoDate());
+      const promptFile = await writePromptFile(c.sessionId, prompt);
+      const exists = await sessionFileExists(c.sessionId);
+      const plan = buildLaunchPlan({ sessionId: c.sessionId, cwd: c.cwd || this.vaultBasePath() || process.cwd(), promptFile, exists });
+      const r = await launchInTerminal(plan);
+      if (r === 'launched') new Notice(`已在终端${plan.mode === 'new' ? '启动' : '恢复'}会话「${c.name}」，留言已交给它`);
+      else if (r === 'unsupported') new Notice(`「${c.name}」未在运行，且当前平台不支持自动启动`);
+    } catch (err) {
+      console.error('[ilc] auto-start failed', err);
+      new Notice(`自动启动「${c.name}」失败：${String((err as Error)?.message ?? err)}`);
+    }
   }
 
   /** Open the draft card for the current editor selection */

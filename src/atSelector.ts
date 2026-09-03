@@ -1,6 +1,8 @@
 import type { App } from 'obsidian';
 import { REGISTRY_PATH, readRegistry } from './registry.ts';
 import { MembersModal } from './views/MembersModal.ts';
+import { NewSessionModal, createSessionMember, defaultSessionCwd } from './views/NewSessionModal.ts';
+import { validateName } from './registry.ts';
 
 export { REGISTRY_PATH };
 
@@ -19,6 +21,10 @@ export interface RosterEntry {
   mailbox?: string;
   /** When true, this item is a UI action (e.g. "管理成员"), not a real agent. */
   isAction?: boolean;
+  /** Working directory for auto-start / resume */
+  cwd?: string;
+  /** Plugin-created session: start it in a terminal when a letter arrives */
+  autoStart?: boolean;
 }
 
 const ROSTER_PATH = '_os/花名册.md';
@@ -70,6 +76,8 @@ async function loadRegistry(app: App): Promise<RosterEntry[]> {
     shortId: a.sessionId.slice(0, 8),
     sessionId: a.sessionId,
     mailbox: a.mailbox,
+    cwd: a.cwd,
+    autoStart: a.autoStart,
     role: '',
     status: '闲置' as AgentStatus,
     source: 'registry' as const,
@@ -156,6 +164,8 @@ export function attachAtSelector(
   let allEntries: RosterEntry[] = [];
   let visible: RosterEntry[] = [];
   let activeIndex = 0;
+  /** typed name with no match → offer to create a session with it */
+  let createCandidate: string | null = null;
   let outsideClickHandler: ((ev: MouseEvent) => void) | null = null;
 
   const dismiss = () => {
@@ -175,17 +185,18 @@ export function attachAtSelector(
     }
   };
 
-  const insertMention = (entry: RosterEntry) => {
-    const notify = notifyCb?.checked ? '?notify' : '';
+  const insertMention = (entry: RosterEntry, atPos = activeAtPos, notifyOn = notifyCb?.checked ?? true) => {
+    if (atPos < 0) return;
+    const notify = notifyOn ? '?notify' : '';
     const mention = `[@${entry.name}](agent:${entry.shortId}${notify}) `;
 
     const currentVal = textarea.value;
     const curPos = textarea.selectionStart ?? currentVal.length;
-    const before = currentVal.slice(0, activeAtPos);
+    const before = currentVal.slice(0, atPos);
     const after = currentVal.slice(curPos);
     textarea.value = before + mention + after;
 
-    const newCursor = activeAtPos + mention.length;
+    const newCursor = atPos + mention.length;
     textarea.selectionStart = newCursor;
     textarea.selectionEnd = newCursor;
     textarea.focus();
@@ -203,11 +214,22 @@ export function attachAtSelector(
       : allEntries;
     activeIndex = Math.min(activeIndex, Math.max(0, visible.length - 1));
 
+    createCandidate = q && !validateName(query.trim()) ? query.trim() : null;
     if (visible.length === 0) {
-      listEl.createEl('div', {
-        cls: 'ilc-at-empty',
-        text: allEntries.length === 0 ? '还没有可以 @ 的成员——点下方「管理成员」添加' : '没有匹配的成员',
-      });
+      if (createCandidate) {
+        const item = listEl.createEl('div', { cls: 'ilc-at-item ilc-at-create is-active' });
+        item.createEl('span', { cls: 'ilc-at-avatar ilc-at-avatar-new', text: '＋' });
+        const main = item.createEl('span', { cls: 'ilc-at-main' });
+        main.createEl('span', { cls: 'ilc-at-name', text: `创建新会话「${createCandidate}」并 @ 它` });
+        main.createEl('span', { cls: 'ilc-at-role', text: '发送后在终端里启动一个真正的 Claude Code 会话来回复' });
+        item.addEventListener('mousedown', (e) => e.preventDefault());
+        item.addEventListener('click', (e) => { e.stopPropagation(); void createAndMention(createCandidate!); });
+      } else {
+        listEl.createEl('div', {
+          cls: 'ilc-at-empty',
+          text: allEntries.length === 0 ? '还没有可以 @ 的成员——输入一个名字直接创建新会话，或点「管理成员」' : '没有匹配的成员',
+        });
+      }
       return;
     }
 
@@ -244,6 +266,16 @@ export function attachAtSelector(
         insertMention(entry);
       });
     });
+  };
+
+  /** Register a not-yet-started session under `name` and @ it right away */
+  const createAndMention = async (name: string) => {
+    const atPos = activeAtPos;
+    const notifyOn = notifyCb?.checked ?? true;
+    const entry = await createSessionMember(app, name, defaultSessionCwd(app));
+    if (!entry) return;
+    dismiss();
+    insertMention(entry, atPos, notifyOn);
   };
 
   const moveActive = (delta: number) => {
@@ -326,8 +358,18 @@ export function attachAtSelector(
     activeIndex = 0;
     renderList(currentQuery());
 
-    // Foot: manage members
+    // Foot: new session + manage members
     const foot = dropdown.createEl('div', { cls: 'ilc-at-foot' });
+    const newItem = foot.createEl('button', { cls: 'ilc-at-new', text: '＋ 新会话…' });
+    newItem.addEventListener('mousedown', (e) => e.preventDefault());
+    newItem.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const atPos = activeAtPos;
+      const notifyOn = notifyCb?.checked ?? true;
+      const initial = currentQuery().trim();
+      dismiss();
+      new NewSessionModal(app, (entry) => insertMention(entry, atPos, notifyOn), initial).open();
+    });
     const manageItem = foot.createEl('button', { cls: 'ilc-at-manage', text: '管理成员…' });
     manageItem.addEventListener('mousedown', (e) => e.preventDefault());
     manageItem.addEventListener('click', (e) => {
@@ -366,6 +408,9 @@ export function attachAtSelector(
         if (visible[activeIndex]) {
           e.preventDefault(); e.stopPropagation();
           insertMention(visible[activeIndex]);
+        } else if (createCandidate) {
+          e.preventDefault(); e.stopPropagation();
+          void createAndMention(createCandidate);
         }
         break;
     }

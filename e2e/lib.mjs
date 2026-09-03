@@ -72,7 +72,7 @@ export async function launch(userdata) {
   const proc = spawn(OBSIDIAN_BIN, [`--user-data-dir=${userdata}`, `--remote-debugging-port=${PORT}`], {
     stdio: 'ignore',
     detached: false,
-    env: { ...process.env, ILC_HOME: home },
+    env: { ...process.env, ILC_HOME: home, ILC_LAUNCH_LOG: path.join(WORK, 'launch.log') },
   });
   const deadline = Date.now() + 40000;
   while (Date.now() < deadline) {

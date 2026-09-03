@@ -109,7 +109,7 @@ export class MentionDelivery {
       const full = e.sessionId ?? e.shortId;
       const short = full.slice(0, 8).toLowerCase();
       const mailbox = e.mailbox && !e.mailbox.startsWith('/') && !e.mailbox.includes('..') ? e.mailbox : undefined;
-      byShort.set(short, { name: e.name, sessionId: full, shortId: short, mailbox });
+      byShort.set(short, { name: e.name, sessionId: full, shortId: short, mailbox, harness: e.harness, cwd: e.cwd, autoStart: e.autoStart });
     }
     return { byShort, names };
   }
