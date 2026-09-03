@@ -19,6 +19,9 @@ function avatarColor(name: string): string {
 export class MembersModal extends Modal {
   private membersEl!: HTMLElement;
   private sessionsEl!: HTMLElement;
+  private searchEl!: HTMLInputElement;
+  private sessions: LocalSession[] = [];
+  private registrySnapshot: { joined: Map<string, string>; left: Map<string, string> } = { joined: new Map(), left: new Map() };
 
   constructor(app: App) {
     super(app);
@@ -57,7 +60,13 @@ export class MembersModal extends Modal {
     const s2 = contentEl.createEl('section', { cls: 'ilc-members-section' });
     const h2 = s2.createEl('div', { cls: 'ilc-members-section-head' });
     h2.createEl('h3', { text: '这台电脑上的会话' });
-    const refresh = h2.createEl('button', { cls: 'ilc-members-refresh', text: '刷新' });
+    const tools = h2.createEl('div', { cls: 'ilc-members-tools' });
+    this.searchEl = tools.createEl('input', {
+      cls: 'ilc-members-search',
+      attr: { type: 'search', placeholder: '搜标题 / 目录 / 短 id', spellcheck: 'false' },
+    }) as HTMLInputElement;
+    this.searchEl.addEventListener('input', () => this.renderSessionRows());
+    const refresh = tools.createEl('button', { cls: 'ilc-members-refresh', text: '刷新' });
     s2.createEl('p', {
       cls: 'ilc-members-hint',
       text: '自动发现最近活跃的 Claude Code / Codex 会话。给它起个名字点「加入」，之后就能在评论里 @ 它。',
@@ -139,15 +148,33 @@ export class MembersModal extends Modal {
       return;
     }
     const registry = await readRegistry(this.app);
-    const joined = new Map(registry.agents.map((a) => [a.sessionId.toLowerCase(), a.name]));
-    const left = new Map((registry.left ?? []).map((a) => [a.sessionId.toLowerCase(), a.name]));
+    this.registrySnapshot = {
+      joined: new Map(registry.agents.map((a) => [a.sessionId.toLowerCase(), a.name])),
+      left: new Map((registry.left ?? []).map((a) => [a.sessionId.toLowerCase(), a.name])),
+    };
+    this.sessions = sessions;
+    this.renderSessionRows();
+  }
 
+  /** Render the discovered sessions through the search filter */
+  private renderSessionRows(): void {
+    const el = this.sessionsEl;
     el.empty();
-    if (sessions.length === 0) {
+    if (this.sessions.length === 0) {
       el.createEl('div', { cls: 'ilc-members-empty', text: '最近 48 小时没有发现 Claude Code / Codex 会话。' });
       return;
     }
-    for (const s of sessions) this.renderSessionRow(el, s, joined.get(s.sessionId.toLowerCase()), left.get(s.sessionId.toLowerCase()));
+    const q = (this.searchEl?.value ?? '').trim().toLowerCase();
+    const hit = (s: LocalSession) =>
+      !q || [s.title, s.cwd, s.shortId, s.sessionId, s.harness, this.registrySnapshot.joined.get(s.sessionId.toLowerCase())]
+        .some((v) => v && v.toLowerCase().includes(q));
+    const rows = this.sessions.filter(hit);
+    if (rows.length === 0) {
+      el.createEl('div', { cls: 'ilc-members-empty', text: `没有匹配「${q}」的会话` });
+      return;
+    }
+    const { joined, left } = this.registrySnapshot;
+    for (const s of rows) this.renderSessionRow(el, s, joined.get(s.sessionId.toLowerCase()), left.get(s.sessionId.toLowerCase()));
   }
 
   private renderSessionRow(container: HTMLElement, s: LocalSession, joinedAs?: string, leftAs?: string): void {

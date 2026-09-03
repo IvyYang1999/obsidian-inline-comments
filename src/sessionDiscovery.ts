@@ -46,7 +46,7 @@ function ps(): Promise<string> {
   });
 }
 
-async function readHead(file: string, bytes = 96 * 1024): Promise<string> {
+async function readHead(file: string, bytes = 1024 * 1024): Promise<string> {
   let fh: fsp.FileHandle | null = null;
   try {
     fh = await fsp.open(file, 'r');
@@ -64,36 +64,32 @@ function cleanTitle(s: string | undefined): string | undefined {
   if (!s) return undefined;
   const t = s.replace(/\s+/g, ' ').replace(/^<[^>]+>\s*/g, '').trim();
   if (!t) return undefined;
-  // compaction / resume boilerplate says nothing about the session
-  if (/^This session is being continued|^<system-reminder>|^Caveat:/i.test(t)) return undefined;
+  // compaction / resume / harness boilerplate says nothing about the session
+  if (/^This session is being continued|^<system-reminder>|^Caveat:|^<local-command|^<command-|^\[Image|^MemoraX|^Base directory|^You are|^# |^\{/i.test(t)) return undefined;
+  if (/^[a-z0-9_-]{6,}$/i.test(t)) return undefined; // ids / slugs
   return t.length > 48 ? `${t.slice(0, 48)}…` : t;
 }
 
-/** Best-effort extraction of cwd + first user message from a JSONL head */
+/**
+ * Best-effort extraction of cwd + first user message from a JSONL head.
+ * Works on the raw text with regexes: the first lines can be hundreds of KB
+ * (pasted screenshots are inlined as base64), so whole-line JSON.parse is not
+ * an option.
+ */
 function parseHead(text: string): { cwd?: string; title?: string } {
   let cwd: string | undefined;
-  let title: string | undefined;
   const m = text.match(/"cwd":"((?:[^"\\]|\\.)*)"/);
   if (m) {
     try { cwd = JSON.parse(`"${m[1]}"`); } catch { cwd = m[1]; }
   }
-  for (const line of text.split('\n').slice(0, 60)) {
-    if (!line.includes('"user"')) continue;
-    try {
-      const obj = JSON.parse(line);
-      // Claude Code: {type:'user', message:{role:'user', content: string | [{type:'text', text}]}}
-      const msg = obj?.message ?? obj?.payload;
-      if (obj?.type === 'user' || msg?.role === 'user') {
-        const c = msg?.content;
-        if (typeof c === 'string') { title = cleanTitle(c); break; }
-        if (Array.isArray(c)) {
-          const part = c.find((p: any) => typeof p?.text === 'string');
-          if (part) { title = cleanTitle(part.text); break; }
-        }
-      }
-    } catch {
-      // partial line (we only read the head) — keep scanning
-    }
+  // Candidate texts in order of appearance: text parts and plain string contents
+  const re = /"(?:text|content)":"((?:[^"\\]|\\.){2,400})"/g;
+  let title: string | undefined;
+  for (const mm of text.matchAll(re)) {
+    let raw: string;
+    try { raw = JSON.parse(`"${mm[1]}"`); } catch { continue; }
+    const t = cleanTitle(raw);
+    if (t) { title = t; break; }
   }
   return { cwd, title };
 }

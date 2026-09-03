@@ -154,7 +154,7 @@ export class CommentPanel extends ItemView {
     };
 
     this.renderDraftCardEl();
-    this.setEditorDraftRange({ from, to: from + highlightText.length });
+    this.setEditorDraftRange({ from, to: from + highlightText.length, cls: `ilc-highlight ilc-hl-${defaultType}` });
     // Scroll panel to show the draft card
     setTimeout(() => {
       this.draftInputEl?.focus();
@@ -562,6 +562,7 @@ export class CommentPanel extends ItemView {
         d.typeChanged = true;
         btn.addClass('ilc-draft-type-active');
         card.style.setProperty('--ilc-accent', this.typeAccent(type.id));
+        this.setEditorDraftRange({ from: d.from, to: d.from + d.highlightText.length, cls: `ilc-highlight ilc-hl-${type.id}` });
         activeBtn = btn;
       });
     }
@@ -615,7 +616,7 @@ export class CommentPanel extends ItemView {
   }
 
   /** Show / clear the temporary "being commented" highlight in the editor */
-  private setEditorDraftRange(range: { from: number; to: number } | null): void {
+  private setEditorDraftRange(range: { from: number; to: number; cls?: string } | null): void {
     try {
       const cm = (this.findMarkdownView() as any)?.editor?.cm as EditorView | undefined;
       cm?.dispatch({ effects: setDraftRange.of(range) });

@@ -71,12 +71,9 @@ body {
 .ilc-hl-important { background: var(--ilc-important); }
 .ilc-hl-note      { background: var(--ilc-note);      }
 
-/* Temporary highlight of the selection being commented on (draft open) */
-.ilc-draft-highlight {
-  background: color-mix(in srgb, var(--interactive-accent) 22%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 35%, transparent);
-  border-radius: var(--ilc-radius-mark);
-}
+/* Selection being commented on (draft open): rendered with the chosen type's own
+   highlight class so it looks exactly like the finished highlight will. */
+.ilc-draft-highlight { cursor: text; }
 
 /* ─── Badge widget ───────────────────────────────────────────────────────────── */
 .ilc-badge {
@@ -1140,3 +1137,11 @@ body {
 .ilc-registry-badge { font-size: 10px; padding: 3px 6px; border-radius: var(--ilc-radius-pill); line-height: 1; margin-left: auto; }
 .ilc-registry-badge-self { color: var(--interactive-accent); background: color-mix(in srgb, var(--interactive-accent) 10%, transparent); }
 .ilc-registry-badge-roster { color: var(--text-muted); background: var(--ilc-surface-sunken); }
+
+.ilc-members-tools { display: flex; align-items: center; gap: 6px; }
+.ilc-members-search {
+  width: 13em; height: 26px !important; min-height: 0 !important; padding: 0 9px !important;
+  font-size: var(--ilc-font-meta); border-radius: var(--ilc-radius-pill) !important;
+  border: 1px solid var(--ilc-hairline) !important; background: var(--ilc-surface-sunken) !important; box-shadow: none !important;
+}
+.ilc-members-search:focus { border-color: var(--ilc-hairline-strong) !important; background: var(--ilc-surface) !important; outline: none; }

@@ -239,12 +239,11 @@ class CommentViewPlugin implements PluginValue {
 
 // ─── Draft range: temporary highlight while a comment is being written ───────
 
-export interface DraftRange { from: number; to: number }
+export interface DraftRange { from: number; to: number; /** CSS classes, e.g. "ilc-highlight ilc-hl-agree" */ cls?: string }
 
 /** Dispatch with `{ from, to }` to show the pending selection, `null` to clear */
 export const setDraftRange = StateEffect.define<DraftRange | null>();
 
-const draftMark = Decoration.mark({ class: 'ilc-draft-highlight' });
 
 export const draftRangeField = StateField.define<DecorationSet>({
   create: () => Decoration.none,
@@ -254,7 +253,8 @@ export const draftRangeField = StateField.define<DecorationSet>({
       if (e.is(setDraftRange)) {
         if (!e.value || e.value.to <= e.value.from) return Decoration.none;
         const to = Math.min(e.value.to, tr.newDoc.length);
-        return Decoration.set([draftMark.range(Math.max(0, e.value.from), to)]);
+        const mark = Decoration.mark({ class: `ilc-draft-highlight ${e.value.cls ?? 'ilc-highlight ilc-hl-note'}` });
+        return Decoration.set([mark.range(Math.max(0, e.value.from), to)]);
       }
     }
     return deco;
