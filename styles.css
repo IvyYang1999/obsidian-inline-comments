@@ -4,23 +4,23 @@
    connector line. Everything else inherits from the Obsidian theme. */
 :root {
   /* Comment type: editor highlight backgrounds */
-  --ilc-agree:     rgba(76, 175, 80, 0.22);
-  --ilc-disagree:  rgba(244, 67, 54, 0.22);
-  --ilc-question:  rgba(255, 152, 0, 0.22);
-  --ilc-important: rgba(33, 150, 243, 0.22);
-  --ilc-note:      rgba(158, 158, 158, 0.18);
+  --ilc-agree:     rgba(111,162,135, 0.20);
+  --ilc-disagree:     rgba(201,108,108, 0.20);
+  --ilc-question:     rgba(212,162,76, 0.20);
+  --ilc-important:     rgba(106,143,207, 0.20);
+  --ilc-note:     rgba(154,160,166, 0.16);
 
   /* Comment type: accent colors */
-  --ilc-agree-border:     #4CAF50;
-  --ilc-disagree-border:  #F44336;
-  --ilc-question-border:  #FF9800;
-  --ilc-important-border: #2196F3;
-  --ilc-note-border:      #9E9E9E;
+  --ilc-agree-border:     #6FA287;
+  --ilc-disagree-border:  #C96C6C;
+  --ilc-question-border:  #D4A24C;
+  --ilc-important-border: #6A8FCF;
+  --ilc-note-border:      #9AA0A6;
 
   /* Surfaces & lines */
   --ilc-surface:        var(--background-primary);
-  --ilc-surface-sunken: var(--background-secondary);
-  --ilc-hairline:       color-mix(in srgb, var(--background-modifier-border) 75%, transparent);
+  --ilc-surface-sunken: color-mix(in srgb, var(--text-normal) 5%, var(--background-primary));
+  --ilc-hairline:       var(--background-modifier-border);
   --ilc-hairline-soft:  color-mix(in srgb, var(--background-modifier-border) 45%, transparent);
 
   /* Shadows — reserved for elevated states only */
@@ -126,23 +126,25 @@
   background: var(--ilc-surface);
   border: 1px solid var(--ilc-hairline);
   border-radius: var(--ilc-radius-card);
+  box-shadow: var(--ilc-shadow-xs);
   cursor: pointer;
   transition: top 0.18s ease-out, border-color var(--ilc-trans-std), box-shadow var(--ilc-trans-std);
 }
 .ilc-card:hover {
   border-color: var(--background-modifier-border-hover, var(--background-modifier-border));
+  box-shadow: var(--ilc-shadow-sm);
 }
 .ilc-card-active {
-  border-color: color-mix(in srgb, var(--ilc-accent) 70%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ilc-accent) 16%, transparent);
+  border-color: var(--background-modifier-border-hover, var(--background-modifier-border));
+  box-shadow: var(--ilc-shadow-sm);
   z-index: 1;
 }
 /* Reply input is rendered for every card but visible only while focused. */
 .ilc-card:not(.ilc-card-active) .ilc-reply-input-row { display: none !important; }
 
 @keyframes ilc-flash {
-  0%   { box-shadow: 0 0 0 5px color-mix(in srgb, var(--ilc-accent) 34%, transparent); }
-  100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ilc-accent) 16%, transparent); }
+  0%   { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ilc-accent) 22%, transparent), var(--ilc-shadow-sm); }
+  100% { box-shadow: var(--ilc-shadow-sm); }
 }
 .ilc-card-flash { animation: ilc-flash 0.6s ease-out; }
 
@@ -319,7 +321,7 @@
   font-size: var(--ilc-font-body);
   line-height: 1.5;
   border-radius: 8px;
-  border: 1px solid transparent;
+  border: 1px solid var(--ilc-hairline);
   background: var(--ilc-surface-sunken);
   color: var(--text-normal);
   padding: 8px 10px;
@@ -332,7 +334,7 @@
 .ilc-reply-input:focus,
 .ilc-draft-input:focus {
   outline: none;
-  border-color: var(--ilc-accent);
+  border-color: var(--background-modifier-border-hover, var(--ilc-hairline));
   background: var(--ilc-surface);
   box-shadow: none;
 }
@@ -364,6 +366,8 @@
 .ilc-more-btn {
   flex-shrink: 0;
   opacity: 0;
+  width: 0;
+  overflow: hidden;
   background: none !important;
   border: none !important;
   box-shadow: none !important;
@@ -371,15 +375,15 @@
   cursor: pointer;
   color: var(--text-faint);
   font-size: 14px;
-  padding: 0 2px;
+  padding: 0;
   line-height: 1.2;
   transition: opacity var(--ilc-trans-std), color var(--ilc-trans-std);
-  margin-left: auto;
+  margin-left: 0;
 }
 .ilc-card-preview .ilc-more-btn { align-self: flex-start; }
 .ilc-card-preview:hover .ilc-more-btn,
 .ilc-entry-header:hover .ilc-entry-more-btn,
-.ilc-pending-row:hover .ilc-entry-more-btn { opacity: 1; }
+.ilc-pending-row:hover .ilc-entry-more-btn { opacity: 1; width: auto; padding: 0 2px; margin-left: 6px; }
 .ilc-more-btn:hover { opacity: 1 !important; color: var(--text-normal); }
 
 /* ─── Hidden utility ─────────────────────────────────────────────────────────── */
@@ -387,8 +391,8 @@
 
 /* ─── Draft card ─────────────────────────────────────────────────────────────── */
 .ilc-card-draft {
-  border-color: var(--ilc-accent);
-  box-shadow: var(--ilc-shadow-md), 0 0 0 3px color-mix(in srgb, var(--ilc-accent) 16%, transparent);
+  border-color: color-mix(in srgb, var(--ilc-accent) 45%, var(--background-modifier-border));
+  box-shadow: var(--ilc-shadow-md);
   cursor: default;
   z-index: 10;
 }
@@ -962,7 +966,7 @@
 .ilc-read-btn {
   font-size: var(--ilc-font-small);
   font-weight: 500;
-  color: var(--interactive-accent);
+  color: var(--interactive-accent) !important;
   background: none !important;
   border: none !important;
   box-shadow: none !important;

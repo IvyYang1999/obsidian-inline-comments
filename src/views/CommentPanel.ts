@@ -38,11 +38,11 @@ interface DraftState {
 
 /** Accent colors for built-in types (fallback when settings carry no color) */
 const BUILTIN_TYPE_COLORS: Record<string, string> = {
-  agree:     '#4CAF50',
-  disagree:  '#F44336',
-  question:  '#FF9800',
-  important: '#2196F3',
-  note:      '#9E9E9E',
+  agree:     '#6FA287',
+  disagree:  '#C96C6C',
+  question:  '#D4A24C',
+  important: '#6A8FCF',
+  note:      '#9AA0A6',
 };
 
 /** Strip common markdown formatting for preview display */

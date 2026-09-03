@@ -26,11 +26,11 @@ import {
 // ─── Default type chips ────────────────────────────────────────────────────────
 
 export const DEFAULT_COMMENT_TYPES: CommentTypeConfig[] = [
-  { id: 'agree',     emoji: '🟢', label: '认同',   color: '#4CAF50' },
-  { id: 'disagree',  emoji: '🔴', label: '不认同', color: '#F44336' },
-  { id: 'question',  emoji: '🟡', label: '疑问',   color: '#FF9800' },
-  { id: 'important', emoji: '🔵', label: '重要',   color: '#2196F3' },
-  { id: 'note',      emoji: '⚪', label: '备注',   color: '#9E9E9E' },
+  { id: 'agree',     emoji: '🟢', label: '认同',   color: '#6FA287' },
+  { id: 'disagree',  emoji: '🔴', label: '不认同', color: '#C96C6C' },
+  { id: 'question',  emoji: '🟡', label: '疑问',   color: '#D4A24C' },
+  { id: 'important', emoji: '🔵', label: '重要',   color: '#6A8FCF' },
+  { id: 'note',      emoji: '⚪', label: '备注',   color: '#9AA0A6' },
 ];
 
 export const DEFAULT_AI_AGENTS: AIAgentConfig[] = [
