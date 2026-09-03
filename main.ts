@@ -7,6 +7,7 @@ import { buildAgentReplyPrompt, cleanReplyText } from './src/agentReply.ts';
 import { buildCommentExtension, type ICommentHost, type AnnotationPosition } from './src/editor/cmExtension.ts';
 import { CommentPanel, VIEW_TYPE_COMMENTS } from './src/views/CommentPanel.ts';
 import { HistoryModal } from './src/views/HistoryModal.ts';
+import { MembersModal } from './src/views/MembersModal.ts';
 import { GlobalThreadModal } from './src/modal/GlobalThreadModal.ts';
 import { appendReply, parseAnnotations } from './src/parser.ts';
 import type { CommentEntry, CommentTypeConfig, AIAgentConfig, DeletedRecord } from './src/types.ts';
@@ -122,6 +123,13 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       callback: () => {
         new HistoryModal(this.app, this).open();
       },
+    });
+
+    // Command: manage @-mention members
+    this.addCommand({
+      id: 'manage-comment-members',
+      name: '管理评论 @ 成员',
+      callback: () => new MembersModal(this.app).open(),
     });
 
     // Command: document-level AI conversation block

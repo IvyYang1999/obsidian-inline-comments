@@ -184,8 +184,35 @@ async function run() {
     check('@ 下拉背景不透明', isOpaque(dd.bg), dd.bg);
     check('@ 下拉列出 4 位成员', dd.items === 4, `items=${dd.items}`);
     check('名字单行不竖排', dd.names.every((n) => n.lines < 1.5), dd.names.map((n) => `${n.text}:${n.h.toFixed(0)}px`).join(' '));
-    check('自助成员显示来源胶囊', dd.sources.some((s) => s.includes('自助')), dd.sources.join(','));
+    check('自己加入的成员显示 harness 胶囊（不再是黑话「自助」）', dd.sources.includes('codex') && !dd.sources.some((s) => s.includes('自助')), dd.sources.join(','));
+    const notifyLabel = await page.locator('.ilc-at-notify').textContent();
+    check('通知开关用人话', (notifyLabel ?? '').includes('通知对方'), notifyLabel ?? '');
     await shot(page, '03-at-dropdown', '.workspace-leaf-content[data-type="ilc-comments-panel"]');
+
+    // 管理成员 → dedicated modal (not the settings page)
+    await page.locator('.ilc-at-manage').click();
+    await page.waitForSelector('.ilc-members-modal', { timeout: 5000 });
+    await sleep(800); // discovery
+    const modal = await page.evaluate(() => ({
+      title: document.querySelector('.ilc-members-modal h2')?.textContent,
+      sections: document.querySelectorAll('.ilc-members-section').length,
+      members: document.querySelectorAll('.ilc-members-list')[0]?.querySelectorAll('.ilc-members-row').length,
+      sessionRows: document.querySelectorAll('.ilc-members-session').length,
+      settingsOpen: !!document.querySelector('.modal-settings'),
+    }));
+    check('管理成员打开独立弹窗', modal.title === '评论 @ 成员' && modal.sections === 3 && !modal.settingsOpen, JSON.stringify(modal));
+    check('弹窗列出现有成员', (modal.members ?? 0) === 4, `members=${modal.members}`);
+    check('弹窗发现本机会话（这台机器上有 claude 在跑）', (modal.sessionRows ?? 0) > 0, `sessions=${modal.sessionRows}`);
+    await shot(page, '07-members-modal', '.ilc-members-modal-shell');
+    await page.keyboard.press('Escape');
+    await sleep(200);
+    // reopen the dropdown for the remaining @ checks
+    await page.locator('.ilc-card-active .ilc-reply-input').click();
+    await page.keyboard.press('End');
+    await page.waitForSelector('.ilc-at-dropdown', { timeout: 5000 }).catch(async () => {
+      await page.keyboard.type('@');
+      await page.waitForSelector('.ilc-at-dropdown', { timeout: 5000 });
+    });
 
     // filter + keyboard
     await page.keyboard.type('审');

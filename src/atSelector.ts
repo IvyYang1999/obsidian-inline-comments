@@ -1,4 +1,8 @@
 import type { App } from 'obsidian';
+import { REGISTRY_PATH, readRegistry } from './registry.ts';
+import { MembersModal } from './views/MembersModal.ts';
+
+export { REGISTRY_PATH };
 
 export type AgentStatus = '在线' | '闲置' | '离线';
 
@@ -13,20 +17,8 @@ export interface RosterEntry {
   isAction?: boolean;
 }
 
-interface RegistryAgent {
-  name: string;
-  sessionId: string;
-  harness: string;
-  joinedAt: string;
-}
-
-interface RegistryFile {
-  agents: RegistryAgent[];
-}
-
 const ROSTER_PATH = '_os/花名册.md';
 const PRESENCE_PATH = '_os/在场.md';
-export const REGISTRY_PATH = '_os/comment-agents.json';
 
 /** 把 session-state.py 的客观状态值归一化成 UI 三态。
  *  真实值举例：运行中/在线/工作中 → 在线；闲置/等待输入/等额度 → 闲置；下线/离线/超时 → 离线。 */
@@ -68,21 +60,15 @@ export async function loadRoster(app: App): Promise<RosterEntry[]> {
 }
 
 async function loadRegistry(app: App): Promise<RosterEntry[]> {
-  try {
-    const raw = await app.vault.adapter.read(REGISTRY_PATH);
-    const data: RegistryFile = JSON.parse(raw);
-    if (!Array.isArray(data?.agents)) return [];
-    return data.agents.map((a) => ({
-      name: a.name,
-      shortId: a.sessionId.slice(0, 8),
-      role: '',
-      status: '闲置' as AgentStatus,
-      source: 'registry' as const,
-      harness: a.harness || undefined,
-    }));
-  } catch {
-    return [];
-  }
+  const data = await readRegistry(app);
+  return data.agents.map((a) => ({
+    name: a.name,
+    shortId: a.sessionId.slice(0, 8),
+    role: '',
+    status: '闲置' as AgentStatus,
+    source: 'registry' as const,
+    harness: a.harness || undefined,
+  }));
 }
 
 async function loadPresenceStatus(app: App): Promise<Map<string, AgentStatus>> {
@@ -211,7 +197,10 @@ export function attachAtSelector(
     activeIndex = Math.min(activeIndex, Math.max(0, visible.length - 1));
 
     if (visible.length === 0) {
-      listEl.createEl('div', { cls: 'ilc-at-empty', text: '没有匹配的成员' });
+      listEl.createEl('div', {
+        cls: 'ilc-at-empty',
+        text: allEntries.length === 0 ? '还没有可以 @ 的成员——点下方「管理成员」添加' : '没有匹配的成员',
+      });
       return;
     }
 
@@ -230,7 +219,8 @@ export function attachAtSelector(
       if (role) main.createEl('span', { cls: 'ilc-at-role', text: role });
 
       if (entry.source === 'registry') {
-        item.createEl('span', { cls: 'ilc-at-source', text: entry.harness ? `自助 · ${entry.harness}` : '自助' });
+        const pill = item.createEl('span', { cls: 'ilc-at-source', text: entry.harness ?? '会话' });
+        pill.setAttribute('title', `${entry.harness ?? ''} 会话 ${entry.shortId}，自己加入的成员`);
       } else if (entry.status === '离线') {
         item.createEl('span', { cls: 'ilc-at-source ilc-at-source-muted', text: '离线' });
       }
@@ -292,7 +282,6 @@ export function attachAtSelector(
     activeAtPos = atPos;
 
     allEntries = await loadRoster(app);
-    if (allEntries.length === 0) return;
 
     const card = wrapper.closest('.ilc-card');
     card?.classList.add('ilc-at-active');
@@ -305,7 +294,8 @@ export function attachAtSelector(
     const notifyLabel = head.createEl('label', { cls: 'ilc-at-notify' });
     notifyCb = notifyLabel.createEl('input', { attr: { type: 'checkbox' } }) as HTMLInputElement;
     notifyCb.checked = true;
-    notifyLabel.createEl('span', { text: '投信通知' });
+    notifyLabel.createEl('span', { text: '通知对方' });
+    notifyLabel.setAttribute('title', '勾选：对方会收到这条评论并把回复写回这里。不勾：只是提一下，不打扰。');
     head.createEl('span', { cls: 'ilc-at-hint', text: '↑↓ 选择 · ⏎ 确认' });
 
     listEl = dropdown.createEl('div', { cls: 'ilc-at-list' });
@@ -319,8 +309,7 @@ export function attachAtSelector(
     manageItem.addEventListener('click', (e) => {
       e.stopPropagation();
       dismiss();
-      (app as any).setting.open();
-      (app as any).setting.openTabById('obsidian-inline-comments');
+      new MembersModal(app).open();
     });
 
     outsideClickHandler = (ev: MouseEvent) => {

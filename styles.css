@@ -1086,3 +1086,46 @@ body {
   transition: background var(--ilc-trans-fast);
 }
 .ilc-read-btn:hover { background: var(--background-modifier-hover) !important; }
+
+/* ─── Members modal（评论 @ 成员） ─────────────────────────────────────────── */
+.ilc-members-modal-shell { width: min(640px, 92vw); }
+.ilc-members-modal h2 { margin: 0 0 6px; font-size: 17px; }
+.ilc-members-modal h3 { margin: 0; font-size: var(--ilc-font-body); font-weight: 600; }
+.ilc-members-intro { margin: 0 0 16px; color: var(--text-muted); font-size: var(--ilc-font-meta); line-height: 1.6; }
+.ilc-members-section { margin-bottom: 18px; }
+.ilc-members-section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.ilc-members-hint { margin: 0 0 8px; color: var(--text-muted); font-size: var(--ilc-font-small); line-height: 1.5; }
+.ilc-members-section-muted { color: var(--text-muted); font-size: var(--ilc-font-small); }
+.ilc-members-section-muted h3 { color: var(--text-muted); font-size: var(--ilc-font-small); margin-bottom: 4px; }
+.ilc-members-section-muted ul { margin: 0; padding-left: 18px; line-height: 1.7; }
+.ilc-members-list { border: 1px solid var(--ilc-hairline); border-radius: var(--ilc-radius-card); overflow: hidden; }
+.ilc-members-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; min-width: 0; }
+.ilc-members-row + .ilc-members-row { border-top: 1px solid var(--ilc-hairline-soft); }
+.ilc-members-main { flex: 1; min-width: 0; }
+.ilc-members-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ilc-members-title { font-size: var(--ilc-font-body); font-weight: 500; color: var(--text-normal); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ilc-members-sub { font-size: var(--ilc-font-small); color: var(--text-faint); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ilc-members-status { font-size: var(--ilc-font-small); color: var(--text-faint); }
+.ilc-members-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); opacity: 0.5; flex-shrink: 0; }
+.ilc-members-dot.is-on { background: #34d058; opacity: 1; box-shadow: 0 0 0 3px color-mix(in srgb, #34d058 18%, transparent); }
+.ilc-members-action { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.ilc-members-name { width: 9em; height: 26px !important; min-height: 0 !important; padding: 0 8px !important; font-size: var(--ilc-font-meta); border-radius: var(--ilc-radius-btn) !important; border: 1px solid var(--ilc-hairline) !important; background: var(--ilc-surface-sunken) !important; box-shadow: none !important; }
+.ilc-members-name:focus { border-color: var(--ilc-hairline-strong) !important; background: var(--ilc-surface) !important; outline: none; }
+.ilc-members-join, .ilc-members-open, .ilc-members-refresh, .ilc-members-remove {
+  height: 26px !important; min-height: 0 !important; padding: 0 12px !important; font-size: var(--ilc-font-meta);
+  border-radius: var(--ilc-radius-pill) !important; box-shadow: none !important; cursor: pointer; line-height: 1;
+}
+.ilc-members-join { background: var(--interactive-accent) !important; color: var(--text-on-accent) !important; border: none !important; font-weight: 600; }
+.ilc-members-open, .ilc-members-refresh { background: transparent !important; color: var(--text-normal) !important; border: 1px solid var(--ilc-hairline) !important; }
+.ilc-members-open { display: inline-block; vertical-align: middle; margin: 0 2px; }
+.ilc-members-remove { background: transparent !important; color: var(--text-muted) !important; border: none !important; }
+.ilc-members-remove:hover { color: var(--text-error) !important; background: var(--background-modifier-hover) !important; }
+.ilc-members-joined { font-size: var(--ilc-font-small); color: var(--text-muted); }
+.ilc-members-empty { padding: 14px 12px; color: var(--text-faint); font-size: var(--ilc-font-small); }
+
+/* settings list badges */
+.ilc-registry-name { font-weight: 600; font-size: var(--ilc-font-meta); }
+.ilc-registry-id { font-family: var(--font-monospace); font-size: 11px; color: var(--text-faint); }
+.ilc-registry-badge { font-size: 10px; padding: 3px 6px; border-radius: var(--ilc-radius-pill); line-height: 1; margin-left: auto; }
+.ilc-registry-badge-self { color: var(--interactive-accent); background: color-mix(in srgb, var(--interactive-accent) 10%, transparent); }
+.ilc-registry-badge-roster { color: var(--text-muted); background: var(--ilc-surface-sunken); }
