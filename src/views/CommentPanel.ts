@@ -75,6 +75,18 @@ export class CommentPanel extends ItemView {
   private cardEls: Map<string, HTMLElement> = new Map();
   /** Threads the user expanded past the clamp (per session) */
   private expanded = new Set<string>();
+  /** Reading-view scroller we are mirroring (null in source mode) */
+  private previewEl: HTMLElement | null = null;
+  private previewScrollHandler = () => {
+    if (Date.now() < this.ignoreEditorScrollUntil) return;
+    window.requestAnimationFrame(() => {
+      if (!this.previewEl) return;
+      this.syncingScroll = true;
+      this.panelContainer.scrollTop = this.previewEl.scrollTop;
+      this.syncingScroll = false;
+      this.layoutCards(); // lazily rendered sections may have appeared
+    });
+  };
 
   private cardsZone!: HTMLElement;
   private headerEl!: HTMLElement;
@@ -137,6 +149,7 @@ export class CommentPanel extends ItemView {
         // Same note, but possibly a different pane: re-align with that editor
         const cm = this.currentCm();
         if (cm && cm !== this.alignedCm) this.alignWith(cm);
+        this.attachPreview();
       }),
     );
     this.registerEvent(
@@ -150,6 +163,7 @@ export class CommentPanel extends ItemView {
   }
 
   async onClose(): Promise<void> {
+    this.detachPreview();
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
     this.cancelDraft();
@@ -296,6 +310,7 @@ export class CommentPanel extends ItemView {
 
     // Compute positions directly from the editor (don't wait for async CM6 callback)
     this.alignedCm = this.currentCm();
+    this.attachPreview();
     this.computePositionsFromEditor();
     this.layoutCards();
     // The editor may still be re-measuring (sidebar just opened, fonts loading):
@@ -402,8 +417,49 @@ export class CommentPanel extends ItemView {
   // ── Position computation ─────────────────────────────────────────────────────
 
   /** Directly read annotation positions from the CM6 EditorView */
+  /** The reading-view scroll container of the current note, or null when in source mode */
+  private previewScroller(): HTMLElement | null {
+    const mdView = this.findMarkdownView();
+    if (!mdView || mdView.getMode() !== 'preview') return null;
+    return mdView.containerEl.querySelector<HTMLElement>('.markdown-preview-view');
+  }
+
+  /** Mirror the reading-view scroller (and stop mirroring the previous one) */
+  private attachPreview(): void {
+    const el = this.previewScroller();
+    if (el === this.previewEl) return;
+    this.detachPreview();
+    if (!el) return;
+    this.previewEl = el;
+    el.addEventListener('scroll', this.previewScrollHandler, { passive: true });
+    this.syncingScroll = true;
+    this.panelContainer.scrollTop = el.scrollTop;
+    window.requestAnimationFrame(() => { this.syncingScroll = false; });
+  }
+
+  private detachPreview(): void {
+    this.previewEl?.removeEventListener('scroll', this.previewScrollHandler);
+    this.previewEl = null;
+  }
+
+  /** Reading view: anchors are the spans the post-processor produced (DOM-measured) */
+  private computePositionsFromPreview(scroller: HTMLElement): void {
+    const rect = scroller.getBoundingClientRect();
+    const delta = this.originDelta(rect);
+    const positions: AnnotationPosition[] = [];
+    for (const ann of this.annotations) {
+      const span = scroller.querySelector<HTMLElement>(`[data-ann-id="${ann.id}"]`);
+      if (!span) continue; // section not rendered yet (reading view is lazy)
+      const top = span.getBoundingClientRect().top - rect.top + scroller.scrollTop + delta;
+      positions.push({ annotationId: ann.id, topInEditor: top, from: ann.from });
+    }
+    if (positions.length > 0) this.lastPositions = positions;
+  }
+
   private computePositionsFromEditor(): void {
     try {
+      const preview = this.previewScroller();
+      if (preview) { this.computePositionsFromPreview(preview); return; }
       const mdView = this.findMarkdownView();
       if (!mdView) return;
       // Access the underlying CM6 EditorView
@@ -1112,6 +1168,14 @@ export class CommentPanel extends ItemView {
   private jumpToAnnotation(ann: Annotation): void {
     const mdView = this.findMarkdownView();
     if (!mdView) return;
+    const preview = this.previewScroller();
+    if (preview) {
+      this.ignoreEditorScrollUntil = Date.now() + 600;
+      preview.querySelector<HTMLElement>(`[data-ann-id="${ann.id}"]`)?.scrollIntoView({ block: 'center' });
+      const card = this.cardEls.get(ann.id);
+      if (card) { card.addClass('ilc-card-flash'); window.setTimeout(() => card.removeClass('ilc-card-flash'), 600); }
+      return;
+    }
     const editor = mdView.editor;
 
     // Temporarily stop syncing panel scroll with editor

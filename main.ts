@@ -6,6 +6,7 @@ import type { EditorView } from '@codemirror/view';
 import type { Editor } from 'obsidian';
 import { buildAgentReplyPrompt, cleanReplyText } from './src/agentReply.ts';
 import { buildCommentExtension, type ICommentHost, type AnnotationPosition } from './src/editor/cmExtension.ts';
+import { readingPostProcessor } from './src/readingView.ts';
 import { CommentPanel, VIEW_TYPE_COMMENTS } from './src/views/CommentPanel.ts';
 import { HistoryModal } from './src/views/HistoryModal.ts';
 import { MembersModal } from './src/views/MembersModal.ts';
@@ -102,6 +103,11 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
 
     // Register CodeMirror 6 extension
     this.registerEditorExtension(buildCommentExtension(this));
+
+    // Reading view: same highlight + badge, raw comment markup hidden
+    this.registerMarkdownPostProcessor(readingPostProcessor(this));
+    // Mode switches (source ↔ reading) re-anchor everything
+    this.registerEvent(this.app.workspace.on('layout-change', () => void this.getPanel()?.refresh()));
 
     // Command: add inline comment → opens draft card in sidebar
     this.addCommand({

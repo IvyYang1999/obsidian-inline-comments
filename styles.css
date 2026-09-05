@@ -1288,3 +1288,7 @@ body {
 }
 .ilc-panel .ilc-resolved-toggle.is-off { text-decoration: line-through; }
 .ilc-panel .ilc-resolved-toggle:hover { color: var(--text-normal) !important; }
+
+/* ─── Reading view ───────────────────────────────────────────────────────────── */
+.markdown-preview-view .ilc-highlight { cursor: default; }
+.markdown-preview-view .ilc-badge { cursor: pointer; margin-left: 3px; }

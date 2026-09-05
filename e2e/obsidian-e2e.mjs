@@ -498,6 +498,33 @@ async function run() {
     const reopenedDoc = await page.evaluate(() => app.vault.adapter.read('sample.md'));
     check('重新打开：resolve 标记被删除、卡片恢复', !/能同桌很暖==\}[^\n]*resolve:/.test(reopenedDoc) && (await page.locator('.ilc-card-resolved').count()) === 0);
 
+    // ── Reading view: raw markup hidden, same highlight + badge, cards aligned to the rendered spans
+    await page.evaluate(async () => { const leaf = app.workspace.getLeavesOfType('markdown')[0]; const st = leaf.getViewState(); st.state = { ...st.state, mode: 'preview' }; await leaf.setViewState(st, { focus: true }); });
+    await sleep(1200);
+    const rv = await page.evaluate(() => {
+      const pv = document.querySelector('.markdown-preview-view');
+      const rawParas = [...pv.querySelectorAll('p')].filter((p) => /\{>>|<<\}|\{==/.test(p.innerText)).map((p) => p.innerText.slice(0, 30));
+      const spans = [...pv.querySelectorAll('.ilc-highlight')].map((s) => s.textContent);
+      const badges = pv.querySelectorAll('.ilc-badge').length;
+      return { rawParas, spans, badges, mode: app.workspace.getLeavesOfType('markdown')[0].view.getMode() };
+    });
+    // The fixture's 5th paragraph is a deliberately malformed nested annotation; everything else must be clean
+    check('阅读视图：原始评论标记不再露出（畸形段除外）', rv.mode === 'preview' && rv.rawParas.every((p) => p.includes('畸形')), JSON.stringify(rv.rawParas));
+    check('阅读视图：每条评论变成同款高亮 + 角标', rv.spans.length >= 4 && rv.badges === rv.spans.length && rv.spans.includes('今天入职'), JSON.stringify(rv.spans));
+    await sleep(400);
+    const rvAlign = await page.evaluate(() => {
+      const span = document.querySelector('.markdown-preview-view [data-ann-id]');
+      const card = document.querySelector(`.ilc-card[data-annotation-id="${span?.dataset.annId}"]`);
+      return { id: span?.dataset.annId ?? null, text: Math.round(span?.getBoundingClientRect().top ?? -1), card: Math.round(card?.getBoundingClientRect().top ?? -1) };
+    });
+    check('阅读视图：首张卡片与渲染后的划线在屏幕上对齐（±6px）', Math.abs(rvAlign.text - rvAlign.card) <= 6, `text=${rvAlign.text} card=${rvAlign.card}`);
+    await page.locator('.markdown-preview-view .ilc-badge').first().click();
+    await sleep(300);
+    const rvActive = await page.evaluate(() => document.querySelector('.ilc-card-active')?.dataset.annotationId ?? null);
+    check('阅读视图：点角标激活对应卡片', rvActive !== null && rvActive === rvAlign.id, `active=${rvActive} expected=${rvAlign.id}`);
+    await page.evaluate(async () => { const leaf = app.workspace.getLeavesOfType('markdown')[0]; const st = leaf.getViewState(); st.state = { ...st.state, mode: 'source' }; await leaf.setViewState(st, { focus: true }); });
+    await sleep(600);
+
     // ── Right-click → 添加划线评论 (right-click INSIDE the selection)
     const selPoint = await page.evaluate(() => {
       const view = app.workspace.getLeavesOfType('markdown')[0].view;
