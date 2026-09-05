@@ -1,19 +1,19 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>划线评论 Inline Comments · Obsidian 插件</title>
-<meta name="description" content="在 Obsidian 笔记里划线留言，@ 一个 AI 会话来回复。评论存在 Markdown 里，开源免费。">
-<meta property="og:title" content="划线评论 · Obsidian 插件">
-<meta property="og:description" content="在笔记里划线留言，@ 一个 AI 会话来回复。评论存在 Markdown 里。">
+<title>Inline Comments · Obsidian plugin</title>
+<meta name="description" content="Highlight a passage in your Obsidian note, leave a comment, @ an AI coding session to reply. Comments live in the Markdown. Free and open source.">
+<meta property="og:title" content="Inline Comments · Obsidian plugin">
+<meta property="og:description" content="Highlight, comment, @ an AI session to reply. Comments live in your Markdown.">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://obsidian-inline-comments.vercel.app/">
-<meta property="og:image" content="https://obsidian-inline-comments.vercel.app/og.png">
+<meta property="og:url" content="https://obsidian-inline-comments.vercel.app/en/">
+<meta property="og:image" content="https://obsidian-inline-comments.vercel.app/og-en.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="icon" type="image/svg+xml" href="./logo.svg">
+<link rel="icon" type="image/svg+xml" href="../logo.svg">
 <style>
 /* Two colours, both taken from the product itself: the pale highlight behind a
    commented passage, and the violet of an @-mention. Nothing else is coloured. */
@@ -192,44 +192,44 @@ footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:2
 <body>
 
 <header class="nav"><div class="wrap">
-  <a class="brand" href="#"><svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><rect x="6" y="36" width="52" height="21" rx="10.5" fill="#FFEC9E"/><text x="32" y="50" text-anchor="middle" font-size="54" font-weight="700" fill="#7c6cf2" font-family="-apple-system,BlinkMacSystemFont,Inter,Helvetica,Arial,sans-serif">@</text></svg>划线评论</a>
-  <nav><a href="./en/" lang="en" title="English">EN</a><a href="#install">安装</a><a href="https://community.obsidian.md/plugins/inline-comments" target="_blank" rel="noopener">社区目录</a><a href="https://github.com/IvyYang1999/obsidian-inline-comments" target="_blank" rel="noopener">GitHub</a></nav>
+  <a class="brand" href="./"><svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><rect x="6" y="36" width="52" height="21" rx="10.5" fill="#FFEC9E"/><text x="32" y="50" text-anchor="middle" font-size="54" font-weight="700" fill="#7c6cf2" font-family="-apple-system,BlinkMacSystemFont,Inter,Helvetica,Arial,sans-serif">@</text></svg>Inline Comments</a>
+  <nav><a href="../" lang="zh-CN" title="中文">中文</a><a href="#install">Install</a><a href="https://community.obsidian.md/plugins/inline-comments" target="_blank" rel="noopener">Directory</a><a href="https://github.com/IvyYang1999/obsidian-inline-comments" target="_blank" rel="noopener">GitHub</a></nav>
 </div></header>
 
 <main>
 <section class="hero wrap">
   <svg class="glyph" viewBox="0 0 64 64" aria-hidden="true"><rect x="6" y="36" width="52" height="21" rx="10.5" fill="#FFEC9E"/><text x="32" y="50" text-anchor="middle" font-size="54" font-weight="700" fill="#7c6cf2" font-family="-apple-system,BlinkMacSystemFont,Inter,Helvetica,Arial,sans-serif">@</text></svg>
-  <h1 class="h1">在笔记里<mark>划线留言</mark>，<br><em>@</em> 一个 AI 会话来回复</h1>
-  <p class="lead">飞书评论的手感，搬进 Obsidian。选中一段写下想法，评论跟着原文走；@ 一个 Claude Code / Codex 会话，回复直接写回文档。</p>
+  <h1 class="h1"><mark>Highlight</mark> a line in your note,<br><em>@</em> an AI session to reply</h1>
+  <p class="lead">Google Docs–style comments, inside Obsidian. Select a passage, write a note, and the comment stays with the text; @ a Claude Code / Codex session and its reply is written straight back into the file.</p>
   <div class="cta">
-    <a class="btn" href="obsidian://show-plugin?id=inline-comments">安装到 Obsidian</a>
-    <a class="link" href="https://community.obsidian.md/plugins/inline-comments" target="_blank" rel="noopener">在社区插件目录查看 →</a>
+    <a class="btn" href="obsidian://show-plugin?id=inline-comments">Install in Obsidian</a>
+    <a class="link" href="https://community.obsidian.md/plugins/inline-comments" target="_blank" rel="noopener">View in the community directory →</a>
   </div>
 
-  <div class="demo" id="demo" aria-label="插件效果演示">
-    <div class="bar"><i></i><i></i><i></i><span>8 月复盘.md</span><button class="replay" id="replay" title="重放">↻ 重放</button></div>
+  <div class="demo" id="demo" aria-label="Plugin demo">
+    <div class="bar"><i></i><i></i><i></i><span>August review.md</span><button class="replay" id="replay" title="Replay">↻ Replay</button></div>
     <div class="body">
-      <div class="tree" aria-hidden="true"><div class="dir">周报</div><div class="file">6 月复盘.md</div><div class="file">7 月复盘.md</div><div class="file cur">8 月复盘.md<span class="fb" id="fb">1</span></div><div class="file">9 月计划.md</div></div>
+      <div class="tree" aria-hidden="true"><div class="dir">Reviews</div><div class="file">June review.md</div><div class="file">July review.md</div><div class="file cur">August review.md<span class="fb" id="fb">1</span></div><div class="file">September plan.md</div></div>
       <div class="editor" id="editor">
-        <h4>8 月复盘</h4>
-        <p>这个月主要在做新用户的引导流程。上线两周后看数据，激活率比 7 月高了 6 个点，但 <span class="sel" id="sel">留存在第二周掉了 18%</span><span class="badge" id="badge">1</span>，还没弄清楚原因。</p>
-        <p>下个月先把留存的归因做完，再决定要不要继续加引导步骤。</p>
-        <p class="p3">另外，客服反馈新手引导第三步的文案有歧义，已经改了一版，下周看数据。</p>
-        <div class="menu" id="menu"><div>剪切</div><div>复制</div><div class="hot">添加划线评论</div></div>
+        <h4>August review</h4>
+        <p>Most of this month went into the new-user onboarding flow. Two weeks after launch, activation is up 6 points on July, but <span class="sel" id="sel">week-two retention dropped 18%</span><span class="badge" id="badge">1</span> and we still don't know why.</p>
+        <p>Next month: finish the retention attribution first, then decide whether to add more onboarding steps.</p>
+        <p class="p3">Also, support flagged the copy on step three as ambiguous. A revised version shipped; we'll check the numbers next week.</p>
+        <div class="menu" id="menu"><div>Cut</div><div>Copy</div><div class="hot">Add inline comment</div></div>
       </div>
       <div class="panel" id="panel">
-        <p class="ph"><span id="cnt">0 条评论</span><b id="unread">· 1 未读</b></p>
+        <p class="ph"><span id="cnt">0 comments</span><b id="unread">· 1 unread</b></p>
         <div class="card" id="card">
-          <div class="q">留存在第二周掉了 18%</div>
+          <div class="q">week-two retention dropped 18%</div>
           <div id="entries"></div>
           <div class="compose" id="compose">
-            <div class="input" id="input"><span class="ph-text">写下评论…</span></div>
+            <div class="input" id="input"><span class="ph-text">Write a comment…</span></div>
             <div class="dd" id="dd">
-              <div class="hot"><span class="av new">+</span>用新会话回答<small>回车</small></div>
-              <div><span class="av">费</span>费宝<small>claude · 在线</small></div>
-              <div><span class="av">审</span>审计员<small>codex · 在线</small></div>
+              <div class="hot"><span class="av new">+</span>Answer with a new session<small>Enter</small></div>
+              <div><span class="av">R</span>Reviewer<small>claude · running</small></div>
+              <div><span class="av">A</span>Auditor<small>codex · running</small></div>
             </div>
-            <div class="send"><button>取消</button><button class="go" id="go">发送</button></div>
+            <div class="send"><button>Cancel</button><button class="go" id="go">Send</button></div>
           </div>
         </div>
         <div class="toast" id="toast"><span id="toastText"></span></div>
@@ -239,61 +239,61 @@ footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:2
 </section>
 
 <section class="three wrap" id="feat">
-  <h2>小而完整的三件事</h2>
-  <p class="lead">不做知识库、不做聊天窗，只把「在原文旁边说一句」做顺手。</p>
+  <h2>Three things, done properly</h2>
+  <p class="lead">Not a knowledge base, not a chat window. Just "say something next to the text", made effortless.</p>
   <div class="cols">
-    <div><h3>划线，即评论</h3><p>选中文字右键「添加划线评论」。卡片挂在右侧、和原文对齐、跟着滚动；正文里只留一段淡黄高亮和一个小角标。</p></div>
-    <div><h3><em>@</em> 一个正在跑的会话</h3><p>点名一个 Claude Code / Codex 会话，或「用新会话回答」。留言以文件送到它手里；它读完文档，把回复写回原位——或者给出一条<b>修改建议</b>，你一键采纳，原文才会变。</p></div>
-    <div><h3>未读一眼看清</h3><p>别人或 AI 的回复带红点，文件目录里对应文档也挂一枚红色角标，顶部常驻「N 条评论 · M 未读」。看完点「标为已读」，聊完点「解决」；不想要，设置里一键关掉。</p></div>
+    <div><h3>Highlight, then comment</h3><p>Select text, right-click <i>Add inline comment</i>. The card sits in the right sidebar, level with the passage, and scrolls with it. The note only gets a soft highlight and a small counter.</p></div>
+    <div><h3><em>@</em> a running session</h3><p>Pick a Claude Code / Codex session, or <i>Answer with a new session</i>. The comment reaches it as a file; it reads the note and writes its reply back in place — or proposes a <b>suggested edit</b> that you accept with one click.</p></div>
+    <div><h3>Unread, at a glance</h3><p>Replies from others (or AI) get a red dot, the file explorer shows a red count on the note, and the header reads "N comments · M unread". Mark as read when you're done, resolve when the thread is over. One switch turns it all off.</p></div>
   </div>
   <div class="md">
-    <pre>{==<b>留存在第二周掉了 18%</b>==}{>>yyt|2026-09-05|question: 这个数字是哪张表来的？<em>[@新会话1](agent:3f9a12c0)</em><<}</pre>
-    <p>评论就是这样一行文本，紧挨着原文存在 <code>.md</code> 里。没有数据库、没有附属文件；Git 能 diff，同步不会丢，卸载插件也还能读。</p>
+    <pre>{==<b>week-two retention dropped 18%</b>==}{>>yyt|2026-09-05|question: Which table is this from? <em>[@Session1](agent:3f9a12c0)</em><<}</pre>
+    <p>A comment is one line of text, right next to the passage in the <code>.md</code>. No database, no sidecar files. Git can diff it, sync won't lose it, and it stays readable without the plugin.</p>
   </div>
 </section>
 
 <section class="install wrap" id="install">
-  <h2>两分钟装好</h2>
-  <p class="lead">Obsidian 设置 → 第三方插件 → 浏览，搜 <b style="white-space:nowrap">Inline Comments</b>（它的英文名）。</p>
-  <p class="spec">免费 · 开源 · 插件本身不联网 · 桌面与手机，Obsidian 1.8 以上 · 编辑与阅读视图都能用 · 「用新会话回答」目前仅 macOS</p>
+  <h2>Installed in two minutes</h2>
+  <p class="lead">Obsidian Settings → Community plugins → Browse, search <b style="white-space:nowrap">Inline Comments</b>.</p>
+  <p class="spec">Free · open source · the plugin itself never touches the network · desktop and mobile, Obsidian 1.8+ · works in editing and reading view · "Answer with a new session" is macOS only for now</p>
   <div class="cta">
-    <a class="btn" href="obsidian://show-plugin?id=inline-comments">安装到 Obsidian</a>
+    <a class="btn" href="obsidian://show-plugin?id=inline-comments">Install in Obsidian</a>
   </div>
   <div class="qs">
-    <details open><summary>评论存在哪里？换台电脑还在吗？</summary><p>就存在笔记本身，紧挨着被评论的那句话，是一段纯文本。随 iCloud / Git / Obsidian Sync 一起走；没装插件的地方打开也能看到。</p></details>
-    <details><summary>不用 AI，只当普通评论工具行吗？</summary><p>完全可以。划线、留言、回复、已读未读都不需要任何会话或联网；@ 是可选项，不用就不会出现。</p></details>
-    <details><summary>会把我的笔记发到哪儿去吗？</summary><p>插件本身不联网。@ 只是往你电脑上的一个文件夹写一个文件，会话在你自己的终端里跑；笔记出不出机器，取决于你配的 AI 工具，与插件无关。首次 @ 需要在「管理成员」里点一次「安装 hook」——它只往 ~/.claude/settings.json 加三条，可一键卸载。</p></details>
+    <details open><summary>Where do comments live? Are they still there on another machine?</summary><p>In the note itself, right next to the commented sentence, as plain text. They travel with iCloud / Git / Obsidian Sync and are visible even where the plugin isn't installed.</p></details>
+    <details><summary>Can I use it without AI, as a plain comment tool?</summary><p>Absolutely. Highlighting, commenting, replying, unread tracking — none of it needs a session or the network. @ is optional and stays out of the way if you don't use it.</p></details>
+    <details><summary>Does it send my notes anywhere?</summary><p>The plugin itself never touches the network. An @ writes one file into a folder on your machine; the session runs in your own terminal. Whether a note leaves your computer is up to the AI tool you configured, not this plugin. The first @ asks you to install a hook once — it adds three entries to ~/.claude/settings.json and can be removed with one click.</p></details>
   </div>
 </section>
 
 <section class="more wrap">
-  <div class="head"><h2>同一个作者的其他 Obsidian 插件</h2><a class="link" href="https://yytyyf.com" target="_blank" rel="noopener">全部作品 →</a></div>
+  <div class="head"><h2>Other Obsidian plugins by the same author</h2><a class="link" href="https://yytyyf.com/en" target="_blank" rel="noopener">All projects →</a></div>
   <div class="rail">
-    <a class="pc" href="https://obsidian-web-desk.vercel.app/" target="_blank" rel="noopener" aria-label="NaviBoard 画布收藏夹，访问官网（新窗口）">
-      <div class="pc-body"><img class="ico" src="./naviboard.png" alt="" width="52" height="52" loading="lazy"><h3 class="t">NaviBoard · 画布收藏夹</h3><p class="d">收藏的网页摆成一张自由画布，当首页用。</p><div class="pc-tags"><span class="st live">已上线</span><span class="platform">Obsidian 插件</span></div></div>
-      <div class="pc-foot"><span>探索画布收藏夹</span><span class="pc-arrow" aria-hidden="true">↗</span></div>
+    <a class="pc" href="https://obsidian-web-desk.vercel.app/" target="_blank" rel="noopener" aria-label="NaviBoard, open website (new window)">
+      <div class="pc-body"><img class="ico" src="../naviboard.png" alt="" width="52" height="52" loading="lazy"><h3 class="t">NaviBoard</h3><p class="d">Your saved pages laid out on a free-form canvas, used as a homepage.</p><div class="pc-tags"><span class="st live">Released</span><span class="platform">Obsidian plugin</span></div></div>
+      <div class="pc-foot"><span>Explore NaviBoard</span><span class="pc-arrow" aria-hidden="true">↗</span></div>
     </a>
     <article class="pc">
-      <div class="pc-body"><span class="ico" aria-hidden="true">🖍️</span><h3 class="t">荧光笔时间轴</h3><p class="d">在笔记里手画色块记录时间花在哪，也能让 AI 帮你画。</p><div class="pc-tags"><span class="st">开发中</span><span class="platform">Obsidian 插件</span></div></div>
+      <div class="pc-body"><span class="ico" aria-hidden="true">🖍️</span><h3 class="t">Highlighter Timeline</h3><p class="d">Paint blocks on a timeline to see where the hours went — or let AI paint them.</p><div class="pc-tags"><span class="st">In progress</span><span class="platform">Obsidian plugin</span></div></div>
     </article>
     <article class="pc">
-      <div class="pc-body"><span class="ico" aria-hidden="true">📓</span><h3 class="t">AI 日记</h3><p class="d">今天 AI 帮你干了什么，自动写成时间轴。</p><div class="pc-tags"><span class="st">开发中</span><span class="platform">Obsidian 插件</span></div></div>
+      <div class="pc-body"><span class="ico" aria-hidden="true">📓</span><h3 class="t">AI Diary</h3><p class="d">What AI did for you today, written up as a timeline automatically.</p><div class="pc-tags"><span class="st">In progress</span><span class="platform">Obsidian plugin</span></div></div>
     </article>
   </div>
 </section>
 </main>
 
 <footer><div class="wrap">
-  <div class="me"><span class="av" style="background-image:url(./avatar.png)"></span><b>yytyyf</b><span>划线评论 · MIT</span></div>
+  <div class="me"><span class="av" style="background-image:url(../avatar.png)"></span><b>yytyyf</b><span>Inline Comments · MIT</span></div>
   <div class="links">
-    <a href="https://yytyyf.com" target="_blank" rel="noopener">yytyyf.com</a>
+    <a href="https://yytyyf.com/en" target="_blank" rel="noopener">yytyyf.com</a>
     <a href="https://github.com/IvyYang1999" target="_blank" rel="noopener">GitHub</a>
     <a href="https://x.com/ivyadams1999" target="_blank" rel="noopener">X</a>
-    <a href="https://www.xiaohongshu.com/user/profile/5a099fb94eacab47629e53bc" target="_blank" rel="noopener">小红书</a>
-    <a href="https://okjk.co/iHdL5E" target="_blank" rel="noopener">即刻</a>
+    <a href="https://www.xiaohongshu.com/user/profile/5a099fb94eacab47629e53bc" target="_blank" rel="noopener">Xiaohongshu</a>
+    <a href="https://okjk.co/iHdL5E" target="_blank" rel="noopener">Jike</a>
     <a href="https://bonjour.bio/yytyyf" target="_blank" rel="noopener">bonjour</a>
-    <a href="mailto:ivyyang1999@gmail.com">邮件</a>
-    <a href="https://github.com/IvyYang1999/obsidian-inline-comments/issues" target="_blank" rel="noopener">问题反馈</a>
+    <a href="mailto:ivyyang1999@gmail.com">Email</a>
+    <a href="https://github.com/IvyYang1999/obsidian-inline-comments/issues" target="_blank" rel="noopener">Issues</a>
   </div>
 </div></footer>
 
@@ -312,13 +312,13 @@ footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:2
   function entry({ who, cls, tag, time, html, dot, read }) {
     const el = document.createElement('div');
     el.className = 'entry';
-    el.innerHTML = `<span class="avatar ${cls}">${who[0]}<i class="dot${dot ? ' on' : ''}"></i></span><div><div class="hd"><b>${who}</b>${tag ? `<span class="tag">${tag}</span>` : ''}<time>${time}</time></div><div class="tx">${html}</div>${read ? '<div class="read">标为已读</div>' : ''}</div>`;
+    el.innerHTML = `<span class="avatar ${cls}">${who[0]}<i class="dot${dot ? ' on' : ''}"></i></span><div><div class="hd"><b>${who}</b>${tag ? `<span class="tag">${tag}</span>` : ''}<time>${time}</time></div><div class="tx">${html}</div>${read ? '<div class="read">Mark as read</div>' : ''}</div>`;
     return el;
   }
   function typingEntry() {
     const el = document.createElement('div');
     el.className = 'entry';
-    el.innerHTML = `<span class="avatar n">新</span><div><div class="hd"><b>新会话1</b><time>刚刚</time></div><div class="typing"><i></i><i></i><i></i></div></div>`;
+    el.innerHTML = `<span class="avatar n">S</span><div><div class="hd"><b>Session1</b><time>now</time></div><div class="typing"><i></i><i></i><i></i></div></div>`;
     return el;
   }
   async function typeInto(id, node, text, per = 42) {
@@ -331,8 +331,8 @@ footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:2
   function reset() {
     sel.className = 'sel'; badge.className = 'badge'; menu.className = 'menu';
     card.className = 'card'; entries.innerHTML = ''; compose.style.display = '';
-    input.className = 'input'; input.innerHTML = '<span class="ph-text">写下评论…</span>';
-    dd.className = 'dd'; toast.className = 'toast'; cnt.textContent = '0 条评论'; unread.className = '';
+    input.className = 'input'; input.innerHTML = '<span class="ph-text">Write a comment…</span>';
+    dd.className = 'dd'; toast.className = 'toast'; cnt.textContent = '0 comments'; unread.className = '';
     card.style.marginTop = '0'; fb.className = 'fb';
   }
 
@@ -356,30 +356,30 @@ footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:2
     const caret = document.createElement('span'); caret.className = 'caret';
     const txt = document.createElement('span'); input.append(txt, caret);
     await sleep(450);
-    await typeInto(id, txt, '这个数字是哪张表来的？'); if (!alive(id)) return;
+    await typeInto(id, txt, 'Which table is this from?'); if (!alive(id)) return;
     await sleep(300);
     await typeInto(id, txt, ' @'); if (!alive(id)) return;
     dd.classList.add('on');
     await sleep(2200); if (!alive(id)) return;
     dd.classList.remove('on');
     txt.lastChild && (txt.textContent = txt.textContent.replace(/@$/, ''));
-    const chip = document.createElement('span'); chip.className = 'mention'; chip.textContent = '@新会话1';
+    const chip = document.createElement('span'); chip.className = 'mention'; chip.textContent = '@Session1';
     input.insertBefore(chip, caret); input.insertBefore(document.createTextNode(' '), caret);
     await sleep(900); if (!alive(id)) return;
     go.classList.add('press'); await sleep(140); go.classList.remove('press');
     compose.style.display = 'none';
-    entries.append(entry({ who: 'yyt', cls: 'y', tag: '疑问', time: '刚刚', html: '这个数字是哪张表来的？ <span class="mention">@新会话1</span>' }));
-    cnt.textContent = '1 条评论';
-    toastText.textContent = '已通知 新会话1 · 正在终端里启动会话';
+    entries.append(entry({ who: 'yyt', cls: 'y', tag: 'question', time: 'now', html: 'Which table is this from? <span class="mention">@Session1</span>' }));
+    cnt.textContent = '1 comment';
+    toastText.textContent = 'Session1 notified · starting it in Terminal';
     toast.classList.add('on');
     await sleep(1700); if (!alive(id)) return;
     toast.classList.remove('on');
     const t = typingEntry(); entries.append(t);
     await sleep(1600); if (!alive(id)) return;
     t.remove();
-    entries.append(entry({ who: '新会话1', cls: 'n', time: '刚刚', dot: true, read: true,
-      html: '查到了：来自「8 月数据 · 留存表」第 3 节，口径是第 8–14 天。我把表格链接补到了段末，你看一下。' }));
-    cnt.textContent = '2 条评论'; unread.classList.add('on'); fb.classList.add('on');
+    entries.append(entry({ who: 'Session1', cls: 'n', time: 'now', dot: true, read: true,
+      html: 'Found it: "August data · Retention", section 3 — the window is days 8–14. I added the table link at the end of the paragraph; take a look.' }));
+    cnt.textContent = '2 comments'; unread.classList.add('on'); fb.classList.add('on');
     await sleep(reduce ? 2000 : 4500); if (!alive(id)) return;
     play();
   }

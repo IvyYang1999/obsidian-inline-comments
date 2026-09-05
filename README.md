@@ -18,12 +18,12 @@
 
 <p align="center">
   <a href="obsidian://show-plugin?id=inline-comments"><b>Install in Obsidian</b></a> ·
-  <a href="https://obsidian-inline-comments.vercel.app/">Website (中文)</a> ·
+  <a href="https://obsidian-inline-comments.vercel.app/en/">Website</a> ·
   <a href="#中文">中文说明 ↓</a>
 </p>
 
 <p align="center">
-  <img src="docs/demo.gif" width="912" alt="Select text → add comment → @ a session → the session replies in the note">
+  <img src="docs/demo-en.gif" width="912" alt="Select text → add comment → @ a session → the session replies in the note">
 </p>
 
 ## What it does
@@ -32,11 +32,15 @@
 
 **@ a real session.** Type `@` in a comment to pick a running Claude Code / Codex session on your machine — or choose *Answer with a new session* and the plugin starts one in Terminal (macOS). The letter is dropped into that session's mailbox; a small hook (installed on request) injects it into the session's context; the session reads the note and writes its reply back into the file.
 
-**Unread, at a glance.** Replies from other people or AI get a red dot, the panel header shows *N comments · M unread*, and the file explorer shows a red count on the document. Mark as read with one click. Turn the whole thing off with one switch if you don't want it.
+**Suggested edits.** A reply can carry a replacement for the highlighted passage — from a person or from the AI session. The card shows old → new with *Accept* / *Decline*; nothing in the note changes until you accept.
+
+**Unread, at a glance.** Replies from other people or AI get a red dot, the panel header shows *N comments · M unread*, and the file explorer shows a red count on the document. Mark as read with one click, resolve a thread when it's done, react with an emoji. One switch turns the unread signals off.
 
 <p align="center">
-  <img src="docs/obsidian.png" width="900" alt="Obsidian with the comment panel open and an unread badge in the file explorer">
+  <img src="docs/panel-en.png" width="912" alt="The comment panel after the AI session replied: unread dot, explorer badge, mark as read">
 </p>
+
+**Editing and reading view, desktop and mobile.** The same highlight and badge appear in reading view, with the raw markup hidden. Long threads fold to a preview until you expand or focus them.
 
 **Plain text storage.** A comment is one line of CriticMarkup-style text next to the passage:
 
@@ -52,12 +56,12 @@ Obsidian → Settings → Community plugins → Browse → search **Inline Comme
 
 Pre-release builds: [BRAT](https://github.com/TfTHacker/obsidian42-brat) → *Add a beta plugin* → `IvyYang1999/obsidian-inline-comments`.
 
-Desktop only (macOS / Windows / Linux), Obsidian 1.8+. *Answer with a new session* currently launches Terminal on macOS only.
+Obsidian 1.8+, desktop and mobile. Session discovery, the hook, and *Answer with a new session* (which launches Terminal) are desktop features; the last one is macOS only for now.
 
 ## Using @
 
 <p align="center">
-  <img src="docs/at-picker.png" width="760" alt="The @ picker: answer with a new session, or pick a running one">
+  <img src="docs/at-picker-en.png" width="760" alt="The @ picker: answer with a new session, or pick a running one">
 </p>
 
 1. **Manage members** (from the `@` dropdown or the settings tab) lists the Claude Code / Codex sessions running on this machine. Give one a name to make it mentionable — or just `@` a name that doesn't exist yet and the plugin creates the session for you.
@@ -72,6 +76,7 @@ The plugin never talks to the network. Letters and replies are local files in yo
 |---|---|
 | Author name | Signs your comments; your own replies never count as unread |
 | Unread notifications | Master switch for red dots, *Mark as read*, the header count and the explorer badge |
+| Show resolved | Keep resolved threads in the panel (collapsed) or hide them |
 | Mention delivery / mailbox root | Where letters are written |
 | Panel background | Follow sidebar, follow editor, or a custom colour |
 | Comment types | Built-in agree / disagree / question / important / note, plus your own with a colour |
@@ -95,10 +100,14 @@ Design notes live in [`DESIGN.md`](DESIGN.md). Releases are built by CI from a v
 
 - **划线，即评论。** 选中文字右键「添加划线评论」，卡片挂在右侧栏、与原文水平对齐、跟着滚动。
 - **@ 一个正在跑的会话。** 打 `@` 点名本机的 Claude Code / Codex 会话，或「用新会话回答」让插件在终端里替你开一个；留言以文件送到它手里，它读完文档把回复写回原位。
-- **未读一眼看清。** 别人或 AI 的回复带红点，面板顶部常驻「N 条评论 · M 未读」，文件目录里对应文档也挂红色角标；看完点「标为已读」。设置里「未读通知」一键关掉。
+- **修改建议。** 回复可以附带对划线原文的替换文本（人或 AI 都能提），卡片上显示 原文 → 改法，点「采纳」原文才会变。
+- **未读一眼看清。** 别人或 AI 的回复带红点，面板顶部常驻「N 条评论 · M 未读」，文件目录里对应文档也挂红色角标；看完点「标为已读」，聊完点「解决」，也可以加个 emoji 反应。设置里「未读通知」一键关掉。
+- **编辑与阅读视图、桌面与手机。** 阅读视图里同款高亮 + 角标，原始标记隐藏；超长线程折叠成预览。
 
-**安装**：Obsidian 设置 → 第三方插件 → 浏览，搜 **Inline Comments**；或直接打开 <a href="obsidian://show-plugin?id=inline-comments">obsidian://show-plugin?id=inline-comments</a>。仅桌面端，Obsidian 1.8 以上；「用新会话回答」目前仅 macOS。预发布版用 BRAT 添加 `IvyYang1999/obsidian-inline-comments`。
+**安装**：Obsidian 设置 → 第三方插件 → 浏览，搜 **Inline Comments**；或直接打开 <a href="obsidian://show-plugin?id=inline-comments">obsidian://show-plugin?id=inline-comments</a>。Obsidian 1.8 以上，桌面与手机；会话发现、hook、「用新会话回答」（开终端）是桌面能力，最后一项目前仅 macOS。预发布版用 BRAT 添加 `IvyYang1999/obsidian-inline-comments`。
+
+官网中文版：https://obsidian-inline-comments.vercel.app
 
 **关于隐私**：插件本身不联网。@ 只是往你电脑上的一个文件夹写一个文件，会话在你自己的终端里跑；首次 @ 需要在「管理成员」里点一次「安装 hook」——它只往 `~/.claude/settings.json` 加三条，可一键卸载。
 
-官网：https://obsidian-inline-comments.vercel.app · 作者 [yytyyf](https://yytyyf.com) · MIT
+作者 [yytyyf](https://yytyyf.com) · MIT
