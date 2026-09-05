@@ -1,3 +1,5 @@
+<p align="center"><img src="site/logo.svg" width="96" alt="划线评论 logo"></p>
+
 # Inline Comments
 
 Feishu-style inline comments for Obsidian. Highlight a passage, leave a note, and — if you want — `@` an AI coding session (Claude Code / Codex) to reply. Comments live right inside the Markdown file, next to the text they refer to.
