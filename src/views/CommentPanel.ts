@@ -2,6 +2,9 @@ import { ItemView, MarkdownRenderer, MarkdownView, Menu, TFile, WorkspaceLeaf } 
 import { EditorView } from '@codemirror/view';
 import type { Annotation, CommentEntry } from '../types.ts';
 import { COMMENT_TYPE_META, UNREAD_TYPES } from '../types.ts';
+
+/** Threads taller than this are clipped until expanded or focused */
+const CLAMP_HEIGHT = 260;
 import {
   parseAnnotations,
   appendReply,
@@ -10,6 +13,7 @@ import {
   deleteCommentEntry,
   applySuggestion,
   setEntryType,
+  isResolved,
 } from '../parser.ts';
 import { HistoryModal } from './HistoryModal.ts';
 import { setDraftRange, type AnnotationPosition } from '../editor/cmExtension.ts';
@@ -69,6 +73,8 @@ export class CommentPanel extends ItemView {
   private annotations: Annotation[] = [];
   private activeAnnotationId: string | null = null;
   private cardEls: Map<string, HTMLElement> = new Map();
+  /** Threads the user expanded past the clamp (per session) */
+  private expanded = new Set<string>();
 
   private cardsZone!: HTMLElement;
   private headerEl!: HTMLElement;
@@ -115,6 +121,7 @@ export class CommentPanel extends ItemView {
 
     // Observe card size changes (text reflow, reply box expand/collapse)
     this.resizeObserver = new ResizeObserver(() => {
+      this.reclampAll();
       this.layoutCards();
     });
 
@@ -277,6 +284,7 @@ export class CommentPanel extends ItemView {
     this.updateHeader(file);
 
     for (const ann of this.annotations) {
+      if (isResolved(ann) && !this.plugin.settings.showResolved) continue;
       const card = this.renderCard(this.cardsZone, ann, file);
       this.cardEls.set(ann.id, card);
     }
@@ -346,6 +354,48 @@ export class CommentPanel extends ItemView {
     count.appendText(' 条评论');
     if (unread > 0) {
       this.headerEl.createEl('span', { cls: 'ilc-panel-unread', text: `· ${unread} 未读` });
+    }
+    const resolvedN = this.annotations.filter(isResolved).length;
+    if (resolvedN > 0) {
+      const show = this.plugin.settings.showResolved;
+      const t = this.headerEl.createEl('button', { cls: 'ilc-resolved-toggle', text: `已解决 ${resolvedN}`, attr: { title: show ? '点击隐藏已解决的评论' : '点击显示已解决的评论' } });
+      t.toggleClass('is-off', !show);
+      t.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        this.plugin.settings.showResolved = !show;
+        await this.plugin.saveSettings();
+        await this.refresh();
+      });
+    }
+  }
+
+  /** Clip long threads (unless expanded or focused); re-run whenever a card resizes */
+  private reclampAll(): void {
+    for (const [id, card] of this.cardEls) {
+      const wrap = card.querySelector<HTMLElement>(':scope > .ilc-thread-wrap');
+      if (wrap) this.applyClamp(card, wrap, id);
+    }
+  }
+
+  private applyClamp(card: HTMLElement, wrap: HTMLElement, annId: string): void {
+    if (this.expanded.has(annId)) return;
+    const needs = wrap.scrollHeight > CLAMP_HEIGHT + 60;
+    const has = wrap.hasClass('is-clamped');
+    if (needs && !has) {
+      wrap.addClass('is-clamped');
+      const n = wrap.querySelectorAll('.ilc-entry').length;
+      const btn = createEl('button', { cls: 'ilc-expand-btn', text: `展开全部 ${n} 条` });
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.expanded.add(annId);
+        wrap.removeClass('is-clamped');
+        btn.remove();
+        this.layoutCards();
+      });
+      wrap.insertAdjacentElement('afterend', btn);
+    } else if (!needs && has) {
+      wrap.removeClass('is-clamped');
+      card.querySelector(':scope > .ilc-expand-btn')?.remove();
     }
   }
 
@@ -689,6 +739,22 @@ export class CommentPanel extends ItemView {
       cls: 'ilc-card-preview-text',
       text: previewText.slice(0, 60) + (previewText.length > 60 ? '…' : ''),
     });
+    const resolved = isResolved(ann);
+    if (resolved) card.addClass('ilc-card-resolved');
+    const setResolved = async (on: boolean) => {
+      const content = await this.app.vault.read(file);
+      if (on) {
+        const today = new Date().toISOString().split('T')[0];
+        await this.app.vault.modify(file, appendReply(content, ann.from, { author: this.plugin.settings.authorName, date: today, type: 'resolve', text: '' }));
+      } else {
+        await this.app.vault.modify(file, deleteCommentEntry(content, ann.from, ann.comments.length - 1));
+      }
+    };
+    if (!resolved) {
+      const resolveBtn = preview.createEl('button', { cls: 'ilc-more-btn ilc-resolve-btn', attr: { 'aria-label': '标为已解决', title: '标为已解决' } });
+      resolveBtn.textContent = '✓';
+      resolveBtn.addEventListener('click', (e) => { e.stopPropagation(); void setResolved(true); });
+    }
     const cardMoreBtn = preview.createEl('button', {
       cls: 'ilc-more-btn',
       attr: { 'aria-label': '更多操作' },
@@ -699,6 +765,12 @@ export class CommentPanel extends ItemView {
       const menu = new Menu();
       menu.addItem((item) =>
         item
+          .setTitle(resolved ? '重新打开' : '标为已解决')
+          .setIcon(resolved ? 'rotate-ccw' : 'check')
+          .onClick(() => void setResolved(!resolved)),
+      );
+      menu.addItem((item) =>
+        item
           .setTitle('删除整条评论')
           .setIcon('trash-2')
           .onClick(() => this.deleteWholeAnnotation(ann, file)),
@@ -706,11 +778,25 @@ export class CommentPanel extends ItemView {
       menu.showAtMouseEvent(e);
     });
 
-    // Thread
-    const thread = card.createEl('div', { cls: 'ilc-thread' });
+    // Resolved: collapsed to the quote + one line, no thread, no reply box
+    if (resolved) {
+      const line = card.createEl('div', { cls: 'ilc-resolved-line' });
+      const last = ann.comments[ann.comments.length - 1];
+      line.createEl('span', { text: `已解决 · ${ann.comments.length - 1} 条 · ${last.author} ${last.date}` });
+      const reopen = line.createEl('button', { cls: 'ilc-reopen-btn', text: '重新打开' });
+      reopen.addEventListener('click', (e) => { e.stopPropagation(); void setResolved(false); });
+      this.resizeObserver?.observe(card);
+      return card;
+    }
+
+    // Thread (wrapped so long ones can be clipped)
+    const threadWrap = card.createEl('div', { cls: 'ilc-thread-wrap' });
+    const thread = threadWrap.createEl('div', { cls: 'ilc-thread' });
     ann.comments.forEach((comment, i) => {
+      if (comment.type === 'resolve') return; // stale marker mid-thread (reopened by replying)
       this.renderCommentEntry(thread, comment, ann, i, file);
     });
+    window.requestAnimationFrame(() => this.applyClamp(card, threadWrap, ann.id));
 
     // Reply input row (visible only when card is active, controlled by CSS)
     const inputRow  = card.createEl('div', { cls: 'ilc-reply-input-row' });

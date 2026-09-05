@@ -162,6 +162,12 @@ export function deleteCommentEntry(
   return content;
 }
 
+/** A thread is resolved when its last entry is a `resolve` marker (reopen = delete it) */
+export function isResolved(ann: Annotation): boolean {
+  const last = ann.comments[ann.comments.length - 1];
+  return last?.type === 'resolve';
+}
+
 // ─── Suggestions ────────────────────────────────────────────────────────────────
 // A `suggest` entry carries replacement text for the highlighted passage. Accepting
 // swaps the passage and marks the entry `accepted`; declining marks it `declined`.

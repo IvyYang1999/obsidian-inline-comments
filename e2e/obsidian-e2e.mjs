@@ -461,6 +461,43 @@ async function run() {
     const pendingLeft = await page.locator('.ilc-suggest-accept').count();
     check('采纳后按钮消失、条目显示「已采纳」', pendingLeft === 0 && (await page.locator('.ilc-suggest-accepted').count()) === 1);
 
+    // ── Long threads are clipped (unless focused); 「展开全部」 lifts the clamp
+    await page.evaluate(() => { const p = app.plugins.plugins['inline-comments'].getPanel(); p.activeAnnotationId = null; });
+    await page.evaluate(() => app.plugins.plugins['inline-comments'].getPanel().refresh());
+    await sleep(700);
+    const clampInfo = await page.evaluate(() => {
+      const w = document.querySelector('.ilc-card:not(.ilc-card-active) .ilc-thread-wrap.is-clamped');
+      if (!w) return null;
+      const card = w.closest('.ilc-card');
+      return { id: card.dataset.annotationId, visibleH: w.getBoundingClientRect().height, fullH: w.scrollHeight, btn: card.querySelector('.ilc-expand-btn')?.textContent ?? null };
+    });
+    check('超长线程被折叠到 ~260px 并有「展开全部」', !!clampInfo && clampInfo.visibleH <= 262 && clampInfo.fullH > 320 && /展开全部 \d+ 条/.test(clampInfo.btn ?? ''), JSON.stringify(clampInfo));
+    await page.locator(`.ilc-card[data-annotation-id="${clampInfo?.id}"] .ilc-expand-btn`).click();
+    await sleep(250);
+    const expandedNow = await page.evaluate((id) => { const c = document.querySelector(`.ilc-card[data-annotation-id="${id}"]`); return { clamped: !!c?.querySelector('.ilc-thread-wrap.is-clamped'), btn: !!c?.querySelector('.ilc-expand-btn'), h: c?.querySelector('.ilc-thread-wrap')?.getBoundingClientRect().height }; }, clampInfo?.id);
+    check('点「展开全部」后该卡片展开、按钮消失', !expandedNow.clamped && !expandedNow.btn && expandedNow.h > 320, JSON.stringify(expandedNow));
+
+    // ── Resolve / reopen
+    const noteCard = page.locator('.ilc-card', { hasText: '能同桌很暖' }).first();
+    await noteCard.locator('.ilc-resolve-btn').evaluate((b) => b.click()); // zero-width until hover, like ⋯
+    await sleep(900);
+    const resolvedDoc = await page.evaluate(() => app.vault.adapter.read('sample.md'));
+    const resolvedCard = await page.locator('.ilc-card-resolved', { hasText: '能同桌很暖' }).count();
+    const headerTog = await page.locator('.ilc-resolved-toggle').textContent().catch(() => null);
+    check('标为已解决：文件追加 resolve 标记、卡片折叠、面板头出现「已解决 1」', /\{==能同桌很暖==\}[^\n]*\|resolve: <<\}/.test(resolvedDoc) && resolvedCard === 1 && headerTog === '已解决 1', `card=${resolvedCard} toggle=${headerTog}`);
+    const hlResolved = await page.locator('.cm-editor .ilc-hl-resolved').count();
+    check('已解决的划线在编辑器里变淡（ilc-hl-resolved）', hlResolved >= 1, `n=${hlResolved}`);
+    await page.locator('.ilc-resolved-toggle').click();
+    await sleep(600);
+    const hiddenNow = await page.locator('.ilc-card', { hasText: '能同桌很暖' }).count();
+    check('点「已解决」开关可隐藏已解决卡片', hiddenNow === 0, `cards=${hiddenNow}`);
+    await page.locator('.ilc-resolved-toggle').click();
+    await sleep(600);
+    await page.locator('.ilc-card-resolved .ilc-reopen-btn').first().evaluate((b) => b.click());
+    await sleep(900);
+    const reopenedDoc = await page.evaluate(() => app.vault.adapter.read('sample.md'));
+    check('重新打开：resolve 标记被删除、卡片恢复', !/能同桌很暖==\}[^\n]*resolve:/.test(reopenedDoc) && (await page.locator('.ilc-card-resolved').count()) === 0);
+
     // ── Right-click → 添加划线评论 (right-click INSIDE the selection)
     const selPoint = await page.evaluate(() => {
       const view = app.workspace.getLeavesOfType('markdown')[0].view;

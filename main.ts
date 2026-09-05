@@ -65,6 +65,8 @@ interface ILCSettings {
   enableMentionDelivery: boolean;
   /** Vault-relative mailbox root; letters go to <root>/<短id>/ */
   mailboxRoot: string;
+  /** Show resolved threads in the panel (collapsed) or hide them */
+  showResolved: boolean;
 }
 
 const DEFAULT_SETTINGS: ILCSettings = {
@@ -79,6 +81,7 @@ const DEFAULT_SETTINGS: ILCSettings = {
   panelBackgroundColor: '#f4f4f2',
   enableMentionDelivery: true,
   mailboxRoot: DEFAULT_MAILBOX_ROOT,
+  showResolved: true,
 };
 
 // ─── Plugin ───────────────────────────────────────────────────────────────────

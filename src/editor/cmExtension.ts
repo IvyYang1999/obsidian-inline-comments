@@ -8,7 +8,7 @@ import {
   WidgetType,
 } from '@codemirror/view';
 import { RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
-import { parseAnnotations } from '../parser.ts';
+import { isResolved, parseAnnotations } from '../parser.ts';
 import type { Annotation } from '../types.ts';
 
 // ─── Position data emitted to the panel ──────────────────────────────────────
@@ -223,8 +223,8 @@ class CommentViewPlugin implements PluginValue {
       const markupEnd  = ann.to;
       if (hlEnd < hlStart || markupEnd < hlEnd) continue;
 
-      const cls = highlightClass(ann);
-      const bg = this.host.highlightBg?.(ann.comments[0]?.type ?? 'note');
+      const cls = highlightClass(ann) + (isResolved(ann) ? ' ilc-hl-resolved' : '');
+      const bg = isResolved(ann) ? null : this.host.highlightBg?.(ann.comments[0]?.type ?? 'note');
 
       try {
         // 1. Hide the `{==` prefix
