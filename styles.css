@@ -207,8 +207,8 @@ body {
 .ilc-entry-has-next::after {
   content: '';
   position: absolute;
-  left: calc(var(--ilc-gutter) + var(--ilc-avatar) / 2 - 1px);
-  width: 2px;
+  left: calc(var(--ilc-gutter) + var(--ilc-avatar) / 2 - 0.5px);
+  width: 1px;
   background: var(--ilc-hairline-soft);
 }
 .ilc-entry-has-prev::before { top: 0; height: 6px; }
@@ -331,7 +331,7 @@ body {
 
 /* ─── Reply input ───────────────────────────────────────────────────────────── */
 .ilc-reply-input-row {
-  padding: 4px var(--ilc-gutter) 12px calc(var(--ilc-gutter) + var(--ilc-indent));
+  padding: 4px var(--ilc-gutter) var(--ilc-gutter) calc(var(--ilc-gutter) + var(--ilc-indent));
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1068,7 +1068,7 @@ body {
 /* ─── @mention in comment body ──────────────────────────────────────────── */
 .ilc-mention {
   color: var(--interactive-accent);
-  font-weight: 600;
+  font-weight: 500;
   cursor: default;
 }
 .ilc-mention-notify {
