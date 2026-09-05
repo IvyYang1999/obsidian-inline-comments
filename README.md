@@ -1,58 +1,91 @@
-<p align="center"><img src="site/logo.svg" width="96" alt="划线评论 logo"></p>
+<p align="center">
+  <img src="site/logo.svg" width="88" alt="Inline Comments logo">
+</p>
 
-# Inline Comments
+<h1 align="center">Inline Comments · 划线评论</h1>
 
-Feishu-style inline comments for Obsidian. Highlight a passage, leave a note, and — if you want — `@` an AI coding session (Claude Code / Codex) to reply. Comments live right inside the Markdown file, next to the text they refer to.
+<p align="center">
+  Highlight a passage in your note, leave a comment, <b>@</b> an AI coding session to reply.<br>
+  Comments live inside the Markdown file. Feishu-style, for Obsidian.
+</p>
 
-Website: https://github.com/IvyYang1999/obsidian-inline-comments · Author: [yytyyf](https://yytyyf.com)
+<p align="center">
+  <a href="https://community.obsidian.md/plugins/inline-comments"><img alt="Obsidian community plugin" src="https://img.shields.io/badge/Obsidian-community%20plugin-7c6cf2?logo=obsidian&logoColor=white"></a>
+  <a href="https://github.com/IvyYang1999/obsidian-inline-comments/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/IvyYang1999/obsidian-inline-comments?color=7c6cf2&label=release"></a>
+  <a href="https://github.com/IvyYang1999/obsidian-inline-comments/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/IvyYang1999/obsidian-inline-comments/total?color=7c6cf2&label=downloads"></a>
+  <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-7c6cf2"></a>
+</p>
+
+<p align="center">
+  <a href="obsidian://show-plugin?id=inline-comments"><b>Install in Obsidian</b></a> ·
+  <a href="https://obsidian-inline-comments.vercel.app/">Website (中文)</a> ·
+  <a href="#中文">中文说明 ↓</a>
+</p>
+
+<p align="center">
+  <img src="docs/demo.gif" width="912" alt="Select text → add comment → @ a session → the session replies in the note">
+</p>
 
 ## What it does
 
-- **Highlight → comment.** Select text, right-click → *Add inline comment* (or use the command). A card appears in the right sidebar, horizontally aligned with the anchor and scrolling with it. The document only shows a soft highlight and a small badge.
-- **Threads.** Reply to any comment. Cards render Markdown-stripped previews, per-thread accent colours, and avatar connector lines.
-- **Unread.** Replies from other people (or AI) get a red dot; the panel header shows "N comments · M unread". Mark as read with one click. Your own replies never count as unread.
-- **`@` a session.** Type `@` in a reply to pick a running Claude Code / Codex session, or choose *Answer with a new session*. The plugin drops a letter into that session's mailbox folder; a small hook (installed on request into `~/.claude/settings.json`) injects the letter into the session's context, and the session writes its reply back into the file. If the session isn't running, the plugin starts one in Terminal (macOS).
-- **Plain text storage.** A comment is one line of CriticMarkup-style text:
+**Highlight → comment.** Select text, right-click *Add inline comment*. A card appears in the right sidebar, level with the passage, and follows it as you scroll. The note itself only gets a soft highlight and a small counter.
 
-  ```
-  {==highlighted text==}{>>author|2026-09-05|question: What's the source? [@Session1](agent:3f9a12c0)<<}
-  ```
+**@ a real session.** Type `@` in a comment to pick a running Claude Code / Codex session on your machine — or choose *Answer with a new session* and the plugin starts one in Terminal (macOS). The letter is dropped into that session's mailbox; a small hook (installed on request) injects it into the session's context; the session reads the note and writes its reply back into the file.
 
-  No database, no sidecar files. Syncs with iCloud / Git / Obsidian Sync; readable without the plugin.
+**Unread, at a glance.** Replies from other people or AI get a red dot, the panel header shows *N comments · M unread*, and the file explorer shows a red count on the document. Mark as read with one click. Turn the whole thing off with one switch if you don't want it.
+
+<p align="center">
+  <img src="docs/obsidian.png" width="900" alt="Obsidian with the comment panel open and an unread badge in the file explorer">
+</p>
+
+**Plain text storage.** A comment is one line of CriticMarkup-style text next to the passage:
+
+```
+{==retention dropped 18% in week two==}{>>yyt|2026-09-05|question: Which table is this from? [@Session1](agent:3f9a12c0)<<}
+```
+
+No database, no sidecar files. It syncs with iCloud / Git / Obsidian Sync like any other text, diffs cleanly, and stays readable without the plugin.
 
 ## Install
 
-From the community plugin list: search **Inline Comments**.
+Obsidian → Settings → Community plugins → Browse → search **Inline Comments**. Or open <a href="obsidian://show-plugin?id=inline-comments">obsidian://show-plugin?id=inline-comments</a>.
 
-Before it is listed, or to track pre-releases, use [BRAT](https://github.com/TfTHacker/obsidian42-brat): *BRAT: Add a beta plugin* → `IvyYang1999/obsidian-inline-comments`.
+Pre-release builds: [BRAT](https://github.com/TfTHacker/obsidian42-brat) → *Add a beta plugin* → `IvyYang1999/obsidian-inline-comments`.
 
-Desktop only (uses Node APIs for session discovery and the mailbox hook).
+Desktop only (macOS / Windows / Linux), Obsidian 1.8+. *Answer with a new session* currently launches Terminal on macOS only.
 
-## Using `@`
+## Using @
 
-1. Open *Manage members* (from the `@` dropdown or the settings tab). Running sessions on this machine are discovered automatically; give one a name to make it mentionable.
-2. Click *Install hook* once. This adds three entries (`UserPromptSubmit`, `Stop`, `SessionStart`) to `~/.claude/settings.json`, backing the file up first. Nothing else in the file is touched; *Uninstall* removes exactly those entries.
-3. In a comment, type `@Name` and send. The letter lands in `<vault>/<mailbox root>/<session-id-prefix>/`. The session sees it the next time it speaks or finishes, reads the document, and appends a reply.
+<p align="center">
+  <img src="docs/at-picker.png" width="760" alt="The @ picker: answer with a new session, or pick a running one">
+</p>
 
-The plugin never talks to the network. Letters and replies are local files; what your AI tool does with them is up to that tool.
+1. **Manage members** (from the `@` dropdown or the settings tab) lists the Claude Code / Codex sessions running on this machine. Give one a name to make it mentionable — or just `@` a name that doesn't exist yet and the plugin creates the session for you.
+2. **Install hook**, once. It adds three entries (`UserPromptSubmit`, `Stop`, `SessionStart`) to `~/.claude/settings.json`, backs the file up first, touches nothing else, and *Uninstall* removes exactly those entries.
+3. Write `@Name` in a comment and send. The letter lands in `<vault>/<mailbox root>/<session-id-prefix>/`; the session sees it the next time it speaks or finishes, reads the note, and appends a reply.
+
+The plugin never talks to the network. Letters and replies are local files in your vault; what your AI tool does with them is up to that tool.
 
 ## Settings
 
-- **Author name** — used for your comments and to exclude your own replies from unread counts.
-- **Mention delivery** / **mailbox root** — where letters are written.
-- **Panel background** — sidebar / editor / custom colour.
-- **Unread signal** — writes `unread-replies.json` for badge plugins to consume.
+| Setting | What it does |
+|---|---|
+| Author name | Signs your comments; your own replies never count as unread |
+| Unread notifications | Master switch for red dots, *Mark as read*, the header count and the explorer badge |
+| Mention delivery / mailbox root | Where letters are written |
+| Panel background | Follow sidebar, follow editor, or a custom colour |
+| Comment types | Built-in agree / disagree / question / important / note, plus your own with a colour |
 
 ## Development
 
 ```bash
-npm install
+npm install --legacy-peer-deps
 npm run build      # tsc + esbuild → main.js
-npm test           # vitest (pure functions)
-npm run e2e        # launches an isolated Obsidian and runs ~70 UI assertions
+npm test           # vitest, pure functions
+npm run e2e        # boots an isolated Obsidian and runs ~70 UI assertions
 ```
 
-Design notes are in `DESIGN.md`.
+Design notes live in [`DESIGN.md`](DESIGN.md). Releases are built by CI from a version tag and ship with build-provenance attestations.
 
 ---
 
@@ -60,11 +93,12 @@ Design notes are in `DESIGN.md`.
 
 在 Obsidian 笔记里划线留言，@ 一个 AI 会话来回复。评论以纯文本形式紧挨着原文存在 `.md` 里，不联网、不建库。
 
-- 选中文字右键「添加划线评论」，卡片在右侧栏与原文水平对齐。
-- 回复带红点、顶部常驻「N 条评论 · M 未读」。
-- 打 `@` 点名一个正在跑的 Claude Code / Codex 会话，或「用新会话回答」；插件投信、hook 唤醒、回复写回文档。
-- 仅桌面端。安装：社区插件搜「Inline Comments」，或用 BRAT 添加 `IvyYang1999/obsidian-inline-comments`。
+- **划线，即评论。** 选中文字右键「添加划线评论」，卡片挂在右侧栏、与原文水平对齐、跟着滚动。
+- **@ 一个正在跑的会话。** 打 `@` 点名本机的 Claude Code / Codex 会话，或「用新会话回答」让插件在终端里替你开一个；留言以文件送到它手里，它读完文档把回复写回原位。
+- **未读一眼看清。** 别人或 AI 的回复带红点，面板顶部常驻「N 条评论 · M 未读」，文件目录里对应文档也挂红色角标；看完点「标为已读」。设置里「未读通知」一键关掉。
 
-## License
+**安装**：Obsidian 设置 → 第三方插件 → 浏览，搜 **Inline Comments**；或直接打开 <a href="obsidian://show-plugin?id=inline-comments">obsidian://show-plugin?id=inline-comments</a>。仅桌面端，Obsidian 1.8 以上；「用新会话回答」目前仅 macOS。预发布版用 BRAT 添加 `IvyYang1999/obsidian-inline-comments`。
 
-MIT
+**关于隐私**：插件本身不联网。@ 只是往你电脑上的一个文件夹写一个文件，会话在你自己的终端里跑；首次 @ 需要在「管理成员」里点一次「安装 hook」——它只往 `~/.claude/settings.json` 加三条，可一键卸载。
+
+官网：https://obsidian-inline-comments.vercel.app · 作者 [yytyyf](https://yytyyf.com) · MIT
