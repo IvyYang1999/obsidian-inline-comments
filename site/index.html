@@ -3,22 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>划线评论 · Obsidian 插件</title>
+<title>划线评论 Inline Comments · Obsidian 插件</title>
 <meta name="description" content="在 Obsidian 笔记里划线留言，@ 一个 AI 会话来回复。评论存在 Markdown 里，开源免费。">
 <meta property="og:title" content="划线评论 · Obsidian 插件">
 <meta property="og:description" content="在笔记里划线留言，@ 一个 AI 会话来回复。评论存在 Markdown 里。">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://obsidian-inline-comments.vercel.app/">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%237c6cf2'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-family='Inter,Helvetica,Arial,sans-serif' font-size='40' font-weight='600' fill='%23fff'%3E@%3C/text%3E%3C/svg%3E">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
 <style>
 /* Two colours, both taken from the product itself: the pale highlight behind a
    commented passage, and the violet of an @-mention. Nothing else is coloured. */
 :root{
   --bg:#fff; --bg-2:#f6f6f4; --ink:#1c1c1a; --ink-2:#55554f; --muted:#8c8c86; --line:#e9e9e5; --line-2:#d3d3cd;
   --mark:#FFEC9E; --at:#7c6cf2; --at-soft:rgba(124,108,242,.10); --red:#e5534b;
-  --sans:"Inter",-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Noto Sans SC",system-ui,sans-serif;
+  --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Noto Sans SC",system-ui,sans-serif;
   --shadow:0 1px 2px rgba(20,20,10,.05),0 10px 30px rgba(20,20,10,.06);
 }
 *{box-sizing:border-box}
@@ -45,25 +43,25 @@ h2{font-size:clamp(26px,3.2vw,32px);line-height:1.3;letter-spacing:-.02em;font-w
 .nav nav a:hover{background:var(--bg-2);color:var(--ink)}
 
 /* ── screen 1 ── */
-.hero{padding:72px 0 0;text-align:center}
-.glyph{font-size:clamp(72px,10vw,104px);line-height:1;font-weight:600;color:var(--at);letter-spacing:-.04em;margin:0 0 18px;display:block}
+.hero{padding-top:48px;text-align:center}
+.glyph{font-size:clamp(48px,6vw,64px);line-height:1;font-weight:600;color:var(--at);letter-spacing:-.04em;margin:0 0 14px;display:block}
 .h1{font-size:clamp(34px,5.4vw,56px);line-height:1.18;font-weight:600;letter-spacing:-.03em;margin:0 0 20px;text-wrap:balance}
 .h1 mark{background:linear-gradient(transparent 58%,var(--mark) 58%,var(--mark) 94%,transparent 94%);color:inherit;padding:0 .04em}
 .h1 em{font-style:normal;color:var(--at)}
 .hero .lead{margin:0 auto;font-size:clamp(17px,2vw,19px);max-width:620px}
-.cta{display:flex;align-items:center;gap:22px;justify-content:center;flex-wrap:wrap;margin-top:34px}
+.cta{display:flex;align-items:center;gap:22px;justify-content:center;flex-wrap:wrap;margin-top:26px}
 .cta .link{font-size:15px}
 
-.demo{margin:48px auto 0;max-width:940px;border:1px solid var(--line);border-radius:14px;background:#fff;box-shadow:var(--shadow);overflow:hidden;text-align:left;position:relative;overflow-anchor:none}
+.demo{margin:32px auto 0;border:1px solid var(--line);border-radius:14px;background:#fff;box-shadow:var(--shadow);overflow:hidden;text-align:left;position:relative;overflow-anchor:none}
 .demo .bar{height:38px;display:flex;align-items:center;gap:6px;padding:0 14px;border-bottom:1px solid var(--line);background:var(--bg-2)}
 .demo .bar i{width:10px;height:10px;border-radius:50%;background:#dededa}
 .demo .bar span{margin-left:10px;font-size:12.5px;color:var(--muted)}
 .replay{margin-left:auto;font-size:12.5px;color:var(--muted);padding:4px 8px;border-radius:6px}
 .replay:hover{background:var(--line);color:var(--ink)}
-.demo .body{display:grid;grid-template-columns:1.15fr .95fr;min-height:440px}
+.demo .body{display:grid;grid-template-columns:1.15fr .95fr;min-height:380px}
 @media (max-width:760px){.demo .body{grid-template-columns:1fr}}
 .editor{padding:30px 34px;font-size:15.5px;line-height:1.9;position:relative;border-right:1px solid var(--line)}
-@media (max-width:760px){.editor{border-right:0;border-bottom:1px solid var(--line)}}
+@media (max-width:760px){.editor{border-right:0;border-bottom:1px solid var(--line);padding:22px 20px}.editor .p3{display:none}.dd{top:auto;bottom:calc(100% + 6px)}}
 .editor h4{margin:0 0 12px;font-size:21px;letter-spacing:-.02em;font-weight:600}
 .editor p{margin:0 0 10px;color:var(--ink-2)}
 .sel{transition:background .25s;border-radius:3px;padding:1px 2px;margin:0 -2px}
@@ -71,13 +69,13 @@ h2{font-size:clamp(26px,3.2vw,32px);line-height:1.3;letter-spacing:-.02em;font-w
 .sel.marked{background:var(--mark);color:var(--ink)}
 .badge{display:inline-grid;place-items:center;width:17px;height:17px;border-radius:50%;background:var(--at);color:#fff;font-size:10.5px;font-weight:600;margin-left:4px;vertical-align:1px;transform:scale(0);transition:transform .25s cubic-bezier(.2,.9,.3,1.4)}
 .badge.on{transform:scale(1)}
-.menu{position:absolute;left:150px;top:116px;background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:var(--shadow);padding:4px;font-size:13.5px;min-width:150px;opacity:0;transform:translateY(-4px);pointer-events:none;transition:opacity .18s,transform .18s}
+.menu{position:absolute;background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:var(--shadow);padding:4px;font-size:13.5px;min-width:150px;opacity:0;transform:translateY(-4px);pointer-events:none;transition:opacity .18s,transform .18s}
 .menu.on{opacity:1;transform:none}
 .menu div{padding:6px 10px;border-radius:6px;color:var(--ink-2)}
 .menu div.hot{background:var(--bg-2);color:var(--ink)}
 .panel{background:var(--bg-2);padding:16px 16px 20px;position:relative}
 .panel .ph{font-size:13px;color:var(--ink-2);font-weight:600;margin:0 0 10px 4px}
-.panel .ph b{color:var(--red);font-weight:600;margin-left:6px;opacity:0;transition:opacity .3s}
+.panel .ph b{color:var(--ink);font-weight:600;margin-left:6px;opacity:0;transition:opacity .3s}
 .panel .ph b.on{opacity:1}
 .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px 14px;opacity:0;transform:translateY(8px);transition:opacity .3s,transform .3s}
 .card.on{opacity:1;transform:none}
@@ -86,7 +84,7 @@ h2{font-size:clamp(26px,3.2vw,32px);line-height:1.3;letter-spacing:-.02em;font-w
 .entry{display:grid;grid-template-columns:26px 1fr;gap:10px;position:relative;padding:5px 0}
 .entry+.entry::before{content:'';position:absolute;left:12.5px;top:-8px;height:12px;width:1px;background:var(--line)}
 .avatar{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:11.5px;font-weight:600;position:relative}
-.avatar.y{background:var(--at)}.avatar.n{background:#e09b3d}
+.avatar.y{background:var(--at)}.avatar.n{background:var(--ink-2)}
 .avatar .dot{position:absolute;top:-2px;right:-2px;width:8px;height:8px;border-radius:50%;background:var(--red);border:2px solid #fff;transform:scale(0);transition:transform .25s}
 .avatar .dot.on{transform:scale(1)}
 .entry .hd{display:flex;align-items:baseline;gap:7px;font-size:13.5px;line-height:1.5}
@@ -121,7 +119,7 @@ h2{font-size:clamp(26px,3.2vw,32px);line-height:1.3;letter-spacing:-.02em;font-w
 .toast.on{opacity:1;transform:translate(-50%,0)}
 
 /* ── screen 2 ── */
-.three{padding:100px 0 0}
+.three{padding-top:100px}
 .cols{display:grid;grid-template-columns:repeat(3,1fr);gap:44px;margin-top:44px}
 @media (max-width:760px){.cols{grid-template-columns:1fr;gap:32px}}
 .cols h3{margin:0 0 10px;font-size:21px;font-weight:600;letter-spacing:-.02em;line-height:1.3}
@@ -129,36 +127,37 @@ h2{font-size:clamp(26px,3.2vw,32px);line-height:1.3;letter-spacing:-.02em;font-w
 .cols p{margin:0;font-size:16px;color:var(--ink-2)}
 .md{margin-top:48px;border-radius:14px;background:var(--bg-2);padding:22px 26px;display:grid;grid-template-columns:1.4fr 1fr;gap:28px;align-items:center}
 @media (max-width:700px){.md{grid-template-columns:1fr;gap:14px}}
-.md pre{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13.5px;line-height:1.75;color:var(--ink-2);white-space:pre-wrap;word-break:break-all}
+.md pre{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13.5px;line-height:1.75;color:var(--ink-2);white-space:pre-wrap;overflow-wrap:anywhere}
 .md pre b{color:var(--ink);font-weight:500;background:var(--mark);border-radius:3px;padding:0 2px}
 .md pre em{font-style:normal;color:var(--at)}
 .md p{margin:0;font-size:15.5px;color:var(--ink-2)}
 
 /* ── screen 3 ── */
-.install{padding:100px 0 0;text-align:center}
+.install{padding-top:100px;text-align:center}
 .install .lead{margin:0 auto}
-.install .cta{margin-top:28px}
+.install .cta{margin-top:26px}
+.install .spec{margin:10px auto 0;font-size:15px;color:var(--muted);max-width:640px}
 .qs{max-width:720px;margin:48px auto 0;border-top:1px solid var(--line);text-align:left}
 details{border-bottom:1px solid var(--line)}
-summary{list-style:none;cursor:pointer;padding:18px 0;font-size:17px;font-weight:500;display:flex;justify-content:space-between;align-items:center;gap:16px}
+summary{list-style:none;cursor:pointer;overflow:hidden;padding:18px 0;font-size:17px;font-weight:500;display:flex;justify-content:space-between;align-items:center;gap:16px}
 summary::-webkit-details-marker{display:none}
 summary::after{content:'+';font-weight:300;color:var(--muted);font-size:22px;transition:transform .2s}
 details[open] summary::after{transform:rotate(45deg)}
 details p{margin:-6px 0 20px;font-size:16px;color:var(--ink-2)}
 
-.more{padding:80px 0 72px}
+.more{padding-top:80px;padding-bottom:72px}
 .more .head{display:flex;align-items:baseline;justify-content:space-between;gap:16px}
 .more h2{font-size:20px;margin:0}
 .more .head .link{font-size:15px}
+@media (max-width:600px){.more .head{flex-direction:column;align-items:flex-start;gap:4px}}
 .rail{display:flex;gap:14px;margin-top:22px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:8px;scrollbar-width:thin;scrollbar-color:var(--line-2) transparent}
 .rail::-webkit-scrollbar{height:6px}.rail::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:3px}
-.pc{flex:0 0 260px;scroll-snap-align:start;border:1px solid var(--line);border-radius:14px;padding:20px 20px 18px;background:#fff;display:flex;flex-direction:column;gap:6px;transition:transform .15s,box-shadow .15s,border-color .15s}
+.pc{flex:0 0 calc((100% - 28px) / 3);min-width:240px;scroll-snap-align:start;border:1px solid var(--line);border-radius:14px;padding:20px 20px 18px;background:#fff;display:flex;flex-direction:column;gap:6px;transition:transform .15s,box-shadow .15s,border-color .15s}
 a.pc:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:var(--line-2)}
-.pc .ico{font-size:24px;line-height:1;margin-bottom:10px}
+.pc .ico{width:34px;height:34px;border-radius:9px;background:var(--bg-2);color:var(--ink-2);display:grid;place-items:center;font-size:15px;font-weight:600;margin-bottom:12px}
 .pc .t{font-size:16px;font-weight:600}
 .pc .d{font-size:15px;color:var(--ink-2);flex:1}
 .pc .st{font-size:13px;color:var(--muted);margin-top:10px}
-.pc.all{border-style:dashed;justify-content:center;align-items:center;text-align:center;color:var(--ink-2);font-size:15px;font-weight:500;line-height:1.7}
 
 footer{border-top:1px solid var(--line);padding:34px 0 40px;font-size:14px;color:var(--muted)}
 footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap}
@@ -180,23 +179,24 @@ footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:2
 <main>
 <section class="hero wrap">
   <span class="glyph" aria-hidden="true">@</span>
-  <h1 class="h1">在笔记里<mark>划线留言</mark>，<br><em>@</em> 一个 AI 会话来回复。</h1>
-  <p class="lead">飞书评论的手感，搬进 Obsidian。选中一段、写下想法，评论跟着原文走；@ 一个名字，留言会送到那个 Claude Code 会话，回复直接写回文档。</p>
+  <h1 class="h1">在笔记里<mark>划线留言</mark>，<br><em>@</em> 一个 AI 会话来回复</h1>
+  <p class="lead">飞书评论的手感，搬进 Obsidian。选中一段写下想法，评论跟着原文走；@ 一个 Claude Code / Codex 会话，回复直接写回文档。</p>
   <div class="cta">
     <a class="btn" href="obsidian://show-plugin?id=inline-comments">安装到 Obsidian</a>
     <a class="link" href="https://community.obsidian.md/plugins/inline-comments" target="_blank" rel="noopener">在社区插件目录查看 →</a>
   </div>
 
   <div class="demo" id="demo" aria-label="插件效果演示">
-    <div class="bar"><i></i><i></i><i></i><span>周报 · 8 月.md</span><button class="replay" id="replay" title="重放">↻ 重放</button></div>
+    <div class="bar"><i></i><i></i><i></i><span>8 月复盘.md</span><button class="replay" id="replay" title="重放">↻ 重放</button></div>
     <div class="body">
-      <div class="editor">
+      <div class="editor" id="editor">
         <h4>8 月复盘</h4>
         <p>这个月主要在做新用户的引导流程。上线两周后看数据，激活率比 7 月高了 6 个点，但 <span class="sel" id="sel">留存在第二周掉了 18%</span><span class="badge" id="badge">1</span>，还没弄清楚原因。</p>
         <p>下个月先把留存的归因做完，再决定要不要继续加引导步骤。</p>
-        <div class="menu" id="menu"><div>剪切</div><div>复制</div><div class="hot">添加评论</div></div>
+        <p class="p3">另外，客服反馈新手引导第三步的文案有歧义，已经改了一版，下周看数据。</p>
+        <div class="menu" id="menu"><div>剪切</div><div>复制</div><div class="hot">添加划线评论</div></div>
       </div>
-      <div class="panel">
+      <div class="panel" id="panel">
         <p class="ph"><span id="cnt">0 条评论</span><b id="unread">· 1 未读</b></p>
         <div class="card" id="card">
           <div class="q">留存在第二周掉了 18%</div>
@@ -205,8 +205,8 @@ footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:2
             <div class="input" id="input"><span class="ph-text">写下评论…</span></div>
             <div class="dd" id="dd">
               <div class="hot"><span class="av new">+</span>用新会话回答<small>回车</small></div>
-              <div><span class="av" style="background:#e09b3d">费</span>费宝<small>claude · 在线</small></div>
-              <div><span class="av" style="background:#6bb0f0">审</span>审计员<small>codex</small></div>
+              <div><span class="av">费</span>费宝<small>claude · 在线</small></div>
+              <div><span class="av">审</span>审计员<small>codex · 在线</small></div>
             </div>
             <div class="send"><button>取消</button><button class="go" id="go">发送</button></div>
           </div>
@@ -221,37 +221,36 @@ footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:2
   <h2>小而完整的三件事</h2>
   <p class="lead">不做知识库、不做聊天窗，只把「在原文旁边说一句」做顺手。</p>
   <div class="cols">
-    <div><h3>划线，即评论</h3><p>选中文字右键「添加评论」。卡片挂在右侧、和原文对齐、跟着滚动；正文里只留一段淡黄高亮和一枚小数字。</p></div>
-    <div><h3><em>@</em> 一个真实会话</h3><p>点名一个正在跑的 Claude Code / Codex 会话，或「用新会话回答」。插件把留言投到它的信箱，没在跑就替你在终端开一个；它读完文档，把回复写回原位。</p></div>
+    <div><h3>划线，即评论</h3><p>选中文字右键「添加划线评论」。卡片挂在右侧、和原文对齐、跟着滚动；正文里只留一段淡黄高亮和一个小角标。</p></div>
+    <div><h3><em>@</em> 一个正在跑的会话</h3><p>点名一个 Claude Code / Codex 会话，或「用新会话回答」。留言以文件送到它手里；它读完文档，把回复写回原位。</p></div>
     <div><h3>未读一眼看清</h3><p>别人或 AI 的回复带红点，顶部常驻「N 条评论 · M 未读」。看完点一下「标为已读」；自己写的永远不算未读。</p></div>
   </div>
   <div class="md">
-    <pre>{==<b>留存在第二周掉了 18%</b>==}{>>yyt|2026-09-05|question: 这个数字来源是哪？<em>[@新会话1](agent:3f9a12c0)</em><<}</pre>
-    <p>评论就是这样一行文本，紧挨着原文存在 <code>.md</code> 里。没有数据库、没有 sidecar；Git 能 diff，同步不会丢，卸载插件也还能读。</p>
+    <pre>{==<b>留存在第二周掉了 18%</b>==}{>>yyt|2026-09-05|question: 这个数字是哪张表来的？<em>[@新会话1](agent:3f9a12c0)</em><<}</pre>
+    <p>评论就是这样一行文本，紧挨着原文存在 <code>.md</code> 里。没有数据库、没有附属文件；Git 能 diff，同步不会丢，卸载插件也还能读。</p>
   </div>
 </section>
 
 <section class="install wrap" id="install">
   <h2>两分钟装好</h2>
-  <p class="lead">Obsidian 设置 → 第三方插件 → 社区插件，搜「Inline Comments」。免费、开源、不联网；桌面端，Obsidian 1.8 以上。</p>
+  <p class="lead">Obsidian 设置 → 第三方插件 → 浏览，搜 <b style="white-space:nowrap">Inline Comments</b>（它的英文名）。</p>
+  <p class="spec">免费 · 开源 · 插件本身不联网 · 桌面端，Obsidian 1.8 以上 · 「用新会话回答」目前仅 macOS</p>
   <div class="cta">
     <a class="btn" href="obsidian://show-plugin?id=inline-comments">安装到 Obsidian</a>
-    <a class="link" href="https://github.com/IvyYang1999/obsidian-inline-comments/releases" target="_blank" rel="noopener">更新记录 →</a>
   </div>
   <div class="qs">
     <details open><summary>评论存在哪里？换台电脑还在吗？</summary><p>就存在笔记本身，紧挨着被评论的那句话，是一段纯文本。随 iCloud / Git / Obsidian Sync 一起走；没装插件的地方打开也能看到。</p></details>
     <details><summary>不用 AI，只当普通评论工具行吗？</summary><p>完全可以。划线、留言、回复、已读未读都不需要任何会话或联网；@ 是可选项，不用就不会出现。</p></details>
-    <details><summary>会把我的笔记发到哪儿去吗？</summary><p>插件本身不联网。投信是往本地文件夹写文件，会话在你自己的终端里跑；笔记出不出机器，取决于你配的 AI 工具，与插件无关。</p></details>
+    <details><summary>会把我的笔记发到哪儿去吗？</summary><p>插件本身不联网。@ 只是往你电脑上的一个文件夹写一个文件，会话在你自己的终端里跑；笔记出不出机器，取决于你配的 AI 工具，与插件无关。首次 @ 需要在「管理成员」里点一次「安装 hook」——它只往 ~/.claude/settings.json 加三条，可一键卸载。</p></details>
   </div>
 </section>
 
 <section class="more wrap">
-  <div class="head"><h2>同一个作者的其它 Obsidian 插件</h2><a class="link" href="https://yytyyf.com" target="_blank" rel="noopener">全部作品 →</a></div>
+  <div class="head"><h2>同一个作者的其他 Obsidian 插件</h2><a class="link" href="https://yytyyf.com" target="_blank" rel="noopener">全部作品 →</a></div>
   <div class="rail">
-    <a class="pc" href="https://obsidian-web-desk.vercel.app/" target="_blank" rel="noopener"><span class="ico">🖼️</span><span class="t">画布收藏夹</span><span class="d">收藏的网页摆成一张自由画布，当首页用。</span><span class="st">已上线</span></a>
-    <div class="pc"><span class="ico">🖍️</span><span class="t">荧光笔时间轴</span><span class="d">在笔记里手画色块记录时间花在哪，也能让 AI 帮你画。</span><span class="st">在做</span></div>
-    <div class="pc"><span class="ico">📓</span><span class="t">AI 日记</span><span class="d">今天 AI 帮我干了什么，自动写成时间轴。</span><span class="st">在做</span></div>
-    <a class="pc all" href="https://yytyyf.com" target="_blank" rel="noopener">yytyyf.com<br>把每个作业，都做成作品。</a>
+    <a class="pc" href="https://obsidian-web-desk.vercel.app/" target="_blank" rel="noopener"><span class="ico">画</span><span class="t">画布收藏夹</span><span class="d">收藏的网页摆成一张自由画布，当首页用。</span><span class="st">已上线</span></a>
+    <div class="pc"><span class="ico">时</span><span class="t">荧光笔时间轴</span><span class="d">在笔记里手画色块记录时间花在哪，也能让 AI 帮你画。</span><span class="st">在做</span></div>
+    <div class="pc"><span class="ico">记</span><span class="t">AI 日记</span><span class="d">今天 AI 帮你干了什么，自动写成时间轴。</span><span class="st">在做</span></div>
   </div>
 </section>
 </main>
@@ -275,7 +274,7 @@ footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:2
   const $ = (id) => document.getElementById(id);
   const sel = $('sel'), badge = $('badge'), menu = $('menu'), card = $('card'), entries = $('entries');
   const compose = $('compose'), input = $('input'), dd = $('dd'), go = $('go'), toast = $('toast'), toastText = $('toastText');
-  const cnt = $('cnt'), unread = $('unread');
+  const cnt = $('cnt'), unread = $('unread'), panel = $('panel'), editor = $('editor');
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let run = 0;
 
@@ -306,6 +305,7 @@ footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:2
     card.className = 'card'; entries.innerHTML = ''; compose.style.display = '';
     input.className = 'input'; input.innerHTML = '<span class="ph-text">写下评论…</span>';
     dd.className = 'dd'; toast.className = 'toast'; cnt.textContent = '0 条评论'; unread.className = '';
+    card.style.marginTop = '0';
   }
 
   async function play() {
@@ -314,10 +314,16 @@ footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:2
     await sleep(900); if (!alive(id)) return;
     sel.classList.add('selecting');
     await sleep(700); if (!alive(id)) return;
+    { const r = sel.getBoundingClientRect(), e = editor.getBoundingClientRect();
+      menu.style.left = Math.max(12, r.left - e.left + 24) + 'px'; menu.style.top = (r.bottom - e.top + 6) + 'px'; }
     menu.classList.add('on');
     await sleep(1100); if (!alive(id)) return;
     menu.classList.remove('on');
     sel.classList.remove('selecting'); sel.classList.add('marked'); badge.classList.add('on');
+    if (innerWidth > 760) { // sit level with the highlighted line, like the real panel does
+      const want = sel.getBoundingClientRect().top - panel.getBoundingClientRect().top - 2;
+      card.style.marginTop = Math.max(0, want - card.offsetTop) + 'px';
+    }
     card.classList.add('on'); input.classList.add('focus'); input.innerHTML = '';
     const caret = document.createElement('span'); caret.className = 'caret';
     const txt = document.createElement('span'); input.append(txt, caret);
@@ -344,14 +350,14 @@ footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:2
     await sleep(1600); if (!alive(id)) return;
     t.remove();
     entries.append(entry({ who: '新会话1', cls: 'n', time: '刚刚', dot: true, read: true,
-      html: '查到了：来自「8 月周报 · 留存表」第 3 节，口径是第 8–14 天。我把表格链接补到了段末，你看一下。' }));
+      html: '查到了：来自「8 月数据 · 留存表」第 3 节，口径是第 8–14 天。我把表格链接补到了段末，你看一下。' }));
     cnt.textContent = '2 条评论'; unread.classList.add('on');
     await sleep(reduce ? 2000 : 4500); if (!alive(id)) return;
     play();
   }
 
   $('replay').addEventListener('click', play);
-  const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting) && !run) play(); }, { threshold: .3 });
+  const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting) && !run) play(); }, { threshold: .6 });
   io.observe($('demo'));
 })();
 </script>
