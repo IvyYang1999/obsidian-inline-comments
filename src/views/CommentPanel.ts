@@ -14,6 +14,8 @@ import {
   applySuggestion,
   setEntryType,
   isResolved,
+  parseReaction,
+  toggleReaction,
 } from '../parser.ts';
 import { HistoryModal } from './HistoryModal.ts';
 import { setDraftRange, type AnnotationPosition } from '../editor/cmExtension.ts';
@@ -849,7 +851,7 @@ export class CommentPanel extends ItemView {
     const threadWrap = card.createEl('div', { cls: 'ilc-thread-wrap' });
     const thread = threadWrap.createEl('div', { cls: 'ilc-thread' });
     ann.comments.forEach((comment, i) => {
-      if (comment.type === 'resolve') return; // stale marker mid-thread (reopened by replying)
+      if (comment.type === 'resolve' || comment.type === 'react') return; // markers, not entries
       this.renderCommentEntry(thread, comment, ann, i, file);
     });
     window.requestAnimationFrame(() => this.applyClamp(card, threadWrap, ann.id));
@@ -1008,6 +1010,40 @@ export class CommentPanel extends ItemView {
           btn.removeClass('ilc-agent-reply-pending');
         }
       });
+    }
+
+    // Reactions: chips for this entry + a small picker (hover)
+    {
+      const me = this.plugin.settings.authorName;
+      const today = () => new Date().toISOString().split('T')[0];
+      const tally = new Map<string, string[]>();
+      ann.comments.forEach((c) => {
+        if (c.type !== 'react') return;
+        const r = parseReaction(c.text);
+        if (!r || r.target !== entryIndex) return;
+        tally.set(r.emoji, [...(tally.get(r.emoji) ?? []), c.author]);
+      });
+      const toggle = async (emoji: string) => {
+        const content = await this.app.vault.read(file);
+        await this.app.vault.modify(file, toggleReaction(content, ann.from, entryIndex, emoji, me, today()));
+      };
+      if (tally.size > 0) {
+        const row = entry.createEl('div', { cls: 'ilc-react-row' });
+        for (const [emoji, who] of tally) {
+          const chip = row.createEl('button', { cls: 'ilc-react-chip', text: `${emoji} ${who.length}`, attr: { title: who.join('、') } });
+          chip.toggleClass('is-mine', who.includes(me));
+          chip.addEventListener('click', (e) => { e.stopPropagation(); void toggle(emoji); });
+        }
+      }
+      // ☺ lives in the header next to ⋯ (both zero-width until hover) — never an invisible click target
+      const add = createEl('button', { cls: 'ilc-more-btn ilc-react-add', text: '☺', attr: { title: '添加反应', 'aria-label': '添加反应' } });
+      header.insertBefore(add, moreBtn);
+      const picker = entry.createEl('div', { cls: 'ilc-react-picker' });
+      for (const emoji of ['👍', '❤️', '😂', '🙏', '👀']) {
+        const b = picker.createEl('button', { cls: 'ilc-react-option', text: emoji });
+        b.addEventListener('click', (e) => { e.stopPropagation(); picker.removeClass('is-open'); void toggle(emoji); });
+      }
+      add.addEventListener('click', (e) => { e.stopPropagation(); picker.toggleClass('is-open', !picker.hasClass('is-open')); });
     }
 
     // Unread state for replies from others: dot on avatar + "标为已读" action.

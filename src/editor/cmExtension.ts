@@ -245,7 +245,7 @@ class CommentViewPlugin implements PluginValue {
             hlEnd,
             markupEnd,
             Decoration.replace({
-              widget: new CommentBadgeWidget(ann.comments.length, ann.id, onBadgeClick),
+              widget: new CommentBadgeWidget(ann.comments.filter((c) => c.type !== 'resolve' && c.type !== 'react').length, ann.id, onBadgeClick),
             }),
           );
         }

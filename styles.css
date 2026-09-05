@@ -412,9 +412,11 @@ body {
 .ilc-card-preview .ilc-more-btn { align-self: flex-start; }
 /* The rule follows the text height; the ⋯ button is capped at 18px so it can't stretch the row */
 /* collapsed: cancel the flex gap so the date sits flush right */
-.ilc-entry-header .ilc-entry-more-btn { margin-left: -8px; }
+.ilc-entry-header .ilc-entry-more-btn,
+.ilc-entry-header .ilc-react-add { margin-left: -8px; }
 .ilc-card-preview:hover .ilc-more-btn,
 .ilc-entry-header:hover .ilc-entry-more-btn,
+.ilc-entry-header:hover .ilc-react-add,
 .ilc-pending-row:hover .ilc-entry-more-btn { opacity: 1; width: auto; padding: 0 2px; margin-left: 6px; }
 .ilc-more-btn:hover { opacity: 1 !important; color: var(--text-normal); }
 
@@ -1292,3 +1294,19 @@ body {
 /* ─── Reading view ───────────────────────────────────────────────────────────── */
 .markdown-preview-view .ilc-highlight { cursor: default; }
 .markdown-preview-view .ilc-badge { cursor: pointer; margin-left: 3px; }
+
+/* ─── Reactions ──────────────────────────────────────────────────────────────── */
+.ilc-react-row { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 4px 0 0 var(--ilc-indent); min-height: 18px; }
+.ilc-panel .ilc-react-chip,
+.ilc-panel .ilc-react-option {
+  height: 20px !important; min-height: 0 !important; padding: 0 7px !important;
+  font-size: var(--ilc-font-small); line-height: 18px;
+  border: 1px solid var(--ilc-hairline) !important; border-radius: var(--ilc-radius-pill);
+  background: var(--ilc-surface) !important; color: var(--text-muted) !important; box-shadow: none !important;
+  cursor: pointer;
+}
+.ilc-panel .ilc-react-chip.is-mine { border-color: color-mix(in srgb, var(--interactive-accent) 55%, var(--ilc-hairline)) !important; background: color-mix(in srgb, var(--interactive-accent) 10%, var(--ilc-surface)) !important; color: var(--text-normal) !important; }
+.ilc-react-picker { display: none; position: absolute; right: var(--ilc-gutter); top: 30px; z-index: 5; padding: 4px; gap: 2px; background: var(--ilc-surface); border: 1px solid var(--ilc-hairline); border-radius: 8px; box-shadow: var(--ilc-shadow-md); }
+.ilc-react-picker.is-open { display: flex; }
+.ilc-panel .ilc-react-option { border: 0 !important; font-size: 15px; padding: 0 5px !important; height: 26px !important; line-height: 26px; }
+.ilc-panel .ilc-react-option:hover { background: var(--ilc-surface-sunken) !important; }

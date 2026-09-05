@@ -63,10 +63,12 @@ export const COMMENT_TYPE_META: Record<string, { label: string; emoji: string }>
   suggest:   { label: '建议',   emoji: '✏️' },
   accepted:  { label: '已采纳', emoji: '✅' },
   declined:  { label: '未采纳', emoji: '⛔' },
+  resolve:   { label: '已解决', emoji: '✅' },
+  react:     { label: '反应',   emoji: '👍' },
 };
 
 export const BUILTIN_TYPE_IDS = new Set([
-  'agree', 'disagree', 'question', 'important', 'note', 'reply', 'pending', 'suggest', 'accepted', 'declined',
+  'agree', 'disagree', 'question', 'important', 'note', 'reply', 'pending', 'suggest', 'accepted', 'declined', 'resolve', 'react',
 ]);
 
 /** Entry types that behave like replies in a thread (unread tracking, no type chip) */

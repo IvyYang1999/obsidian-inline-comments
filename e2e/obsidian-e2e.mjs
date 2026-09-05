@@ -461,6 +461,26 @@ async function run() {
     const pendingLeft = await page.locator('.ilc-suggest-accept').count();
     check('采纳后按钮消失、条目显示「已采纳」', pendingLeft === 0 && (await page.locator('.ilc-suggest-accepted').count()) === 1);
 
+    // ── Reactions: 👍 on 回声's reply → react entry in file, chip shows count, toggling again removes it
+    const badgeBefore = await page.evaluate(() => [...document.querySelectorAll('.cm-editor .ilc-badge')].map((b) => b.textContent).join(','));
+    const reacted = await page.evaluate(() => {
+      const entry = [...document.querySelectorAll('.ilc-entry')].find((e) => e.querySelector('.ilc-entry-author')?.textContent === '回声');
+      entry?.querySelector('.ilc-react-add')?.click();
+      const opt = [...(entry?.querySelectorAll('.ilc-react-option') ?? [])].find((b) => b.textContent === '👍');
+      opt?.click();
+      return !!opt;
+    });
+    await sleep(900);
+    const reactDoc = await page.evaluate(() => app.vault.adapter.read('sample.md'));
+    const chip = await page.evaluate(() => { const c = document.querySelector('.ilc-react-chip'); return c ? { text: c.textContent, mine: c.classList.contains('is-mine') } : null; });
+    check('点 ☺ → 👍：文件追加 react 条目，条目下出现「👍 1」且标为自己的', reacted && /\|react: 👍 #1<<\}/.test(reactDoc) && chip?.text === '👍 1' && chip.mine, JSON.stringify(chip));
+    const badgeAfter = await page.evaluate(() => [...document.querySelectorAll('.cm-editor .ilc-badge')].map((b) => b.textContent).join(','));
+    check('反应不计入编辑器角标数', badgeBefore === badgeAfter, `${badgeBefore} → ${badgeAfter}`);
+    await page.locator('.ilc-react-chip').first().evaluate((b) => b.click());
+    await sleep(900);
+    const unreactDoc = await page.evaluate(() => app.vault.adapter.read('sample.md'));
+    check('再点一次取消反应', !/\|react: /.test(unreactDoc) && (await page.locator('.ilc-react-chip').count()) === 0);
+
     // ── Long threads are clipped (unless focused); 「展开全部」 lifts the clamp
     await page.evaluate(() => { const p = app.plugins.plugins['inline-comments'].getPanel(); p.activeAnnotationId = null; });
     await page.evaluate(() => app.plugins.plugins['inline-comments'].getPanel().refresh());

@@ -79,7 +79,7 @@ export function readingPostProcessor(host: ReadingHost) {
       span.dataset.annId = ann.id;
       const bg = resolved ? null : host.highlightBg?.(firstType);
       if (bg) span.setCssProps({ '--ilc-hl-bg': bg });
-      const badge = createSpan({ cls: 'ilc-badge', text: String(ann.comments.filter((c) => c.type !== 'resolve').length) });
+      const badge = createSpan({ cls: 'ilc-badge', text: String(ann.comments.filter((c) => c.type !== 'resolve' && c.type !== 'react').length) });
       badge.title = `${ann.comments.length} 条评论 · 点击定位`;
       badge.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); host.onBadgeClick?.(ann.id); });
       const frag = document.createDocumentFragment();

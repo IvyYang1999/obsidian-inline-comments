@@ -150,6 +150,15 @@ export function deleteCommentEntry(
 
     if (entryIndex < 0 || entryIndex >= blocks.length) return content;
     blocks.splice(entryIndex, 1);
+    // Reactions point at entry indexes: drop the ones on the deleted entry, shift the rest
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      const e = parseMeta(blocks[i].slice(3, -3));
+      if (e.type !== 'react') continue;
+      const r = parseReaction(e.text);
+      if (!r) continue;
+      if (r.target === entryIndex) blocks.splice(i, 1);
+      else if (r.target > entryIndex) blocks[i] = `{>>${e.author}|${e.date}|react: ${r.emoji} #${r.target - 1}<<}`;
+    }
 
     if (blocks.length === 0) {
       // Last entry removed → restore plain text
@@ -158,6 +167,46 @@ export function deleteCommentEntry(
 
     const newAnnotation = `{==${m[1]}==}${blocks.join('')}`;
     return content.slice(0, m.index) + newAnnotation + content.slice(m.index + m[0].length);
+  }
+  return content;
+}
+
+// ─── Reactions ──────────────────────────────────────────────────────────────────
+// `{>>author|date|react: 👍 #2<<}` — an emoji on entry #2 of the same thread.
+
+export interface Reaction { emoji: string; target: number }
+
+export function parseReaction(text: string): Reaction | null {
+  const m = text.trim().match(/^(\S+)\s+#(\d+)$/);
+  return m ? { emoji: m[1], target: Number(m[2]) } : null;
+}
+
+/** Add the author's reaction, or remove it if it is already there */
+export function toggleReaction(
+  content: string,
+  annotationFrom: number,
+  target: number,
+  emoji: string,
+  author: string,
+  date: string,
+): string {
+  FULL_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = FULL_RE.exec(content)) !== null) {
+    if (m.index !== annotationFrom) continue;
+    const blocks: string[] = [];
+    const blockRe = /\{>>[\s\S]+?<<\}/g;
+    let bm: RegExpExecArray | null;
+    while ((bm = blockRe.exec(m[2])) !== null) blocks.push(bm[0]);
+    const idx = blocks.findIndex((b) => {
+      const e = parseMeta(b.slice(3, -3));
+      const r = e.type === 'react' ? parseReaction(e.text) : null;
+      return !!r && r.emoji === emoji && r.target === target && e.author === author;
+    });
+    if (idx >= 0) blocks.splice(idx, 1);
+    else blocks.push(`{>>${author}|${date}|react: ${emoji} #${target}<<}`);
+    const rebuilt = `{==${m[1]}==}${blocks.join('')}`;
+    return content.slice(0, m.index) + rebuilt + content.slice(m.index + m[0].length);
   }
   return content;
 }
