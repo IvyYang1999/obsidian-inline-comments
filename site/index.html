@@ -4,224 +4,188 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>划线评论 · Obsidian 插件</title>
-<meta name="description" content="在 Obsidian 笔记里划线留言，@ 一个 AI 会话来回复。评论存在 Markdown 里，飞书评论的手感，开源免费。">
+<meta name="description" content="在 Obsidian 笔记里划线留言，@ 一个 AI 会话来回复。评论存在 Markdown 里，开源免费。">
 <meta property="og:title" content="划线评论 · Obsidian 插件">
 <meta property="og:description" content="在笔记里划线留言，@ 一个 AI 会话来回复。评论存在 Markdown 里。">
 <meta property="og:type" content="website">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='6' y='10' width='52' height='38' rx='12' fill='%23FFC60A'/%3E%3Cpath d='M20 48l-4 10 14-10z' fill='%23FFC60A'/%3E%3Crect x='18' y='24' width='28' height='4' rx='2' fill='%23fff'/%3E%3Crect x='18' y='32' width='18' height='4' rx='2' fill='%23fff'/%3E%3C/svg%3E">
+<meta property="og:url" content="https://obsidian-inline-comments.vercel.app/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%237c6cf2'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-family='Inter,Helvetica,Arial,sans-serif' font-size='40' font-weight='600' fill='%23fff'%3E@%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
 <style>
+/* Two colours, both taken from the product itself: the pale highlight behind a
+   commented passage, and the violet of an @-mention. Nothing else is coloured. */
 :root{
-  --bg:#ffffff; --bg-2:#faf9f6; --surface:#ffffff; --ink:#1c1c1a; --ink-2:#4b4b47; --muted:#8a8a84; --line:#ebebe6; --line-2:#d6d6cf;
-  --y:#FFC60A; --y-deep:#F2B705; --y-ink:#8a6200; --y-soft:#FFF5C7; --y-mark:#FFEC9E; --y-glow:rgba(255,198,10,.28);
-  --violet:#7c6cf2; --red:#ef5350; --green:#3fb37f;
+  --bg:#fff; --bg-2:#f6f6f4; --ink:#1c1c1a; --ink-2:#55554f; --muted:#8c8c86; --line:#e9e9e5; --line-2:#d3d3cd;
+  --mark:#FFEC9E; --at:#7c6cf2; --at-soft:rgba(124,108,242,.10); --red:#e5534b;
   --sans:"Inter",-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Noto Sans SC",system-ui,sans-serif;
-  --shadow:0 1px 2px rgba(20,20,10,.05),0 12px 32px rgba(20,20,10,.07);
-  --shadow-sm:0 1px 2px rgba(20,20,10,.06);
-  --r:14px;
+  --shadow:0 1px 2px rgba(20,20,10,.05),0 10px 30px rgba(20,20,10,.06);
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.65;-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased}
 a{color:inherit;text-decoration:none}
 button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9em;background:var(--bg-2);border:1px solid var(--line);border-radius:6px;padding:1px 6px}
-.wrap{max-width:1040px;margin:0 auto;padding:0 24px}
-.eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--y-ink)}
-.eyebrow::before{content:'';width:18px;height:3px;border-radius:2px;background:var(--y)}
-h2{font-size:clamp(26px,3.4vw,34px);line-height:1.25;letter-spacing:-.02em;font-weight:600;margin:10px 0 12px}
-.lead{font-size:17px;color:var(--ink-2);max-width:620px;margin:0}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9em;background:var(--bg-2);border-radius:5px;padding:1px 6px}
+.wrap{max-width:960px;margin:0 auto;padding:0 24px}
+h2{font-size:clamp(26px,3.2vw,32px);line-height:1.3;letter-spacing:-.02em;font-weight:600;margin:0 0 12px;text-wrap:balance}
+.lead{font-size:17px;color:var(--ink-2);max-width:600px;margin:0;text-wrap:balance}
+.link{color:var(--ink-2);border-bottom:1px solid var(--line-2);transition:color .15s,border-color .15s}
+.link:hover{color:var(--at);border-color:var(--at)}
+.btn{display:inline-flex;align-items:center;gap:8px;height:48px;padding:0 24px;border-radius:12px;font-weight:600;font-size:16px;background:var(--at);color:#fff;transition:transform .15s,box-shadow .15s}
+.btn:hover{transform:translateY(-1px);box-shadow:0 8px 22px rgba(124,108,242,.32)}
 
-/* ─── nav ─── */
-.nav{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.82);backdrop-filter:blur(14px) saturate(140%);border-bottom:1px solid var(--line)}
-.nav .wrap{display:flex;align-items:center;justify-content:space-between;height:60px}
-.brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15.5px}
-.brand .mark{width:28px;height:28px;border-radius:9px;background:var(--y);display:grid;place-items:center;box-shadow:0 1px 2px rgba(0,0,0,.08)}
-.brand .mark svg{width:16px;height:16px}
+/* nav */
+.nav{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.86);backdrop-filter:blur(14px) saturate(140%);border-bottom:1px solid var(--line)}
+.nav .wrap{display:flex;align-items:center;justify-content:space-between;height:58px}
+.brand{display:flex;align-items:center;gap:9px;font-weight:600;font-size:15px}
+.brand .mark{width:26px;height:26px;border-radius:8px;background:var(--at);color:#fff;display:grid;place-items:center;font-size:17px;font-weight:600;line-height:1}
 .nav nav{display:flex;gap:4px}
-.nav nav a{padding:7px 12px;border-radius:999px;font-size:14.5px;color:var(--ink-2)}
+.nav nav a{padding:6px 12px;border-radius:8px;font-size:14.5px;color:var(--ink-2)}
 .nav nav a:hover{background:var(--bg-2);color:var(--ink)}
-.nav nav a.gh{display:inline-flex;align-items:center;gap:6px}
-.nav nav a.gh svg{width:15px;height:15px}
-@media (max-width:640px){.nav nav a:not(.gh){display:none}}
 
-/* ─── hero ─── */
-.hero{padding:88px 0 40px;text-align:center}
-.h1{font-size:clamp(34px,6vw,62px);line-height:1.15;font-weight:700;letter-spacing:-.03em;margin:18px 0 18px}
-.h1 mark{background:linear-gradient(transparent 58%,var(--y-mark) 58%,var(--y-mark) 92%,transparent 92%);color:inherit;padding:0 .06em}
-.h1 .at{color:var(--violet)}
-.hero .lead{margin:0 auto;font-size:clamp(16px,2vw,19px);max-width:660px;text-wrap:balance}
-h2,.lead{text-wrap:balance}
-.cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:30px}
-.btn{display:inline-flex;align-items:center;gap:9px;height:48px;padding:0 22px;border-radius:12px;font-weight:600;font-size:15.5px;border:1px solid var(--line-2);background:var(--surface);transition:transform .15s ease,box-shadow .15s ease,background .15s}
-.btn:hover{transform:translateY(-1px);box-shadow:var(--shadow-sm)}
-.btn.primary{background:var(--y);border-color:var(--y-deep);color:#1c1c1a;box-shadow:0 1px 0 rgba(0,0,0,.05),0 6px 20px var(--y-glow)}
-.btn.primary:hover{box-shadow:0 1px 0 rgba(0,0,0,.05),0 10px 26px var(--y-glow)}
-.btn svg{width:18px;height:18px}
-.hint{margin-top:12px;font-size:13px;color:var(--muted)}
+/* ── screen 1 ── */
+.hero{padding:72px 0 0;text-align:center}
+.glyph{font-size:clamp(72px,10vw,104px);line-height:1;font-weight:600;color:var(--at);letter-spacing:-.04em;margin:0 0 18px;display:block}
+.h1{font-size:clamp(34px,5.4vw,56px);line-height:1.18;font-weight:600;letter-spacing:-.03em;margin:0 0 20px;text-wrap:balance}
+.h1 mark{background:linear-gradient(transparent 58%,var(--mark) 58%,var(--mark) 94%,transparent 94%);color:inherit;padding:0 .04em}
+.h1 em{font-style:normal;color:var(--at)}
+.hero .lead{margin:0 auto;font-size:clamp(17px,2vw,19px);max-width:620px}
+.cta{display:flex;align-items:center;gap:22px;justify-content:center;flex-wrap:wrap;margin-top:34px}
+.cta .link{font-size:15px}
 
-/* ─── demo window ─── */
-.demo{margin:56px auto 0;max-width:960px;border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:var(--shadow);overflow:hidden;text-align:left;position:relative;overflow-anchor:none}
-.demo .bar{height:40px;display:flex;align-items:center;gap:6px;padding:0 14px;border-bottom:1px solid var(--line);background:var(--bg-2)}
-.demo .bar i{width:11px;height:11px;border-radius:50%;background:#e2e2dc}
+.demo{margin:48px auto 0;max-width:940px;border:1px solid var(--line);border-radius:14px;background:#fff;box-shadow:var(--shadow);overflow:hidden;text-align:left;position:relative;overflow-anchor:none}
+.demo .bar{height:38px;display:flex;align-items:center;gap:6px;padding:0 14px;border-bottom:1px solid var(--line);background:var(--bg-2)}
+.demo .bar i{width:10px;height:10px;border-radius:50%;background:#dededa}
 .demo .bar span{margin-left:10px;font-size:12.5px;color:var(--muted)}
+.replay{margin-left:auto;font-size:12.5px;color:var(--muted);padding:4px 8px;border-radius:6px}
+.replay:hover{background:var(--line);color:var(--ink)}
 .demo .body{display:grid;grid-template-columns:1.15fr .95fr;min-height:440px}
 @media (max-width:760px){.demo .body{grid-template-columns:1fr}}
-.editor{padding:32px 36px;font-size:15.5px;line-height:1.9;position:relative;border-right:1px solid var(--line)}
+.editor{padding:30px 34px;font-size:15.5px;line-height:1.9;position:relative;border-right:1px solid var(--line)}
 @media (max-width:760px){.editor{border-right:0;border-bottom:1px solid var(--line)}}
-.editor h4{margin:0 0 14px;font-size:22px;letter-spacing:-.02em}
+.editor h4{margin:0 0 12px;font-size:21px;letter-spacing:-.02em;font-weight:600}
 .editor p{margin:0 0 10px;color:var(--ink-2)}
-.sel{position:relative;transition:background .25s;border-radius:3px;padding:1px 2px;margin:0 -2px}
-.sel.selecting{background:rgba(124,108,242,.22)}
-.sel.marked{background:var(--y-mark);color:var(--ink)}
-.badge{display:inline-grid;place-items:center;width:17px;height:17px;border-radius:50%;background:var(--violet);color:#fff;font-size:10.5px;font-weight:600;margin-left:4px;vertical-align:1px;transform:scale(0);transition:transform .25s cubic-bezier(.2,.9,.3,1.4)}
+.sel{transition:background .25s;border-radius:3px;padding:1px 2px;margin:0 -2px}
+.sel.selecting{background:var(--at-soft)}
+.sel.marked{background:var(--mark);color:var(--ink)}
+.badge{display:inline-grid;place-items:center;width:17px;height:17px;border-radius:50%;background:var(--at);color:#fff;font-size:10.5px;font-weight:600;margin-left:4px;vertical-align:1px;transform:scale(0);transition:transform .25s cubic-bezier(.2,.9,.3,1.4)}
 .badge.on{transform:scale(1)}
-.menu{position:absolute;left:150px;top:118px;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:5px;font-size:13.5px;min-width:150px;opacity:0;transform:translateY(-4px);pointer-events:none;transition:opacity .18s,transform .18s}
+.menu{position:absolute;left:150px;top:116px;background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:var(--shadow);padding:4px;font-size:13.5px;min-width:150px;opacity:0;transform:translateY(-4px);pointer-events:none;transition:opacity .18s,transform .18s}
 .menu.on{opacity:1;transform:none}
-.menu div{padding:6px 10px;border-radius:7px;color:var(--ink-2)}
-.menu div.hot{background:var(--y-soft);color:var(--ink);font-weight:500}
-.panel{background:var(--bg-2);padding:18px 18px 22px;position:relative}
-.panel .ph{font-size:13px;color:var(--ink-2);font-weight:600;margin:0 0 12px 4px}
+.menu div{padding:6px 10px;border-radius:6px;color:var(--ink-2)}
+.menu div.hot{background:var(--bg-2);color:var(--ink)}
+.panel{background:var(--bg-2);padding:16px 16px 20px;position:relative}
+.panel .ph{font-size:13px;color:var(--ink-2);font-weight:600;margin:0 0 10px 4px}
 .panel .ph b{color:var(--red);font-weight:600;margin-left:6px;opacity:0;transition:opacity .3s}
 .panel .ph b.on{opacity:1}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-sm);padding:12px 14px 14px;opacity:0;transform:translateY(8px);transition:opacity .3s,transform .3s}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px 14px;opacity:0;transform:translateY(8px);transition:opacity .3s,transform .3s}
 .card.on{opacity:1;transform:none}
 .card .q{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2);margin-bottom:10px}
-.card .q::before{content:'';width:3px;height:16px;border-radius:2px;background:var(--y)}
+.card .q::before{content:'';width:2px;height:15px;border-radius:2px;background:var(--line-2)}
 .entry{display:grid;grid-template-columns:26px 1fr;gap:10px;position:relative;padding:5px 0}
 .entry+.entry::before{content:'';position:absolute;left:12.5px;top:-8px;height:12px;width:1px;background:var(--line)}
 .avatar{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:11.5px;font-weight:600;position:relative}
-.avatar.y{background:var(--violet)}.avatar.n{background:#f0a13a}
+.avatar.y{background:var(--at)}.avatar.n{background:#e09b3d}
 .avatar .dot{position:absolute;top:-2px;right:-2px;width:8px;height:8px;border-radius:50%;background:var(--red);border:2px solid #fff;transform:scale(0);transition:transform .25s}
 .avatar .dot.on{transform:scale(1)}
 .entry .hd{display:flex;align-items:baseline;gap:7px;font-size:13.5px;line-height:1.5}
 .entry .hd b{font-weight:600}
-.entry .hd .tag{font-size:11px;padding:1px 7px;border-radius:999px;background:var(--y-soft);color:var(--y-ink);font-weight:500}
+.entry .hd .tag{font-size:11px;padding:1px 7px;border-radius:999px;background:var(--bg-2);color:var(--ink-2);font-weight:500}
 .entry .hd time{margin-left:auto;font-size:12px;color:var(--muted)}
 .entry .tx{font-size:14px;line-height:1.7;margin-top:2px}
-.mention{color:var(--violet);font-weight:500;background:rgba(124,108,242,.1);border-radius:4px;padding:0 4px}
-.read{font-size:12.5px;color:var(--violet);margin-top:4px;font-weight:500}
+.mention{color:var(--at);font-weight:500;background:var(--at-soft);border-radius:4px;padding:0 4px}
+.read{font-size:12.5px;color:var(--at);margin-top:4px;font-weight:500}
 .typing{display:inline-flex;gap:4px;padding:6px 0}
 .typing i{width:6px;height:6px;border-radius:50%;background:var(--line-2);animation:blink 1s infinite}
 .typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
 @keyframes blink{0%,80%,100%{opacity:.3}40%{opacity:1}}
 .compose{margin-top:10px;position:relative}
-.input{min-height:54px;border:1px solid var(--line);border-radius:9px;background:var(--bg-2);padding:8px 10px;font-size:14px;line-height:1.5;color:var(--ink)}
+.input{min-height:54px;border:1px solid var(--line);border-radius:8px;background:var(--bg-2);padding:8px 10px;font-size:14px;line-height:1.5;color:var(--ink)}
 .input.focus{border-color:var(--line-2);background:#fff}
 .input .ph-text{color:var(--muted)}
 .caret{display:inline-block;width:1px;height:1em;background:var(--ink);vertical-align:-2px;margin-left:1px;animation:caret 1s steps(1) infinite}
 @keyframes caret{50%{opacity:0}}
 .send{display:flex;justify-content:flex-end;gap:6px;margin-top:8px}
-.send button{height:30px;padding:0 12px;border-radius:8px;font-size:13px;font-weight:500;border:1px solid var(--line)}
-.send .go{background:var(--ink);color:#fff;border-color:var(--ink);transition:transform .12s}
+.send button{height:30px;padding:0 12px;border-radius:7px;font-size:13px;font-weight:500;border:1px solid var(--line)}
+.send .go{background:var(--at);color:#fff;border-color:var(--at);transition:transform .12s}
 .send .go.press{transform:scale(.96)}
-.dd{position:absolute;left:0;right:0;top:100%;margin-top:6px;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:5px;z-index:5;opacity:0;transform:translateY(-4px);pointer-events:none;transition:opacity .18s,transform .18s;font-size:13.5px}
+.dd{position:absolute;left:0;right:0;top:100%;margin-top:6px;background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:var(--shadow);padding:4px;z-index:5;opacity:0;transform:translateY(-4px);pointer-events:none;transition:opacity .18s,transform .18s;font-size:13.5px}
 .dd.on{opacity:1;transform:none}
-.dd div{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:7px;color:var(--ink-2)}
-.dd div.hot{background:var(--y-soft);color:var(--ink)}
+.dd div{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:6px;color:var(--ink-2)}
+.dd div.hot{background:var(--at-soft);color:var(--ink)}
 .dd .av{width:20px;height:20px;border-radius:50%;background:var(--line-2);color:#fff;display:grid;place-items:center;font-size:10px;font-weight:600}
-.dd .av.new{background:var(--ink);font-size:13px}
+.dd .av.new{background:var(--at);font-size:13px}
 .dd small{margin-left:auto;color:var(--muted);font-size:11.5px}
-.toast{position:absolute;left:50%;bottom:16px;transform:translate(-50%,10px);background:var(--ink);color:#fff;font-size:13px;padding:9px 14px;border-radius:10px;box-shadow:var(--shadow);opacity:0;transition:opacity .25s,transform .25s;white-space:nowrap;display:flex;gap:8px;align-items:center}
+.toast{position:absolute;left:50%;bottom:16px;transform:translate(-50%,10px);background:var(--ink);color:#fff;font-size:13px;padding:9px 14px;border-radius:9px;box-shadow:var(--shadow);opacity:0;transition:opacity .25s,transform .25s;white-space:nowrap}
 .toast.on{opacity:1;transform:translate(-50%,0)}
-.toast i{width:7px;height:7px;border-radius:50%;background:var(--y)}
-.replay{position:absolute;right:12px;top:8px;font-size:12px;color:var(--muted);padding:4px 8px;border-radius:6px}
-.replay:hover{background:var(--line);color:var(--ink)}
 
-/* ─── features ─── */
-.feat{padding:96px 0 40px}
-.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:36px}
-@media (max-width:800px){.grid3{grid-template-columns:1fr}}
-.f{border:1px solid var(--line);border-radius:var(--r);padding:24px 22px 26px;background:var(--surface);transition:transform .2s,box-shadow .2s}
-.f:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
-.f .ic{width:40px;height:40px;border-radius:11px;background:var(--y-soft);display:grid;place-items:center;color:var(--y-ink);margin-bottom:16px}
-.f .ic svg{width:20px;height:20px}
-.f h3{margin:0 0 8px;font-size:17px;letter-spacing:-.01em}
-.f p{margin:0;font-size:14.5px;color:var(--ink-2)}
-.md{margin-top:22px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg-2);padding:18px 22px;display:grid;grid-template-columns:1.5fr 1fr;gap:24px;align-items:center}
-@media (max-width:640px){.md{grid-template-columns:1fr}}
-.md pre{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.7;color:var(--ink-2);white-space:pre-wrap}
-.md pre b{color:var(--ink);font-weight:500;background:var(--y-mark);border-radius:3px;padding:0 2px}
-.md pre em{font-style:normal;color:var(--violet)}
-.md p{margin:0;font-size:14.5px;color:var(--ink-2)}
+/* ── screen 2 ── */
+.three{padding:100px 0 0}
+.cols{display:grid;grid-template-columns:repeat(3,1fr);gap:44px;margin-top:44px}
+@media (max-width:760px){.cols{grid-template-columns:1fr;gap:32px}}
+.cols h3{margin:0 0 10px;font-size:21px;font-weight:600;letter-spacing:-.02em;line-height:1.3}
+.cols h3 em{font-style:normal;color:var(--at)}
+.cols p{margin:0;font-size:16px;color:var(--ink-2)}
+.md{margin-top:48px;border-radius:14px;background:var(--bg-2);padding:22px 26px;display:grid;grid-template-columns:1.4fr 1fr;gap:28px;align-items:center}
+@media (max-width:700px){.md{grid-template-columns:1fr;gap:14px}}
+.md pre{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13.5px;line-height:1.75;color:var(--ink-2);white-space:pre-wrap;word-break:break-all}
+.md pre b{color:var(--ink);font-weight:500;background:var(--mark);border-radius:3px;padding:0 2px}
+.md pre em{font-style:normal;color:var(--at)}
+.md p{margin:0;font-size:15.5px;color:var(--ink-2)}
 
-/* ─── flow ─── */
-.flow{padding:40px 0 90px}
-.steps3{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:30px;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--surface)}
-@media (max-width:800px){.steps3{grid-template-columns:1fr}}
-.s{padding:22px 22px 24px;border-right:1px solid var(--line);position:relative}
-.s:last-child{border-right:0}
-@media (max-width:800px){.s{border-right:0;border-bottom:1px solid var(--line)}.s:last-child{border-bottom:0}}
-.s b{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--y);font-size:12.5px;font-weight:700;margin-bottom:12px}
-.s h4{margin:0 0 6px;font-size:15.5px}
-.s p{margin:0;font-size:14px;color:var(--ink-2)}
-
-/* ─── install + more ─── */
-.install{padding:0 0 90px}
-.two{display:grid;grid-template-columns:1.1fr .9fr;gap:22px;margin-top:34px;align-items:start}
-@media (max-width:860px){.two{grid-template-columns:1fr}}
-.box{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);padding:26px 26px 28px}
-.box h3{margin:0 0 6px;font-size:18px;letter-spacing:-.01em}
-.box>p{margin:0 0 18px;font-size:14.5px;color:var(--ink-2)}
-ol.st{list-style:none;margin:0;padding:0;display:grid;gap:12px}
-ol.st li{display:grid;grid-template-columns:24px 1fr;gap:12px;font-size:14.5px;color:var(--ink-2);align-items:start}
-ol.st li b{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--y-soft);color:var(--y-ink);font-size:12px;font-weight:700;margin-top:1px}
-.box.more{background:linear-gradient(180deg,#fffdf3,#fff)}
-.plist{display:grid;gap:10px;margin-top:16px}
-.pl{display:grid;grid-template-columns:38px 1fr auto;gap:12px;align-items:center;padding:11px 12px;border:1px solid var(--line);border-radius:11px;background:#fff;transition:transform .15s,box-shadow .15s}
-a.pl:hover{transform:translateY(-1px);box-shadow:var(--shadow-sm)}
-.pl .ico{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;font-size:19px;background:var(--bg-2);border:1px solid var(--line)}
-.pl .t{font-size:14.5px;font-weight:600;line-height:1.3}
-.pl .d{font-size:12.5px;color:var(--muted);line-height:1.4}
-.pl .st{font-size:11.5px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
-.pl .st.live{background:#eaf8f0;border-color:#cdeedb;color:#1f7a4a}
-.all{display:inline-flex;align-items:center;gap:6px;margin-top:16px;font-size:14px;font-weight:500;color:var(--ink-2)}
-.all:hover{color:var(--ink)}
-
-/* ─── faq ─── */
-.faq{padding:0 0 100px}
-.qs{margin-top:30px;border-top:1px solid var(--line)}
+/* ── screen 3 ── */
+.install{padding:100px 0 0;text-align:center}
+.install .lead{margin:0 auto}
+.install .cta{margin-top:28px}
+.qs{max-width:720px;margin:48px auto 0;border-top:1px solid var(--line);text-align:left}
 details{border-bottom:1px solid var(--line)}
-summary{list-style:none;cursor:pointer;padding:18px 0;font-size:16px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:16px}
+summary{list-style:none;cursor:pointer;padding:18px 0;font-size:17px;font-weight:500;display:flex;justify-content:space-between;align-items:center;gap:16px}
 summary::-webkit-details-marker{display:none}
-summary::after{content:'+';font-weight:400;color:var(--muted);font-size:20px;transition:transform .2s}
+summary::after{content:'+';font-weight:300;color:var(--muted);font-size:22px;transition:transform .2s}
 details[open] summary::after{transform:rotate(45deg)}
-details p{margin:-6px 0 20px;font-size:15px;color:var(--ink-2);max-width:760px}
+details p{margin:-6px 0 20px;font-size:16px;color:var(--ink-2)}
 
-/* ─── footer ─── */
-footer{border-top:1px solid var(--line);background:var(--bg-2);padding:44px 0 40px}
-footer .wrap{display:grid;grid-template-columns:1fr auto;gap:28px;align-items:start}
-@media (max-width:700px){footer .wrap{grid-template-columns:1fr}}
-.me{display:flex;align-items:center;gap:10px;font-weight:600}
-.me .av{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#cfe8ff,#fff2b3) center/cover;border:1px solid var(--line)}
-footer .tag{margin:8px 0 0;font-size:14px;color:var(--ink-2)}
-.soc{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
-.soc a{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 11px;border-radius:999px;border:1px solid var(--line);background:#fff;font-size:13px;color:var(--ink-2)}
-.soc a:hover{border-color:var(--line-2);color:var(--ink)}
-.soc svg{width:14px;height:14px}
-footer .col{font-size:13.5px;color:var(--muted);display:grid;gap:6px;text-align:right}
-@media (max-width:700px){footer .col{text-align:left}}
-footer .col a:hover{color:var(--ink)}
+.more{padding:80px 0 72px}
+.more .head{display:flex;align-items:baseline;justify-content:space-between;gap:16px}
+.more h2{font-size:20px;margin:0}
+.more .head .link{font-size:15px}
+.rail{display:flex;gap:14px;margin-top:22px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:8px;scrollbar-width:thin;scrollbar-color:var(--line-2) transparent}
+.rail::-webkit-scrollbar{height:6px}.rail::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:3px}
+.pc{flex:0 0 260px;scroll-snap-align:start;border:1px solid var(--line);border-radius:14px;padding:20px 20px 18px;background:#fff;display:flex;flex-direction:column;gap:6px;transition:transform .15s,box-shadow .15s,border-color .15s}
+a.pc:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:var(--line-2)}
+.pc .ico{font-size:24px;line-height:1;margin-bottom:10px}
+.pc .t{font-size:16px;font-weight:600}
+.pc .d{font-size:15px;color:var(--ink-2);flex:1}
+.pc .st{font-size:13px;color:var(--muted);margin-top:10px}
+.pc.all{border-style:dashed;justify-content:center;align-items:center;text-align:center;color:var(--ink-2);font-size:15px;font-weight:500;line-height:1.7}
+
+footer{border-top:1px solid var(--line);padding:34px 0 40px;font-size:14px;color:var(--muted)}
+footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap}
+.me{display:flex;align-items:center;gap:10px;color:var(--ink)}
+.me .av{width:26px;height:26px;border-radius:50%;background:var(--bg-2) center/cover;border:1px solid var(--line)}
+.me b{font-weight:600}
+.me span{color:var(--muted);margin-left:4px}
+.links{display:flex;gap:18px;flex-wrap:wrap}
+.links a:hover{color:var(--at)}
 </style>
 </head>
 <body>
 
 <header class="nav"><div class="wrap">
-  <a class="brand" href="#"><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="#1c1c1a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H10l-4 4v-4H7a3 3 0 0 1-3-3z"/><path d="M8 9h8M8 12.5h5"/></svg></span>划线评论</a>
-  <nav><a href="#feat">功能</a><a href="#flow">@ 是怎么工作的</a><a href="#install">安装</a><a href="#faq">FAQ</a><a class="gh" href="https://github.com/IvyYang1999/obsidian-inline-comments" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0c2.2-1.5 3.2-1.2 3.2-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.2c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>GitHub</a></nav>
+  <a class="brand" href="#"><span class="mark">@</span>划线评论</a>
+  <nav><a href="#install">安装</a><a href="https://community.obsidian.md/plugins/inline-comments" target="_blank" rel="noopener">社区目录</a><a href="https://github.com/IvyYang1999/obsidian-inline-comments" target="_blank" rel="noopener">GitHub</a></nav>
 </div></header>
 
 <main>
 <section class="hero wrap">
-  <span class="eyebrow">Obsidian 插件 · 开源 · 评论就存在 Markdown 里</span>
-  <h1 class="h1">在笔记里<mark>划线留言</mark>，<br><span class="at">@</span> 一个 AI 会话来回复。</h1>
+  <span class="glyph" aria-hidden="true">@</span>
+  <h1 class="h1">在笔记里<mark>划线留言</mark>，<br><em>@</em> 一个 AI 会话来回复。</h1>
   <p class="lead">飞书评论的手感，搬进 Obsidian。选中一段、写下想法，评论跟着原文走；@ 一个名字，留言会送到那个 Claude Code 会话，回复直接写回文档。</p>
   <div class="cta">
-    <a class="btn primary" href="obsidian://show-plugin?id=inline-comments"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.6 2.3 18 6.1l1.5 6.2-2.7 8.4-4.6 1.1-6.3-3.5L4.5 9.9l5.2-6.3z"/></svg>安装到 Obsidian</a>
-    <a class="btn" href="#install">用 BRAT 抢先装</a>
+    <a class="btn" href="obsidian://show-plugin?id=inline-comments">安装到 Obsidian</a>
+    <a class="link" href="https://community.obsidian.md/plugins/inline-comments" target="_blank" rel="noopener">在社区插件目录查看 →</a>
   </div>
-  <p class="hint">免费 · 不联网 · 桌面端</p>
 
   <div class="demo" id="demo" aria-label="插件效果演示">
     <div class="bar"><i></i><i></i><i></i><span>周报 · 8 月.md</span><button class="replay" id="replay" title="重放">↻ 重放</button></div>
@@ -230,7 +194,7 @@ footer .col a:hover{color:var(--ink)}
         <h4>8 月复盘</h4>
         <p>这个月主要在做新用户的引导流程。上线两周后看数据，激活率比 7 月高了 6 个点，但 <span class="sel" id="sel">留存在第二周掉了 18%</span><span class="badge" id="badge">1</span>，还没弄清楚原因。</p>
         <p>下个月先把留存的归因做完，再决定要不要继续加引导步骤。</p>
-        <div class="menu" id="menu"><div>剪切</div><div>复制</div><div class="hot">💬 添加评论</div></div>
+        <div class="menu" id="menu"><div>剪切</div><div>复制</div><div class="hot">添加评论</div></div>
       </div>
       <div class="panel">
         <p class="ph"><span id="cnt">0 条评论</span><b id="unread">· 1 未读</b></p>
@@ -241,26 +205,25 @@ footer .col a:hover{color:var(--ink)}
             <div class="input" id="input"><span class="ph-text">写下评论…</span></div>
             <div class="dd" id="dd">
               <div class="hot"><span class="av new">+</span>用新会话回答<small>回车</small></div>
-              <div><span class="av" style="background:#f0a13a">费</span>费宝<small>claude · 在线</small></div>
+              <div><span class="av" style="background:#e09b3d">费</span>费宝<small>claude · 在线</small></div>
               <div><span class="av" style="background:#6bb0f0">审</span>审计员<small>codex</small></div>
             </div>
             <div class="send"><button>取消</button><button class="go" id="go">发送</button></div>
           </div>
         </div>
-        <div class="toast" id="toast"><i></i><span id="toastText"></span></div>
+        <div class="toast" id="toast"><span id="toastText"></span></div>
       </div>
     </div>
   </div>
 </section>
 
-<section class="feat wrap" id="feat">
-  <span class="eyebrow">功能</span>
+<section class="three wrap" id="feat">
   <h2>小而完整的三件事</h2>
-  <p class="lead">不做知识库、不做聊天窗。只把"在原文旁边说一句"这件事做顺手。</p>
-  <div class="grid3">
-    <div class="f"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="m6 16 8.5-8.5a2.1 2.1 0 0 1 3 3L9 19H6z"/></svg></div><h3>划线即评论</h3><p>选中文字，右键「添加评论」。评论卡片挂在右侧面板，和原文水平对齐，滚动时跟着走；正文里只留一段淡黄高亮和一枚小数字。</p></div>
-    <div class="f"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg></div><h3>@ 一个会话</h3><p>打 @ 就能点名一个正在跑的 Claude Code / Codex 会话，或者直接「用新会话回答」——插件会在终端里替你开一个。它读完上下文，把回复写回文档。</p></div>
-    <div class="f"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H8l-4 4z"/><circle cx="18" cy="5" r="3" fill="currentColor" stroke="none"/></svg></div><h3>未读一眼看清</h3><p>别人（或 AI）的回复带红点，面板顶部常驻「N 条评论 · M 未读」。看完点一下「标为已读」，自己写的永远不算未读。</p></div>
+  <p class="lead">不做知识库、不做聊天窗，只把「在原文旁边说一句」做顺手。</p>
+  <div class="cols">
+    <div><h3>划线，即评论</h3><p>选中文字右键「添加评论」。卡片挂在右侧、和原文对齐、跟着滚动；正文里只留一段淡黄高亮和一枚小数字。</p></div>
+    <div><h3><em>@</em> 一个真实会话</h3><p>点名一个正在跑的 Claude Code / Codex 会话，或「用新会话回答」。插件把留言投到它的信箱，没在跑就替你在终端开一个；它读完文档，把回复写回原位。</p></div>
+    <div><h3>未读一眼看清</h3><p>别人或 AI 的回复带红点，顶部常驻「N 条评论 · M 未读」。看完点一下「标为已读」；自己写的永远不算未读。</p></div>
   </div>
   <div class="md">
     <pre>{==<b>留存在第二周掉了 18%</b>==}{>>yyt|2026-09-05|question: 这个数字来源是哪？<em>[@新会话1](agent:3f9a12c0)</em><<}</pre>
@@ -268,76 +231,42 @@ footer .col a:hover{color:var(--ink)}
   </div>
 </section>
 
-<section class="flow wrap" id="flow">
-  <span class="eyebrow">@ 是怎么工作的</span>
-  <h2>三步，留言变成一次真实对话</h2>
-  <p class="lead">AI 不是嵌在插件里的黑盒，而是你终端里那个有记忆、有上下文的会话。</p>
-  <div class="steps3">
-    <div class="s"><b>1</b><h4>你 @ 了一个名字</h4><p>发送时插件把留言、划线原文、文档路径写成一封信，投进这个会话的信箱。在跑的会话下一次开口就会看到；没在跑的，自动在终端启动。</p></div>
-    <div class="s"><b>2</b><h4>会话读信、看文档</h4><p>首次安装时插件会帮你装一个 Claude Code hook：信到了就注入到会话里，它需要什么上下文就自己去读，不用你复制粘贴。</p></div>
-    <div class="s"><b>3</b><h4>回复写回原位</h4><p>会话按格式把回复追加到那条评论之后，面板里立刻出现新卡片和红点。你继续在评论里 @ 它，对话就接着往下走。</p></div>
-  </div>
-</section>
-
 <section class="install wrap" id="install">
-  <span class="eyebrow">安装</span>
   <h2>两分钟装好</h2>
-  <div class="two">
-    <div class="box">
-      <h3>从社区插件市场</h3>
-      <p>在 Obsidian 设置 → 第三方插件 → 社区插件里搜「Inline Comments」；或者点上面的黄色按钮直接跳过去。上架前也可以用 <a href="https://github.com/TfTHacker/obsidian42-brat" target="_blank" rel="noopener" style="border-bottom:1px solid var(--line-2)">BRAT</a> 抢先装，之后会自动更新：</p>
-      <ol class="st">
-        <li><b>1</b><span>社区插件里搜 <code>BRAT</code>，安装并启用</span></li>
-        <li><b>2</b><span>命令面板运行 <code>BRAT: Add a beta plugin</code>，粘贴 <code>IvyYang1999/obsidian-inline-comments</code></span></li>
-        <li><b>3</b><span>启用「划线评论」，右侧栏出现 💬 图标；选中任意文字右键就能评了</span></li>
-      </ol>
-      <p style="margin:18px 0 0;font-size:13.5px;color:var(--muted)">想用 @ 会话：打开「管理成员」，一键安装 hook，或者直接在评论里 @ 一个新名字。</p>
-    </div>
-    <div class="box more">
-      <h3>同一个作者的其它 Obsidian 插件</h3>
-      <p>都是自己每天在用、顺手做成作品的小工具。</p>
-      <div class="plist">
-        <a class="pl" href="https://obsidian-web-desk.vercel.app/" target="_blank" rel="noopener"><span class="ico">🖼️</span><span><span class="t">画布收藏夹 · Web Desk</span><br><span class="d">收藏的网页摆成一张自由画布，当首页用。</span></span><span class="st live">已上线</span></a>
-        <div class="pl"><span class="ico">🖍️</span><span><span class="t">荧光笔时间轴</span><br><span class="d">在笔记里手画色块记录时间花在哪。</span></span><span class="st">在做</span></div>
-        <div class="pl"><span class="ico">📓</span><span><span class="t">AI 日记</span><br><span class="d">今天 AI 帮我干了什么，自动写成时间轴。</span></span><span class="st">在做</span></div>
-      </div>
-      <a class="all" href="https://yytyyf.com" target="_blank" rel="noopener">全部作品 → yytyyf.com</a>
-    </div>
+  <p class="lead">Obsidian 设置 → 第三方插件 → 社区插件，搜「Inline Comments」。免费、开源、不联网；桌面端，Obsidian 1.8 以上。</p>
+  <div class="cta">
+    <a class="btn" href="obsidian://show-plugin?id=inline-comments">安装到 Obsidian</a>
+    <a class="link" href="https://github.com/IvyYang1999/obsidian-inline-comments/releases" target="_blank" rel="noopener">更新记录 →</a>
+  </div>
+  <div class="qs">
+    <details open><summary>评论存在哪里？换台电脑还在吗？</summary><p>就存在笔记本身，紧挨着被评论的那句话，是一段纯文本。随 iCloud / Git / Obsidian Sync 一起走；没装插件的地方打开也能看到。</p></details>
+    <details><summary>不用 AI，只当普通评论工具行吗？</summary><p>完全可以。划线、留言、回复、已读未读都不需要任何会话或联网；@ 是可选项，不用就不会出现。</p></details>
+    <details><summary>会把我的笔记发到哪儿去吗？</summary><p>插件本身不联网。投信是往本地文件夹写文件，会话在你自己的终端里跑；笔记出不出机器，取决于你配的 AI 工具，与插件无关。</p></details>
   </div>
 </section>
 
-<section class="faq wrap" id="faq">
-  <span class="eyebrow">FAQ</span>
-  <h2>常见问题</h2>
-  <div class="qs">
-    <details open><summary>评论存在哪里？换台电脑还在吗？</summary><p>就存在笔记本身，紧挨着被评论的那句话，是一段 CriticMarkup 风格的纯文本。随 iCloud / Git / Obsidian Sync 一起走，不需要额外同步任何东西；没装插件的地方打开也能看到原文。</p></details>
-    <details><summary>不用 AI，只当普通评论工具行吗？</summary><p>完全可以。划线、留言、回复、已读未读，这些都不需要任何会话或联网。@ 只是一个可选项，不用就不会出现在面板里。</p></details>
-    <details><summary>@ 的到底是什么？</summary><p>是你电脑上一个真实的 Claude Code（或 Codex）会话：有自己的 session id、终端窗口和记忆。插件把留言投给它、它把回复写回文档。你随时可以走到终端里接着聊，或者在评论里再 @ 它。</p></details>
-    <details><summary>会把我的笔记发到哪儿去吗？</summary><p>插件本身不联网。投信是往本地一个文件夹里写文件，会话是在你自己的终端里跑；笔记出不出机器，取决于你自己配的 AI 工具，和这个插件无关。</p></details>
-    <details><summary>手机上能用吗？</summary><p>目前只支持桌面端（macOS / Windows / Linux）。评论本身是纯文本，手机上打开笔记也能看到原文和评论内容，只是没有面板；移动端面板在计划里。</p></details>
-    <details><summary>和我的主题合得来吗？</summary><p>面板所有颜色都是从当前主题的文字色和背景色推出来的，明暗主题、半透明主题都试过。面板底色还可以在设置里单独改。</p></details>
+<section class="more wrap">
+  <div class="head"><h2>同一个作者的其它 Obsidian 插件</h2><a class="link" href="https://yytyyf.com" target="_blank" rel="noopener">全部作品 →</a></div>
+  <div class="rail">
+    <a class="pc" href="https://obsidian-web-desk.vercel.app/" target="_blank" rel="noopener"><span class="ico">🖼️</span><span class="t">画布收藏夹</span><span class="d">收藏的网页摆成一张自由画布，当首页用。</span><span class="st">已上线</span></a>
+    <div class="pc"><span class="ico">🖍️</span><span class="t">荧光笔时间轴</span><span class="d">在笔记里手画色块记录时间花在哪，也能让 AI 帮你画。</span><span class="st">在做</span></div>
+    <div class="pc"><span class="ico">📓</span><span class="t">AI 日记</span><span class="d">今天 AI 帮我干了什么，自动写成时间轴。</span><span class="st">在做</span></div>
+    <a class="pc all" href="https://yytyyf.com" target="_blank" rel="noopener">yytyyf.com<br>把每个作业，都做成作品。</a>
   </div>
 </section>
 </main>
 
 <footer><div class="wrap">
-  <div>
-    <div class="me"><span class="av" style="background-image:url(./avatar.png)"></span>yytyyf</div>
-    <p class="tag">把每个作业，都做成作品。</p>
-    <div class="soc">
-      <a href="https://yytyyf.com" target="_blank" rel="noopener">🏠 yytyyf.com</a>
-      <a href="https://github.com/IvyYang1999" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0c2.2-1.5 3.2-1.2 3.2-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.2c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>GitHub</a>
-      <a href="https://x.com/ivyadams1999" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.2 2h3.4l-7.4 8.5L23 22h-6.8l-5.3-7-6.1 7H1.4l7.9-9.1L1 2h7l4.8 6.4zm-1.2 18h1.9L7.1 3.9H5.1z"/></svg>X</a>
-      <a href="https://www.xiaohongshu.com/user/profile/5a099fb94eacab47629e53bc" target="_blank" rel="noopener">📕 小红书</a>
-      <a href="https://okjk.co/iHdL5E" target="_blank" rel="noopener">🟡 即刻</a>
-      <a href="https://bonjour.bio/yytyyf" target="_blank" rel="noopener">👋 bonjour</a>
-      <a href="mailto:ivyyang1999@gmail.com">✉️ 邮件</a>
-    </div>
-  </div>
-  <div class="col">
-    <a href="https://github.com/IvyYang1999/obsidian-inline-comments" target="_blank" rel="noopener">源码与问题反馈</a>
-    <a href="https://github.com/IvyYang1999/obsidian-inline-comments/releases" target="_blank" rel="noopener">更新记录</a>
-    <span>划线评论 · Inline Comments · MIT</span>
+  <div class="me"><span class="av" style="background-image:url(./avatar.png)"></span><b>yytyyf</b><span>划线评论 · MIT</span></div>
+  <div class="links">
+    <a href="https://yytyyf.com" target="_blank" rel="noopener">yytyyf.com</a>
+    <a href="https://github.com/IvyYang1999" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://x.com/ivyadams1999" target="_blank" rel="noopener">X</a>
+    <a href="https://www.xiaohongshu.com/user/profile/5a099fb94eacab47629e53bc" target="_blank" rel="noopener">小红书</a>
+    <a href="https://okjk.co/iHdL5E" target="_blank" rel="noopener">即刻</a>
+    <a href="https://bonjour.bio/yytyyf" target="_blank" rel="noopener">bonjour</a>
+    <a href="mailto:ivyyang1999@gmail.com">邮件</a>
+    <a href="https://github.com/IvyYang1999/obsidian-inline-comments/issues" target="_blank" rel="noopener">问题反馈</a>
   </div>
 </div></footer>
 
@@ -383,15 +312,12 @@ footer .col a:hover{color:var(--ink)}
     const id = ++run;
     reset();
     await sleep(900); if (!alive(id)) return;
-    // 1. select text
     sel.classList.add('selecting');
     await sleep(700); if (!alive(id)) return;
-    // 2. context menu
     menu.classList.add('on');
     await sleep(1100); if (!alive(id)) return;
     menu.classList.remove('on');
     sel.classList.remove('selecting'); sel.classList.add('marked'); badge.classList.add('on');
-    // 3. draft card
     card.classList.add('on'); input.classList.add('focus'); input.innerHTML = '';
     const caret = document.createElement('span'); caret.className = 'caret';
     const txt = document.createElement('span'); input.append(txt, caret);
@@ -406,7 +332,6 @@ footer .col a:hover{color:var(--ink)}
     const chip = document.createElement('span'); chip.className = 'mention'; chip.textContent = '@新会话1';
     input.insertBefore(chip, caret); input.insertBefore(document.createTextNode(' '), caret);
     await sleep(900); if (!alive(id)) return;
-    // 4. send
     go.classList.add('press'); await sleep(140); go.classList.remove('press');
     compose.style.display = 'none';
     entries.append(entry({ who: 'yyt', cls: 'y', tag: '疑问', time: '刚刚', html: '这个数字是哪张表来的？ <span class="mention">@新会话1</span>' }));
@@ -415,7 +340,6 @@ footer .col a:hover{color:var(--ink)}
     toast.classList.add('on');
     await sleep(1700); if (!alive(id)) return;
     toast.classList.remove('on');
-    // 5. reply arrives
     const t = typingEntry(); entries.append(t);
     await sleep(1600); if (!alive(id)) return;
     t.remove();
