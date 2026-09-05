@@ -98,7 +98,7 @@ export function skipReason(
   if (!m.notify) return '无?notify（仅引用，不通知）';
   if (comment.author === m.name) return '留言者 @自己';
   // 只排除"已注册Agent写的reply"(防AI回复自触发)；人类在回复框写的@照常投
-  if (comment.type === 'reply' && rosterNames.has(comment.author)) return 'Agent的reply(防自触发)';
+  if ((comment.type === 'reply' || comment.type === 'suggest') && rosterNames.has(comment.author)) return 'Agent的reply(防自触发)';
   return null;
 }
 

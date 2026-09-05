@@ -443,6 +443,24 @@ async function run() {
     const backOn = await page.locator(badgeSel).count();
     check('重新开启后角标回来', backOn === 1, `badges=${backOn}`);
 
+    // ── Suggestions: a `suggest` entry shows old → new with 采纳 / 不采纳; accepting rewrites the passage
+    const sug = page.locator('.ilc-suggest-suggest').first();
+    const sugSeen = await sug.count();
+    const sugText = sugSeen ? await sug.evaluate((b) => ({ old: b.querySelector('.ilc-suggest-old')?.textContent, neu: b.querySelector('.ilc-suggest-new')?.textContent })) : null;
+    check('建议条目渲染为 原文 → 替换文', !!sugText && sugText.old === '需老板在场做' && sugText.neu === '需老板到场做', JSON.stringify(sugText));
+    const hasActs = (await page.locator('.ilc-suggest-accept').count()) === 1 && (await page.locator('.ilc-suggest-decline').count()) === 1;
+    check('待处理建议有「采纳 / 不采纳」', hasActs);
+    const toggle = await page.locator('.ilc-suggest-toggle input').count();
+    check('回复框有「作为修改建议」开关', toggle >= 1, `toggles=${toggle}`);
+    await page.locator('.ilc-suggest-accept').click();
+    await sleep(900);
+    const after = await page.evaluate(() => app.vault.adapter.read('sample.md'));
+    check('采纳后原文被替换、条目标为 accepted（同一次写入）', after.includes('{==需老板到场做==}') && after.includes('|accepted: 需老板到场做<<}') && !after.includes('{==需老板在场做==}'), after.match(/\{==需老板.{0,3}做==\}[^\n]{0,120}/)?.[0] ?? 'n/a');
+    const hlNow = await page.evaluate(() => [...document.querySelectorAll('.cm-editor .ilc-highlight')].map((e) => e.textContent));
+    check('编辑器里的高亮显示新原文', hlNow.some((t) => t === '需老板到场做'), hlNow.join(' | '));
+    const pendingLeft = await page.locator('.ilc-suggest-accept').count();
+    check('采纳后按钮消失、条目显示「已采纳」', pendingLeft === 0 && (await page.locator('.ilc-suggest-accepted').count()) === 1);
+
     // ── Right-click → 添加划线评论 (right-click INSIDE the selection)
     const selPoint = await page.evaluate(() => {
       const view = app.workspace.getLeavesOfType('markdown')[0].view;

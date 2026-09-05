@@ -1,13 +1,15 @@
 import { ItemView, MarkdownView, Menu, TFile, WorkspaceLeaf } from 'obsidian';
 import { EditorView } from '@codemirror/view';
 import type { Annotation, CommentEntry } from '../types.ts';
-import { COMMENT_TYPE_META } from '../types.ts';
+import { COMMENT_TYPE_META, UNREAD_TYPES } from '../types.ts';
 import {
   parseAnnotations,
   appendReply,
   buildAnnotationMarkup,
   deleteAnnotation,
   deleteCommentEntry,
+  applySuggestion,
+  setEntryType,
 } from '../parser.ts';
 import { HistoryModal } from './HistoryModal.ts';
 import { setDraftRange, type AnnotationPosition } from '../editor/cmExtension.ts';
@@ -43,6 +45,9 @@ const BUILTIN_TYPE_COLORS: Record<string, string> = {
   question:  '#D4A24C',
   important: '#6A8FCF',
   note:      '#9AA0A6',
+  suggest:   'var(--interactive-accent)',
+  accepted:  '#6FA287',
+  declined:  '#9AA0A6',
 };
 
 /** Strip common markdown formatting for preview display */
@@ -330,7 +335,7 @@ export class CommentPanel extends ItemView {
     let unread = 0;
     for (const ann of this.annotations) {
       for (const c of ann.comments) {
-        if (c.type !== 'reply' || !tracker?.isTrackable(c.author)) continue;
+        if (!UNREAD_TYPES.has(c.type) || !tracker?.isTrackable(c.author)) continue;
         const key = computeReadKey(file.path, ann.highlightText, c.author, c.date, c.text);
         if (!tracker.isRead(key)) unread++;
       }
@@ -714,6 +719,16 @@ export class CommentPanel extends ItemView {
       attr: { placeholder: '写下回复…', rows: '2' },
     });
     const btnRow = inputRow.createEl('div', { cls: 'ilc-reply-btn-row' });
+    // 「作为修改建议」— the reply text becomes a proposed replacement for the passage
+    const suggestLabel = btnRow.createEl('label', { cls: 'ilc-suggest-toggle', attr: { title: '把这条回复作为对划线原文的修改建议，对方可一键采纳' } });
+    const suggestBox = suggestLabel.createEl('input', { attr: { type: 'checkbox' } });
+    suggestLabel.appendText('作为修改建议');
+    suggestBox.addEventListener('change', () => {
+      input.placeholder = suggestBox.checked ? '输入替换后的原文…' : '写下回复…';
+      inputRow.toggleClass('ilc-reply-suggest', suggestBox.checked);
+      input.focus();
+    });
+    suggestLabel.addEventListener('click', (e) => e.stopPropagation());
     const submitBtn = btnRow.createEl('button', { cls: 'ilc-reply-submit mod-cta ilc-hidden', text: '发送' });
 
     // Show submit button only when input has content
@@ -732,7 +747,7 @@ export class CommentPanel extends ItemView {
       const text = input.value.trim();
       if (!text) return;
       const today = new Date().toISOString().split('T')[0];
-      const reply: CommentEntry = { author: this.plugin.settings.authorName, date: today, type: 'reply', text };
+      const reply: CommentEntry = { author: this.plugin.settings.authorName, date: today, type: suggestBox.checked ? 'suggest' : 'reply', text };
       const currentContent = await this.app.vault.read(file);
       await this.app.vault.modify(file, appendReply(currentContent, ann.from, reply));
     });
@@ -799,7 +814,30 @@ export class CommentPanel extends ItemView {
     const moreBtn = header.createEl('button', { cls: 'ilc-more-btn ilc-entry-more-btn', text: '⋯' });
     moreBtn.addEventListener('click', (e) => { e.stopPropagation(); this.showEntryMenu(e, ann, entryIndex, file); });
 
-    if (comment.text) {
+    const isSuggestion = comment.type === 'suggest' || comment.type === 'accepted' || comment.type === 'declined';
+    if (isSuggestion) {
+      // Proposed replacement for the passage: old → new, then 采纳 / 不采纳 while pending
+      const box = entry.createEl('div', { cls: `ilc-suggest ilc-suggest-${comment.type}` });
+      if (comment.type !== 'accepted') box.createEl('del', { cls: 'ilc-suggest-old', text: ann.highlightText });
+      box.createEl('ins', { cls: 'ilc-suggest-new', text: comment.text });
+      if (comment.type === 'suggest') {
+        const acts = entry.createEl('div', { cls: 'ilc-suggest-actions' });
+        const accept = acts.createEl('button', { cls: 'ilc-suggest-accept', text: '采纳' });
+        const decline = acts.createEl('button', { cls: 'ilc-suggest-decline', text: '不采纳' });
+        accept.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          accept.disabled = decline.disabled = true;
+          const content = await this.app.vault.read(file);
+          await this.app.vault.modify(file, applySuggestion(content, ann.from, entryIndex));
+        });
+        decline.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          accept.disabled = decline.disabled = true;
+          const content = await this.app.vault.read(file);
+          await this.app.vault.modify(file, setEntryType(content, ann.from, entryIndex, 'declined'));
+        });
+      }
+    } else if (comment.text) {
       const body = entry.createEl('div', { cls: 'ilc-entry-body' });
       this.renderCommentText(body, comment.text);
     }
@@ -833,7 +871,7 @@ export class CommentPanel extends ItemView {
     // Unread state for replies from others: dot on avatar + "标为已读" action.
     // Click updates the DOM optimistically; persistence + recount run in background.
     const tracker = this.plugin.settings.enableUnreadSignal ? this.plugin.unreadTracker : undefined;
-    if (comment.type === 'reply' && tracker?.isTrackable(comment.author)) {
+    if (UNREAD_TYPES.has(comment.type) && tracker?.isTrackable(comment.author)) {
       const readKey = computeReadKey(file.path, ann.highlightText, comment.author, comment.date, comment.text);
       if (!tracker.isRead(readKey)) {
         entry.addClass('ilc-entry-unread');

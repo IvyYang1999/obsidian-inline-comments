@@ -1182,3 +1182,45 @@ body {
   font-variant-numeric: tabular-nums;
   box-sizing: border-box;
 }
+
+/* ─── Suggestions (proposed replacement for the passage) ────────────────────── */
+.ilc-suggest {
+  margin: 4px 0 2px var(--ilc-indent);
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--ilc-surface-sunken);
+  font-size: var(--ilc-font-body);
+  line-height: 1.55;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ilc-suggest-old { color: var(--text-muted); text-decoration: line-through; text-decoration-thickness: 1.5px; }
+.ilc-suggest-new { text-decoration: none; color: var(--text-normal); background: color-mix(in srgb, var(--interactive-accent) 10%, transparent); border-radius: 4px; padding: 0 3px; }
+.ilc-suggest-declined .ilc-suggest-new { background: none; color: var(--text-muted); }
+.ilc-suggest-accepted .ilc-suggest-new { background: color-mix(in srgb, #6FA287 14%, transparent); }
+.ilc-suggest-actions { display: flex; gap: 6px; margin: 4px 0 2px var(--ilc-indent); }
+.ilc-panel .ilc-suggest-accept,
+.ilc-panel .ilc-suggest-decline {
+  height: 24px !important;
+  min-height: 0 !important;
+  padding: 0 10px !important;
+  font-size: var(--ilc-font-small);
+  font-weight: 500;
+  border-radius: var(--ilc-radius-btn);
+  border: 1px solid var(--ilc-hairline) !important;
+  background: var(--ilc-surface) !important;
+  color: var(--text-normal) !important;
+  box-shadow: none !important;
+}
+.ilc-panel .ilc-suggest-accept { background: var(--interactive-accent) !important; border-color: var(--interactive-accent) !important; color: var(--text-on-accent) !important; }
+.ilc-panel .ilc-suggest-accept:hover { filter: brightness(0.95); }
+.ilc-panel .ilc-suggest-decline:hover { border-color: var(--ilc-hairline-strong) !important; }
+.ilc-suggest-toggle {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-right: auto;
+  font-size: var(--ilc-font-small); color: var(--text-muted);
+  cursor: pointer; user-select: none;
+}
+.ilc-suggest-toggle input { margin: 0; }
+.ilc-reply-suggest .ilc-reply-input { border-color: color-mix(in srgb, var(--interactive-accent) 45%, var(--ilc-hairline)) !important; }

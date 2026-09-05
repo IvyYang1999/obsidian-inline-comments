@@ -60,11 +60,19 @@ export const COMMENT_TYPE_META: Record<string, { label: string; emoji: string }>
   note:      { label: '备注',   emoji: '⚪' },
   reply:     { label: '回复',   emoji: '💬' },
   pending:   { label: '待回应', emoji: '⏳' },
+  suggest:   { label: '建议',   emoji: '✏️' },
+  accepted:  { label: '已采纳', emoji: '✅' },
+  declined:  { label: '未采纳', emoji: '⛔' },
 };
 
 export const BUILTIN_TYPE_IDS = new Set([
-  'agree', 'disagree', 'question', 'important', 'note', 'reply', 'pending',
+  'agree', 'disagree', 'question', 'important', 'note', 'reply', 'pending', 'suggest', 'accepted', 'declined',
 ]);
+
+/** Entry types that behave like replies in a thread (unread tracking, no type chip) */
+export const THREAD_REPLY_TYPES = new Set(['reply', 'suggest', 'accepted', 'declined']);
+/** Reply-like types that should count as unread when written by someone else */
+export const UNREAD_TYPES = new Set(['reply', 'suggest']);
 
 // ─── Deletion history ─────────────────────────────────────────────────────────
 

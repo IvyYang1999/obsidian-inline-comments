@@ -1,5 +1,6 @@
 import type { App, TFile } from 'obsidian';
 import { parseAnnotations } from './parser.ts';
+import { UNREAD_TYPES } from './types.ts';
 
 interface ReadState {
   read: string[];
@@ -158,7 +159,7 @@ export class UnreadTracker {
     let unread = 0;
     for (const ann of parseAnnotations(content)) {
       for (const comment of ann.comments) {
-        if (comment.type !== 'reply') continue;
+        if (!UNREAD_TYPES.has(comment.type)) continue;
         if (!this.isTrackable(comment.author)) continue;
         const key = computeReadKey(path, ann.highlightText, comment.author, comment.date, comment.text);
         if (!this.readSet.has(key)) unread++;

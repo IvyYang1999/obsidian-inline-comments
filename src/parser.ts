@@ -161,3 +161,65 @@ export function deleteCommentEntry(
   }
   return content;
 }
+
+// ─── Suggestions ────────────────────────────────────────────────────────────────
+// A `suggest` entry carries replacement text for the highlighted passage. Accepting
+// swaps the passage and marks the entry `accepted`; declining marks it `declined`.
+// Both are single string edits so the editor sees one undoable change.
+
+/** Rebuild one annotation with a per-block transform; returns null if not found */
+function rewriteAnnotation(
+  content: string,
+  annotationFrom: number,
+  fn: (highlight: string, blocks: string[]) => { highlight: string; blocks: string[] } | null,
+): string | null {
+  FULL_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = FULL_RE.exec(content)) !== null) {
+    if (m.index !== annotationFrom) continue;
+    const blocks: string[] = [];
+    const blockRe = /\{>>[\s\S]+?<<\}/g;
+    let bm: RegExpExecArray | null;
+    while ((bm = blockRe.exec(m[2])) !== null) blocks.push(bm[0]);
+    const out = fn(m[1], blocks);
+    if (!out) return null;
+    const rebuilt = `{==${out.highlight}==}${out.blocks.join('')}`;
+    return content.slice(0, m.index) + rebuilt + content.slice(m.index + m[0].length);
+  }
+  return null;
+}
+
+/** Change the type of one entry (e.g. suggest → declined) */
+export function setEntryType(
+  content: string,
+  annotationFrom: number,
+  entryIndex: number,
+  newType: CommentType,
+): string {
+  const out = rewriteAnnotation(content, annotationFrom, (highlight, blocks) => {
+    const raw = blocks[entryIndex];
+    if (!raw) return null;
+    const next = raw.replace(/^\{>>([^|]+)\|([^|]+)\|[^:]+:/, (_s, a, d) => `{>>${a}|${d}|${newType}:`);
+    if (next === raw) return null;
+    blocks[entryIndex] = next;
+    return { highlight, blocks };
+  });
+  return out ?? content;
+}
+
+/**
+ * Apply a suggestion: the highlighted passage becomes the entry's text and the
+ * entry is marked `accepted`. Returns the content unchanged when the entry is not
+ * a pending suggestion.
+ */
+export function applySuggestion(content: string, annotationFrom: number, entryIndex: number): string {
+  const out = rewriteAnnotation(content, annotationFrom, (_highlight, blocks) => {
+    const raw = blocks[entryIndex];
+    if (!raw) return null;
+    const meta = parseMeta(raw.slice(3, -3));
+    if (meta.type !== 'suggest' || !meta.text) return null;
+    blocks[entryIndex] = `{>>${meta.author}|${meta.date}|accepted: ${escapeBody(meta.text)}<<}`;
+    return { highlight: meta.text, blocks };
+  });
+  return out ?? content;
+}
