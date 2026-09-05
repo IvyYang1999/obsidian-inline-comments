@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="site/logo.svg" width="88" alt="Inline Comments logo">
+  <img src="site/logo.svg" width="88" alt="Agent Comments logo">
 </p>
 
-<h1 align="center">Inline Comments · 划线评论</h1>
+<h1 align="center">Agent Comments</h1>
 
 <p align="center">
-  Highlight a passage in your note, leave a comment, <b>@</b> an AI coding session to reply.<br>
-  Comments live inside the Markdown file. Feishu-style, for Obsidian.
+  Comments alongside your notes. <b>@</b> an agent to reply.<br>
+  Works on its own; stored as plain text in the Markdown.
 </p>
 
 <p align="center">
@@ -56,7 +56,7 @@ No database, no sidecar files. It syncs with iCloud / Git / Obsidian Sync like a
 
 ## Install
 
-Obsidian → Settings → Community plugins → Browse → search **Inline Comments**. Or open <a href="obsidian://show-plugin?id=inline-comments">obsidian://show-plugin?id=inline-comments</a>.
+Obsidian → Settings → Community plugins → Browse → search **Agent Comments**. Or open <a href="obsidian://show-plugin?id=inline-comments">obsidian://show-plugin?id=inline-comments</a>.
 
 Pre-release builds: [BRAT](https://github.com/TfTHacker/obsidian42-brat) → *Add a beta plugin* → `IvyYang1999/obsidian-inline-comments`.
 
@@ -102,7 +102,7 @@ Design notes live in [`DESIGN.md`](DESIGN.md). Releases are built by CI from a v
 
 ## 中文
 
-在 Obsidian 笔记里划线留言，@ 一个 AI 会话来回复。评论以纯文本形式紧挨着原文存在 `.md` 里，不联网、不建库。
+**Agent Comments**——在 Obsidian 笔记的原文旁边留言（划线评论），@ 一个 Agent 来回复。评论以纯文本形式紧挨着原文存在 `.md` 里，不联网、不建库。
 
 - **划线，即评论。** 选中文字右键「添加划线评论」，卡片挂在右侧栏、与原文水平对齐、跟着滚动。
 - **@ 一个正在跑的会话。** 打 `@` 点名本机的 Claude Code / Codex 会话，或「用新会话回答」让插件在终端里替你开一个；留言以文件送到它手里，它读完文档把回复写回原位。
@@ -110,7 +110,7 @@ Design notes live in [`DESIGN.md`](DESIGN.md). Releases are built by CI from a v
 - **未读一眼看清。** 别人或 AI 的回复带红点，面板顶部常驻「N 条评论 · M 未读」，文件目录里对应文档也挂红色角标；看完点「标为已读」，聊完点「解决」，也可以加个 emoji 反应。设置里「未读通知」一键关掉。
 - **编辑与阅读视图、桌面与手机。** 阅读视图里同款高亮 + 角标，原始标记隐藏；超长线程折叠成预览。
 
-**安装**：Obsidian 设置 → 第三方插件 → 浏览，搜 **Inline Comments**；或直接打开 <a href="obsidian://show-plugin?id=inline-comments">obsidian://show-plugin?id=inline-comments</a>。Obsidian 1.8 以上，桌面与手机；会话发现、hook、「用新会话回答」（开终端）是桌面能力，最后一项目前仅 macOS。预发布版用 BRAT 添加 `IvyYang1999/obsidian-inline-comments`。
+**安装**：Obsidian 设置 → 第三方插件 → 浏览，搜 **Agent Comments**；或直接打开 <a href="obsidian://show-plugin?id=inline-comments">obsidian://show-plugin?id=inline-comments</a>。Obsidian 1.8 以上，桌面与手机；会话发现、hook、「用新会话回答」（开终端）是桌面能力，最后一项目前仅 macOS。预发布版用 BRAT 添加 `IvyYang1999/obsidian-inline-comments`。
 
 官网中文版：https://obsidian-inline-comments.vercel.app
 
