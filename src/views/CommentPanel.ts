@@ -1,4 +1,4 @@
-import { ItemView, MarkdownView, Menu, TFile, WorkspaceLeaf } from 'obsidian';
+import { ItemView, MarkdownRenderer, MarkdownView, Menu, TFile, WorkspaceLeaf } from 'obsidian';
 import { EditorView } from '@codemirror/view';
 import type { Annotation, CommentEntry } from '../types.ts';
 import { COMMENT_TYPE_META, UNREAD_TYPES } from '../types.ts';
@@ -839,7 +839,7 @@ export class CommentPanel extends ItemView {
       }
     } else if (comment.text) {
       const body = entry.createEl('div', { cls: 'ilc-entry-body' });
-      this.renderCommentText(body, comment.text);
+      this.renderCommentText(body, comment.text, file.path);
     }
 
     // @Agent reply button: detect @mention of a registered (has sessionId) agent
@@ -890,29 +890,21 @@ export class CommentPanel extends ItemView {
 
   // ── Rich text rendering for comment body ──────────────────────────────────────
 
-  private renderCommentText(container: HTMLElement, text: string): void {
-    // Match structured @mentions: [@Name](agent:id) or [@Name](agent:id?notify)
-    const mentionRe = /\[@([^\]]+)\]\(agent:[^)]+\)/g;
-    let lastIndex = 0;
-    let match: RegExpExecArray | null;
-
-    while ((match = mentionRe.exec(text)) !== null) {
-      if (match.index > lastIndex) {
-        container.appendText(text.slice(lastIndex, match.index));
+  /**
+   * Comment bodies are Markdown (links, lists, bold, code). `[@Name](agent:id?notify)`
+   * is a valid Markdown link, so it renders as <a href="agent:…">; we swap those for
+   * mention spans afterwards. Rendering is async — card height settles later, and
+   * the card ResizeObserver re-layouts when it does.
+   */
+  private renderCommentText(container: HTMLElement, text: string, sourcePath: string): void {
+    void MarkdownRenderer.render(this.app, text, container, sourcePath, this).then(() => {
+      for (const a of Array.from(container.querySelectorAll<HTMLAnchorElement>('a[href^="agent:"]'))) {
+        const isNotify = a.getAttribute('href')?.includes('?notify') ?? false;
+        const span = createSpan({ cls: `ilc-mention${isNotify ? ' ilc-mention-notify' : ''}`, text: a.textContent ?? '' });
+        span.setAttribute('title', isNotify ? '通知此人' : '仅引用');
+        a.replaceWith(span);
       }
-      const name = match[1];
-      const isNotify = match[0].includes('?notify');
-      const span = container.createEl('span', {
-        cls: `ilc-mention${isNotify ? ' ilc-mention-notify' : ''}`,
-        text: `@${name}`,
-      });
-      span.setAttribute('title', isNotify ? '通知此人' : '仅引用');
-      lastIndex = match.index + match[0].length;
-    }
-
-    if (lastIndex < text.length) {
-      container.appendText(text.slice(lastIndex));
-    }
+    });
   }
 
   // ── Avatar image upgrade ──────────────────────────────────────────────────────

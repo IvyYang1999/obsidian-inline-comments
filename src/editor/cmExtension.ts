@@ -125,10 +125,20 @@ class CommentViewPlugin implements PluginValue {
       view.scrollDOM.addEventListener('scroll', this.onScroll, { passive: true });
     } catch { /* scrollDOM may not be ready */ }
 
-    // Emit initial positions after a short delay (DOM needs to settle)
-    window.setTimeout(() => {
-      try { this.emitPositions(view); } catch { /* ignore */ }
-    }, 200);
+    // Initial positions once CM has laid the document out
+    this.requestPositions(view);
+  }
+
+  /**
+   * Position reads go through `requestMeasure`: CodeMirror forbids `coordsAtPos`
+   * during an update (it throws, and we used to swallow that — which made the
+   * update() path a no-op). `key: this` merges a burst of requests into one read.
+   */
+  private requestPositions(view: EditorView): void {
+    view.requestMeasure({
+      key: this,
+      read: (v) => { try { this.emitPositions(v); } catch { /* view torn down */ } },
+    });
   }
 
   update(update: ViewUpdate): void {
@@ -138,7 +148,7 @@ class CommentViewPlugin implements PluginValue {
 
     // Emit position updates when geometry or content changes
     if (update.docChanged || update.viewportChanged || update.geometryChanged) {
-      try { this.emitPositions(update.view); } catch { /* ignore */ }
+      this.requestPositions(update.view);
     }
 
     // Cursor moved → notify panel to highlight corresponding card
