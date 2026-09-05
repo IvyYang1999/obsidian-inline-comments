@@ -160,14 +160,23 @@ details p{margin:-6px 0 20px;font-size:16px;color:var(--ink-2)}
 .more h2{font-size:20px;margin:0}
 .more .head .link{font-size:15px}
 @media (max-width:600px){.more .head{flex-direction:column;align-items:flex-start;gap:4px}}
-.rail{display:flex;gap:14px;margin-top:22px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:8px;scrollbar-width:thin;scrollbar-color:var(--line-2) transparent}
-.rail::-webkit-scrollbar{height:6px}.rail::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:3px}
-.pc{flex:0 0 calc((100% - 28px) / 3);min-width:240px;scroll-snap-align:start;border:1px solid var(--line);border-radius:14px;padding:20px 20px 18px;background:#fff;display:flex;flex-direction:column;gap:6px;transition:transform .15s,box-shadow .15s,border-color .15s}
-a.pc:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:var(--line-2)}
-.pc .ico{width:34px;height:34px;border-radius:9px;background:var(--bg-2);color:var(--ink-2);display:grid;place-items:center;font-size:15px;font-weight:600;margin-bottom:12px}
-.pc .t{font-size:16px;font-weight:600}
-.pc .d{font-size:15px;color:var(--ink-2);flex:1}
-.pc .st{font-size:13px;color:var(--muted);margin-top:10px}
+.rail{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:24px}
+.pc{min-width:0;border:1px solid var(--line);border-radius:20px;background:#fff;display:flex;flex-direction:column;overflow:hidden;transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}
+.pc-body{padding:24px 22px 22px;display:flex;flex-direction:column;flex:1}
+.pc .ico{width:52px;height:52px;display:grid;place-items:center;font-size:34px;line-height:1;margin-bottom:20px}
+.pc img.ico{object-fit:cover;border-radius:14px;border:1px solid rgba(28,28,26,.06)}
+.pc .t{font-size:18px;font-weight:600;letter-spacing:-.02em;line-height:1.4;margin:0 0 8px}
+.pc .d{font-size:14px;line-height:1.75;color:var(--ink-2);margin:0 0 20px;flex:1}
+.pc-tags{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.pc .st,.pc .platform{font-size:12px;line-height:1.5;padding:4px 10px;border-radius:999px;background:var(--bg-2);color:var(--ink-2)}
+.pc .st.live{background:var(--at-soft);color:#6654ce}
+.pc-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 22px;border-top:1px solid var(--line);font-size:13px;color:var(--ink-2)}
+.pc-arrow{font-size:18px;line-height:1;transition:transform .2s ease}
+@media (hover:hover){a.pc:hover{transform:translateY(-3px);box-shadow:0 8px 24px rgba(28,28,26,.06);border-color:var(--line-2)}a.pc:hover .pc-arrow{transform:translate(2px,-2px)}a.pc:hover .pc-foot{color:var(--at)}}
+a.pc:focus-visible{outline:2px solid var(--at);outline-offset:4px}
+a.pc:active{transform:translateY(0);box-shadow:none}
+@media (max-width:700px){.rail{grid-template-columns:1fr}.pc-body{padding:22px}.pc .ico{margin-bottom:16px}.pc .d{margin-bottom:18px}.pc-foot{min-height:48px}}
+@media (prefers-reduced-motion:reduce){.pc,.pc-arrow{transition:none}a.pc:hover{transform:none}a.pc:hover .pc-arrow{transform:none}}
 
 footer{border-top:1px solid var(--line);padding:34px 0 40px;font-size:14px;color:var(--muted)}
 footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap}
@@ -259,9 +268,16 @@ footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:2
 <section class="more wrap">
   <div class="head"><h2>同一个作者的其他 Obsidian 插件</h2><a class="link" href="https://yytyyf.com" target="_blank" rel="noopener">全部作品 →</a></div>
   <div class="rail">
-    <a class="pc" href="https://obsidian-web-desk.vercel.app/" target="_blank" rel="noopener"><span class="ico">画</span><span class="t">画布收藏夹</span><span class="d">收藏的网页摆成一张自由画布，当首页用。</span><span class="st">已上线</span></a>
-    <div class="pc"><span class="ico">时</span><span class="t">荧光笔时间轴</span><span class="d">在笔记里手画色块记录时间花在哪，也能让 AI 帮你画。</span><span class="st">在做</span></div>
-    <div class="pc"><span class="ico">记</span><span class="t">AI 日记</span><span class="d">今天 AI 帮你干了什么，自动写成时间轴。</span><span class="st">在做</span></div>
+    <a class="pc" href="https://obsidian-web-desk.vercel.app/" target="_blank" rel="noopener" aria-label="NaviBoard 画布收藏夹，访问官网（新窗口）">
+      <div class="pc-body"><img class="ico" src="./naviboard.png" alt="" width="52" height="52" loading="lazy"><h3 class="t">NaviBoard · 画布收藏夹</h3><p class="d">收藏的网页摆成一张自由画布，当首页用。</p><div class="pc-tags"><span class="st live">已上线</span><span class="platform">Obsidian 插件</span></div></div>
+      <div class="pc-foot"><span>探索画布收藏夹</span><span class="pc-arrow" aria-hidden="true">↗</span></div>
+    </a>
+    <article class="pc">
+      <div class="pc-body"><span class="ico" aria-hidden="true">🖍️</span><h3 class="t">荧光笔时间轴</h3><p class="d">在笔记里手画色块记录时间花在哪，也能让 AI 帮你画。</p><div class="pc-tags"><span class="st">开发中</span><span class="platform">Obsidian 插件</span></div></div>
+    </article>
+    <article class="pc">
+      <div class="pc-body"><span class="ico" aria-hidden="true">📓</span><h3 class="t">AI 日记</h3><p class="d">今天 AI 帮你干了什么，自动写成时间轴。</p><div class="pc-tags"><span class="st">开发中</span><span class="platform">Obsidian 插件</span></div></div>
+    </article>
   </div>
 </section>
 </main>
