@@ -49,6 +49,7 @@ export class UnreadTracker {
   private readSet = new Set<string>();
   private docCounts = new Map<string, number>();
   private fileTimers = new Map<string, number>();
+  private listeners = new Set<(counts: ReadonlyMap<string, number>) => void>();
 
   constructor(
     private app: App,
@@ -86,6 +87,23 @@ export class UnreadTracker {
       this.readStatePath,
       JSON.stringify(state, null, 2),
     );
+  }
+
+  /** Current per-file unread counts (only files with unread > 0) */
+  counts(): ReadonlyMap<string, number> {
+    return this.docCounts;
+  }
+
+  /** Subscribe to count changes; returns an unsubscribe function */
+  onChange(fn: (counts: ReadonlyMap<string, number>) => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  /** Drop all counts (unread signal switched off) */
+  async clear(): Promise<void> {
+    this.docCounts = new Map();
+    await this.writeJson();
   }
 
   isRead(readKey: string): boolean {
@@ -197,5 +215,6 @@ export class UnreadTracker {
       this.unreadJsonPath,
       JSON.stringify(result, null, 2),
     );
+    for (const fn of this.listeners) fn(this.docCounts);
   }
 }

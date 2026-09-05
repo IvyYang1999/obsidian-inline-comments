@@ -58,8 +58,14 @@ h2{font-size:clamp(26px,3.2vw,32px);line-height:1.3;letter-spacing:-.02em;font-w
 .demo .bar span{margin-left:10px;font-size:12.5px;color:var(--muted)}
 .replay{margin-left:auto;font-size:12.5px;color:var(--muted);padding:4px 8px;border-radius:6px}
 .replay:hover{background:var(--line);color:var(--ink)}
-.demo .body{display:grid;grid-template-columns:1.15fr .95fr;min-height:380px}
-@media (max-width:760px){.demo .body{grid-template-columns:1fr}}
+.demo .body{display:grid;grid-template-columns:168px 1.1fr .95fr;min-height:380px}
+.tree{padding:20px 10px;border-right:1px solid var(--line);background:var(--bg-2);font-size:13px;color:var(--ink-2)}
+.tree .dir{font-weight:600;color:var(--ink);font-size:12.5px;padding:0 8px 6px}
+.tree .file{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;white-space:nowrap}
+.tree .file.cur{background:#fff;color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
+.fb{margin-left:auto;min-width:16px;height:16px;padding:0 5px;border-radius:8px;background:var(--red);color:#fff;font-size:10.5px;font-weight:600;line-height:16px;text-align:center;transform:scale(0);transition:transform .25s cubic-bezier(.2,.9,.3,1.4)}
+.fb.on{transform:scale(1)}
+@media (max-width:760px){.demo .body{grid-template-columns:1fr}.tree{display:none}}
 .editor{padding:30px 34px;font-size:15.5px;line-height:1.9;position:relative;border-right:1px solid var(--line)}
 @media (max-width:760px){.editor{border-right:0;border-bottom:1px solid var(--line);padding:22px 20px}.editor .p3{display:none}.dd{top:auto;bottom:calc(100% + 6px)}}
 .editor h4{margin:0 0 12px;font-size:21px;letter-spacing:-.02em;font-weight:600}
@@ -189,6 +195,7 @@ footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:2
   <div class="demo" id="demo" aria-label="插件效果演示">
     <div class="bar"><i></i><i></i><i></i><span>8 月复盘.md</span><button class="replay" id="replay" title="重放">↻ 重放</button></div>
     <div class="body">
+      <div class="tree" aria-hidden="true"><div class="dir">周报</div><div class="file">6 月复盘.md</div><div class="file">7 月复盘.md</div><div class="file cur">8 月复盘.md<span class="fb" id="fb">1</span></div><div class="file">9 月计划.md</div></div>
       <div class="editor" id="editor">
         <h4>8 月复盘</h4>
         <p>这个月主要在做新用户的引导流程。上线两周后看数据，激活率比 7 月高了 6 个点，但 <span class="sel" id="sel">留存在第二周掉了 18%</span><span class="badge" id="badge">1</span>，还没弄清楚原因。</p>
@@ -223,7 +230,7 @@ footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:2
   <div class="cols">
     <div><h3>划线，即评论</h3><p>选中文字右键「添加划线评论」。卡片挂在右侧、和原文对齐、跟着滚动；正文里只留一段淡黄高亮和一个小角标。</p></div>
     <div><h3><em>@</em> 一个正在跑的会话</h3><p>点名一个 Claude Code / Codex 会话，或「用新会话回答」。留言以文件送到它手里；它读完文档，把回复写回原位。</p></div>
-    <div><h3>未读一眼看清</h3><p>别人或 AI 的回复带红点，顶部常驻「N 条评论 · M 未读」。看完点一下「标为已读」；自己写的永远不算未读。</p></div>
+    <div><h3>未读一眼看清</h3><p>别人或 AI 的回复带红点，文件目录里对应文档也挂一枚红色角标，顶部常驻「N 条评论 · M 未读」。看完点「标为已读」；不想要，设置里一键关掉。</p></div>
   </div>
   <div class="md">
     <pre>{==<b>留存在第二周掉了 18%</b>==}{>>yyt|2026-09-05|question: 这个数字是哪张表来的？<em>[@新会话1](agent:3f9a12c0)</em><<}</pre>
@@ -274,7 +281,7 @@ footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:2
   const $ = (id) => document.getElementById(id);
   const sel = $('sel'), badge = $('badge'), menu = $('menu'), card = $('card'), entries = $('entries');
   const compose = $('compose'), input = $('input'), dd = $('dd'), go = $('go'), toast = $('toast'), toastText = $('toastText');
-  const cnt = $('cnt'), unread = $('unread'), panel = $('panel'), editor = $('editor');
+  const cnt = $('cnt'), unread = $('unread'), panel = $('panel'), editor = $('editor'), fb = $('fb');
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let run = 0;
 
@@ -305,7 +312,7 @@ footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:2
     card.className = 'card'; entries.innerHTML = ''; compose.style.display = '';
     input.className = 'input'; input.innerHTML = '<span class="ph-text">写下评论…</span>';
     dd.className = 'dd'; toast.className = 'toast'; cnt.textContent = '0 条评论'; unread.className = '';
-    card.style.marginTop = '0';
+    card.style.marginTop = '0'; fb.className = 'fb';
   }
 
   async function play() {
@@ -332,7 +339,7 @@ footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:2
     await sleep(300);
     await typeInto(id, txt, ' @'); if (!alive(id)) return;
     dd.classList.add('on');
-    await sleep(1300); if (!alive(id)) return;
+    await sleep(2200); if (!alive(id)) return;
     dd.classList.remove('on');
     txt.lastChild && (txt.textContent = txt.textContent.replace(/@$/, ''));
     const chip = document.createElement('span'); chip.className = 'mention'; chip.textContent = '@新会话1';
@@ -351,7 +358,7 @@ footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:2
     t.remove();
     entries.append(entry({ who: '新会话1', cls: 'n', time: '刚刚', dot: true, read: true,
       html: '查到了：来自「8 月数据 · 留存表」第 3 节，口径是第 8–14 天。我把表格链接补到了段末，你看一下。' }));
-    cnt.textContent = '2 条评论'; unread.classList.add('on');
+    cnt.textContent = '2 条评论'; unread.classList.add('on'); fb.classList.add('on');
     await sleep(reduce ? 2000 : 4500); if (!alive(id)) return;
     play();
   }

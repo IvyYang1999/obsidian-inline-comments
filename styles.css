@@ -1163,3 +1163,22 @@ body {
 .ilc-at-foot { display: flex; gap: 2px; }
 .ilc-at-foot .ilc-at-manage, .ilc-at-foot .ilc-at-new { width: auto; flex: 1; }
 .ilc-newsession-modal h2 { margin: 0 0 6px; font-size: 17px; }
+
+/* ─── File-explorer unread badge ─────────────────────────────────────────────── */
+.nav-file-title .ilc-unread-badge,
+.nav-folder-title .ilc-unread-badge {
+  margin-left: auto;
+  flex: none;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--color-red, #e5534b);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-sizing: border-box;
+}

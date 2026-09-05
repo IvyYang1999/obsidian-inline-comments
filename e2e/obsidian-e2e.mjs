@@ -417,6 +417,32 @@ async function run() {
     );
     check('自己的回复没有「标为已读」', !ownReplyHasBtn);
 
+    // ── File-explorer unread badge (red count on the document's row), and the master switch
+    await sleep(700); // recount + badge repaint after the click above
+    const badgeSel = '.nav-file-title[data-path="sample.md"] .ilc-unread-badge';
+    const badgeText = await page.locator(badgeSel).textContent().catch(() => null);
+    const headerUnread = Number((headerAfter ?? '').match(/(\d+)\s*未读/)?.[1] ?? 0);
+    check('目录里文档行有红色角标，数字等于面板未读数', badgeText !== null && Number(badgeText) === headerUnread, `badge=${badgeText} header=${headerUnread}`);
+    const badgeStyle = await page.evaluate((sel) => { const b = document.querySelector(sel); if (!b) return null; const cs = getComputedStyle(b); return { bg: cs.backgroundColor, color: cs.color, r: cs.borderRadius }; }, badgeSel);
+    check('角标是红底白字圆角', !!badgeStyle && /rgb\(2[0-9]{2}, [0-9]{1,2}, [0-9]{1,2}\)|rgb\(2[0-9]{2}, [0-9]{2,3}, [0-9]{2,3}\)/.test(badgeStyle.bg) && badgeStyle.color === 'rgb(255, 255, 255)' && parseFloat(badgeStyle.r) >= 8, JSON.stringify(badgeStyle));
+    const setUnread = async (on) => page.evaluate(async (v) => {
+      const p = app.plugins.plugins['inline-comments'];
+      p.settings.enableUnreadSignal = v; await p.saveSettings();
+      if (v) await p.unreadTracker.recompute(); else await p.unreadTracker.clear();
+      p.explorerBadge.render(); await p.getPanel()?.refresh();
+    }, on);
+    await setUnread(false); await sleep(300);
+    const offState = await page.evaluate(() => ({
+      badges: document.querySelectorAll('.ilc-unread-badge').length,
+      readBtns: document.querySelectorAll('.ilc-read-btn').length,
+      dots: document.querySelectorAll('.ilc-entry-unread').length,
+      header: document.querySelector('.ilc-panel-header')?.textContent ?? '',
+    }));
+    check('关闭「未读通知」后：无角标、无「标为已读」、无红点、面板头无未读数', offState.badges === 0 && offState.readBtns === 0 && offState.dots === 0 && !/未读/.test(offState.header), JSON.stringify(offState));
+    await setUnread(true); await sleep(700);
+    const backOn = await page.locator(badgeSel).count();
+    check('重新开启后角标回来', backOn === 1, `badges=${backOn}`);
+
     // ── Right-click → 添加划线评论 (right-click INSIDE the selection)
     const selPoint = await page.evaluate(() => {
       const view = app.workspace.getLeavesOfType('markdown')[0].view;

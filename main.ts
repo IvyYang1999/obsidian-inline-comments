@@ -15,6 +15,7 @@ import type { CommentEntry, CommentTypeConfig, AIAgentConfig, DeletedRecord } fr
 import { BUILTIN_TYPE_IDS, typeBgColor } from './src/types.ts';
 import { AgentSuggest } from './src/AgentSuggest.ts';
 import { UnreadTracker } from './src/unreadTracker.ts';
+import { ExplorerBadge } from './src/explorerBadge.ts';
 import { DEFAULT_MAILBOX_ROOT } from './src/mentionDelivery.ts';
 import { MentionDelivery } from './src/mentionDeliveryService.ts';
 import { getHookStatus, installClaudeHooks, uninstallClaudeHooks, type HookStatus } from './src/hookInstaller.ts';
@@ -87,6 +88,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
   private runningGlobalThreads = new Set<string>();
   private runningAgentReplies = new Set<string>();
   unreadTracker!: UnreadTracker;
+  explorerBadge!: ExplorerBadge;
   mentionDelivery!: MentionDelivery;
 
   async onload(): Promise<void> {
@@ -179,6 +181,12 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       () => this.settings.authorName,
     );
     this.unreadTracker.init();
+
+    // Red unread badge on file-explorer rows (driven by the tracker's counts)
+    this.explorerBadge = new ExplorerBadge(this.app, () => this.settings.enableUnreadSignal);
+    this.unreadTracker.onChange((counts) => this.explorerBadge.setCounts(counts));
+    this.app.workspace.onLayoutReady(() => this.explorerBadge.attach());
+    this.registerEvent(this.app.workspace.on('layout-change', () => this.explorerBadge.attach()));
 
     // @ mention → mailbox letter (replaces the external cron scanner)
     this.mentionDelivery = new MentionDelivery(
@@ -314,6 +322,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
   }
 
   onunload(): void {
+    this.explorerBadge?.detach();
     // Deliberately no detachLeavesOfType: Obsidian restores the leaf itself, and
     // detaching here would reset a panel the user moved to another sidebar.
   }
@@ -978,15 +987,20 @@ class ILCSettingTab extends PluginSettingTab {
 
     // ── Unread signal ──
     new Setting(containerEl)
-      .setName('产出未读信号')
-      .setDesc('产出 unread-replies.json 供目录树红点插件使用')
+      .setName('未读通知')
+      .setDesc('别人（或 AI）的回复带红点、面板顶部显示未读数、文件目录里对应文档显示红色角标，看完点「标为已读」。关闭后这些都不出现。')
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.enableUnreadSignal)
           .onChange(async (value) => {
             this.plugin.settings.enableUnreadSignal = value;
             await this.plugin.saveSettings();
-            if (value) this.plugin.unreadTracker.recompute();
+            if (value) await this.plugin.unreadTracker.recompute();
+            else await this.plugin.unreadTracker.clear();
+            this.plugin.explorerBadge.render();
+            for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_COMMENTS)) {
+              void (leaf.view as CommentPanel).refresh();
+            }
           }),
       );
 

@@ -326,7 +326,7 @@ export class CommentPanel extends ItemView {
     }
     this.headerEl.removeClass('ilc-hidden');
 
-    const tracker = this.plugin.unreadTracker;
+    const tracker = this.plugin.settings.enableUnreadSignal ? this.plugin.unreadTracker : undefined;
     let unread = 0;
     for (const ann of this.annotations) {
       for (const c of ann.comments) {
@@ -832,7 +832,7 @@ export class CommentPanel extends ItemView {
 
     // Unread state for replies from others: dot on avatar + "标为已读" action.
     // Click updates the DOM optimistically; persistence + recount run in background.
-    const tracker = this.plugin.unreadTracker;
+    const tracker = this.plugin.settings.enableUnreadSignal ? this.plugin.unreadTracker : undefined;
     if (comment.type === 'reply' && tracker?.isTrackable(comment.author)) {
       const readKey = computeReadKey(file.path, ann.highlightText, comment.author, comment.date, comment.text);
       if (!tracker.isRead(readKey)) {
