@@ -1,7 +1,5 @@
-import { execFile } from 'child_process';
-import { promises as fsp } from 'fs';
-import { join } from 'path';
-import { MarkdownView, Plugin, PluginSettingTab, App, Setting, Notice, TFile } from 'obsidian';
+import { nodeCp, nodeFsp, nodePath } from './src/node.ts';
+import { MarkdownView, Platform, Plugin, PluginSettingTab, App, Setting, Notice, TFile } from 'obsidian';
 import type { EditorView } from '@codemirror/view';
 import type { Editor } from 'obsidian';
 import { buildAgentReplyPrompt, cleanReplyText } from './src/agentReply.ts';
@@ -228,16 +226,17 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
 
   mailboxRootAbs(): string | null {
     const base = this.vaultBasePath();
-    return base ? join(base, this.settings.mailboxRoot) : null;
+    return base ? nodePath().join(base, this.settings.mailboxRoot) : null;
   }
 
   hookScriptPath(): string | null {
     const base = this.vaultBasePath();
     const dir = this.pluginDir();
-    return base ? join(base, dir, 'hooks', HOOK_SCRIPT_NAME) : null;
+    return base ? nodePath().join(base, dir, 'hooks', HOOK_SCRIPT_NAME) : null;
   }
 
   async hookStatus(): Promise<HookStatus | null> {
+    if (!Platform.isDesktop) return null;
     const script = this.hookScriptPath();
     const root = this.mailboxRootAbs();
     if (!script || !root) return null;
@@ -246,6 +245,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
 
   /** Write the hook script and register it in ~/.claude/settings.json (idempotent, backed up) */
   async installHooks(): Promise<{ backup?: string; settingsPath: string } | null> {
+    if (!Platform.isDesktop) { new Notice('唤醒 hook 只能在桌面端安装'); return null; }
     const script = this.hookScriptPath();
     const root = this.mailboxRootAbs();
     if (!script || !root) { new Notice('仅桌面端支持安装唤醒 hook'); return null; }
@@ -255,21 +255,24 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
   }
 
   async uninstallHooks(): Promise<void> {
+    if (!Platform.isDesktop) return;
     await uninstallClaudeHooks();
     new Notice('唤醒 hook 已移除');
   }
 
   /** macOS notification (best-effort, desktop only) */
   notifyDesktop(title: string, body: string): void {
+    if (!Platform.isDesktop) return;
     if (process.platform !== 'darwin') return;
     const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     try {
-      execFile('osascript', ['-e', `display notification "${esc(body)}" with title "${esc(title)}"`], () => {});
+      nodeCp().execFile('osascript', ['-e', `display notification "${esc(body)}" with title "${esc(title)}"`], () => {});
     } catch { /* ignore */ }
   }
 
   /** Open a terminal that resumes (or starts) the given session in its directory (macOS) */
   async resumeInTerminal(sessionId: string, cwd?: string): Promise<void> {
+    if (!Platform.isDesktop) { new Notice('在终端恢复会话只支持桌面端'); return; }
     const exists = await sessionFileExists(sessionId);
     const plan = buildLaunchPlan({ sessionId, cwd: cwd || this.vaultBasePath() || process.cwd(), exists });
     const r = await launchInTerminal(plan);
@@ -283,6 +286,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
    * hook does not inject it a second time.
    */
   async maybeAutoStart(c: Candidate, letterPath: string): Promise<void> {
+    if (!Platform.isDesktop) return; // letters are still written; a desktop session picks them up
     if (!c.autoStart || (c.harness ?? 'claude') !== 'claude') return;
     try {
       const running = await runningClaudeIds();
@@ -528,6 +532,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     annotationFrom: number,
     agentName: string,
   ): Promise<void> {
+    if (!Platform.isDesktop) { new Notice('请 AI 直接回应只支持桌面端'); return; }
     const lockKey = `${file.path}:${annotationFrom}`;
     if (this.runningAgentReplies.has(lockKey)) {
       new Notice('评论回应正在进行中');
@@ -655,12 +660,12 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     if (!documentDir) return;
 
     try {
-      const logDir = join(
+      const logDir = nodePath().join(
         documentDir,
         '.agent-threads',
         safePathSegment(agentName),
       );
-      await fsp.mkdir(logDir, { recursive: true });
+      await nodeFsp().mkdir(logDir, { recursive: true });
       const highlightSummary = buildLogField(highlightText).slice(0, 20);
       const line = [
         localMinuteTimestamp(),
@@ -668,7 +673,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
         highlightSummary,
         '已回复',
       ].join(' | ');
-      await fsp.appendFile(join(logDir, 'log.md'), `${line}\n`, 'utf8');
+      await nodeFsp().appendFile(nodePath().join(logDir, 'log.md'), `${line}\n`, 'utf8');
     } catch (error) {
       console.warn('ILC: failed to append agent reply log', error);
     }
@@ -813,7 +818,7 @@ function runHeadlessCommand(
   cwd?: string,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    execFile(
+    nodeCp().execFile(
       command,
       args,
       {
@@ -845,7 +850,7 @@ function runHeadlessCommandCapture(
   cwd?: string,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(
+    nodeCp().execFile(
       command,
       args,
       {

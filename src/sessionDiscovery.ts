@@ -10,10 +10,8 @@
  *    the id on its process command line, so "running" = a codex process exists and
  *    the log was touched in the last 15 minutes.
  */
-import { promises as fsp } from 'fs';
-import { execFile } from 'child_process';
-import * as os from 'os';
-import * as path from 'path';
+import { nodeCp, nodeFsp, nodeOs, nodePath } from './node.ts';
+import type { FileHandle } from 'fs/promises';
 
 export type Harness = 'claude' | 'codex';
 
@@ -37,7 +35,7 @@ const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 function ps(): Promise<string> {
   return new Promise((resolve) => {
     try {
-      execFile('ps', ['-axo', 'command'], { maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
+      nodeCp().execFile('ps', ['-axo', 'command'], { maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
         resolve(err ? '' : String(stdout));
       });
     } catch {
@@ -47,9 +45,9 @@ function ps(): Promise<string> {
 }
 
 async function readHead(file: string, bytes = 1024 * 1024): Promise<string> {
-  let fh: fsp.FileHandle | null = null;
+  let fh: FileHandle | null = null;
   try {
-    fh = await fsp.open(file, 'r');
+    fh = await nodeFsp().open(file, 'r');
     const buf = Buffer.alloc(bytes);
     const { bytesRead } = await fh.read(buf, 0, bytes, 0);
     return buf.subarray(0, bytesRead).toString('utf8');
@@ -95,22 +93,22 @@ function parseHead(text: string): { cwd?: string; title?: string } {
 }
 
 async function discoverClaude(runningIds: Set<string>, now: number): Promise<LocalSession[]> {
-  const root = path.join(os.homedir(), '.claude', 'projects');
+  const root = nodePath().join(nodeOs().homedir(), '.claude', 'projects');
   const out: LocalSession[] = [];
   let dirs: string[] = [];
-  try { dirs = await fsp.readdir(root); } catch { return out; }
+  try { dirs = await nodeFsp().readdir(root); } catch { return out; }
 
   for (const d of dirs) {
-    const dir = path.join(root, d);
+    const dir = nodePath().join(root, d);
     let files: string[] = [];
-    try { files = await fsp.readdir(dir); } catch { continue; }
+    try { files = await nodeFsp().readdir(dir); } catch { continue; }
     for (const f of files) {
       if (!f.endsWith('.jsonl')) continue;
       const id = f.slice(0, -'.jsonl'.length);
       if (!UUID_RE.test(id)) continue;
-      const file = path.join(dir, f);
+      const file = nodePath().join(dir, f);
       let mtime = 0;
-      try { mtime = (await fsp.stat(file)).mtimeMs; } catch { continue; }
+      try { mtime = (await nodeFsp().stat(file)).mtimeMs; } catch { continue; }
       const running = runningIds.has(id.toLowerCase());
       if (!running && now - mtime > MAX_AGE_MS) continue;
       const head = parseHead(await readHead(file));
@@ -132,25 +130,25 @@ async function discoverClaude(runningIds: Set<string>, now: number): Promise<Loc
 async function walk(dir: string, depth: number, acc: string[]): Promise<void> {
   if (depth < 0) return;
   let entries: import('fs').Dirent[] = [];
-  try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { return; }
+  try { entries = await nodeFsp().readdir(dir, { withFileTypes: true }); } catch { return; }
   for (const e of entries) {
-    const p = path.join(dir, e.name);
+    const p = nodePath().join(dir, e.name);
     if (e.isDirectory()) await walk(p, depth - 1, acc);
     else if (e.isFile() && e.name.endsWith('.jsonl')) acc.push(p);
   }
 }
 
 async function discoverCodex(codexRunning: boolean, now: number): Promise<LocalSession[]> {
-  const root = path.join(os.homedir(), '.codex', 'sessions');
+  const root = nodePath().join(nodeOs().homedir(), '.codex', 'sessions');
   const files: string[] = [];
   await walk(root, 4, files);
   const out: LocalSession[] = [];
   for (const file of files) {
-    const m = path.basename(file).match(UUID_RE);
+    const m = nodePath().basename(file).match(UUID_RE);
     if (!m) continue;
     const id = m[0];
     let mtime = 0;
-    try { mtime = (await fsp.stat(file)).mtimeMs; } catch { continue; }
+    try { mtime = (await nodeFsp().stat(file)).mtimeMs; } catch { continue; }
     if (now - mtime > MAX_AGE_MS) continue;
     const head = parseHead(await readHead(file));
     out.push({
@@ -205,7 +203,7 @@ export function timeAgo(ts: number, now = Date.now()): string {
 
 export function shortCwd(cwd: string | undefined): string | undefined {
   if (!cwd) return undefined;
-  const home = os.homedir();
+  const home = nodeOs().homedir();
   const p = cwd.startsWith(home) ? `~${cwd.slice(home.length)}` : cwd;
   const parts = p.split('/').filter(Boolean);
   return parts.length > 3 ? `…/${parts.slice(-2).join('/')}` : p;

@@ -7,9 +7,7 @@
  *
  * Desktop only (Node fs). `ILC_HOME` overrides the home directory for tests.
  */
-import { promises as fsp } from 'fs';
-import * as os from 'os';
-import * as path from 'path';
+import { nodeFsp, nodeOs, nodePath } from './node.ts';
 import { HOOK_SCRIPT, HOOK_SCRIPT_NAME } from './hookScript.ts';
 
 export const HOOK_EVENTS = ['UserPromptSubmit', 'Stop', 'SessionStart'] as const;
@@ -28,11 +26,11 @@ interface HookEntry { matcher?: string; hooks: Array<{ type: string; command: st
 interface ClaudeSettings { hooks?: Record<string, HookEntry[]>; [k: string]: unknown }
 
 export function homeDir(): string {
-  return process.env.ILC_HOME || os.homedir();
+  return process.env.ILC_HOME || nodeOs().homedir();
 }
 
 export function claudeSettingsPath(): string {
-  return path.join(homeDir(), '.claude', 'settings.json');
+  return nodePath().join(homeDir(), '.claude', 'settings.json');
 }
 
 export function hookCommand(scriptPath: string, mailboxRootAbs: string): string {
@@ -41,14 +39,14 @@ export function hookCommand(scriptPath: string, mailboxRootAbs: string): string 
 
 /** Write (or refresh) the hook script and make it executable */
 export async function writeHookScript(scriptPath: string): Promise<void> {
-  await fsp.mkdir(path.dirname(scriptPath), { recursive: true });
-  await fsp.writeFile(scriptPath, HOOK_SCRIPT, 'utf8');
-  await fsp.chmod(scriptPath, 0o755);
+  await nodeFsp().mkdir(nodePath().dirname(scriptPath), { recursive: true });
+  await nodeFsp().writeFile(scriptPath, HOOK_SCRIPT, 'utf8');
+  await nodeFsp().chmod(scriptPath, 0o755);
 }
 
 async function readSettings(file: string): Promise<ClaudeSettings> {
   try {
-    const raw = await fsp.readFile(file, 'utf8');
+    const raw = await nodeFsp().readFile(file, 'utf8');
     const data = JSON.parse(raw);
     return data && typeof data === 'object' ? (data as ClaudeSettings) : {};
   } catch {
@@ -66,7 +64,7 @@ export async function getHookStatus(scriptPath: string, mailboxRootAbs: string):
   const present = HOOK_EVENTS.filter((ev) => (hooks[ev] ?? []).some(isOurs));
   const exact = HOOK_EVENTS.every((ev) => (hooks[ev] ?? []).some((e) => e.hooks?.some((h) => h.command === command)));
   let scriptExists = false;
-  try { await fsp.access(scriptPath); scriptExists = true; } catch { /* not installed yet */ }
+  try { await nodeFsp().access(scriptPath); scriptExists = true; } catch { /* not installed yet */ }
   return {
     installed: present.length === HOOK_EVENTS.length,
     stale: present.length > 0 && !exact,
@@ -81,13 +79,13 @@ export async function getHookStatus(scriptPath: string, mailboxRootAbs: string):
 export async function installClaudeHooks(scriptPath: string, mailboxRootAbs: string): Promise<{ backup?: string; settingsPath: string }> {
   await writeHookScript(scriptPath);
   const settingsPath = claudeSettingsPath();
-  await fsp.mkdir(path.dirname(settingsPath), { recursive: true });
+  await nodeFsp().mkdir(nodePath().dirname(settingsPath), { recursive: true });
 
   let backup: string | undefined;
   try {
-    await fsp.access(settingsPath);
+    await nodeFsp().access(settingsPath);
     backup = `${settingsPath}.bak-ilc-${new Date().toISOString().replace(/[:.]/g, '-')}`;
-    await fsp.copyFile(settingsPath, backup);
+    await nodeFsp().copyFile(settingsPath, backup);
   } catch {
     // no existing file — nothing to back up
   }
@@ -101,7 +99,7 @@ export async function installClaudeHooks(scriptPath: string, mailboxRootAbs: str
     hooks[ev] = kept;
   }
   settings.hooks = hooks;
-  await fsp.writeFile(settingsPath, JSON.stringify(settings, null, 2) + '\n', 'utf8');
+  await nodeFsp().writeFile(settingsPath, JSON.stringify(settings, null, 2) + '\n', 'utf8');
   return { backup, settingsPath };
 }
 
@@ -116,5 +114,5 @@ export async function uninstallClaudeHooks(): Promise<void> {
     if (kept.length) hooks[ev] = kept;
   }
   settings.hooks = hooks;
-  await fsp.writeFile(settingsPath, JSON.stringify(settings, null, 2) + '\n', 'utf8');
+  await nodeFsp().writeFile(settingsPath, JSON.stringify(settings, null, 2) + '\n', 'utf8');
 }

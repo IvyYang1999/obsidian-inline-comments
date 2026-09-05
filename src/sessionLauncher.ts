@@ -8,10 +8,7 @@
  * Desktop/macOS only. With `ILC_LAUNCH_LOG` set, the launch is recorded there
  * instead of opening Terminal (used by e2e).
  */
-import { promises as fsp } from 'fs';
-import { execFile } from 'child_process';
-import * as os from 'os';
-import * as path from 'path';
+import { nodeCp, nodeFsp, nodeOs, nodePath } from './node.ts';
 
 export interface LaunchPlan {
   mode: 'new' | 'resume';
@@ -25,13 +22,13 @@ export interface LaunchPlan {
 const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
 /** Does a transcript for this session id already exist on this machine? */
-export async function sessionFileExists(sessionId: string, home = process.env.ILC_HOME || os.homedir()): Promise<boolean> {
-  const root = path.join(home, '.claude', 'projects');
+export async function sessionFileExists(sessionId: string, home = process.env.ILC_HOME || nodeOs().homedir()): Promise<boolean> {
+  const root = nodePath().join(home, '.claude', 'projects');
   let dirs: string[] = [];
-  try { dirs = await fsp.readdir(root); } catch { return false; }
+  try { dirs = await nodeFsp().readdir(root); } catch { return false; }
   for (const d of dirs) {
     try {
-      await fsp.access(path.join(root, d, `${sessionId}.jsonl`));
+      await nodeFsp().access(nodePath().join(root, d, `${sessionId}.jsonl`));
       return true;
     } catch { /* keep looking */ }
   }
@@ -42,7 +39,7 @@ export async function sessionFileExists(sessionId: string, home = process.env.IL
 export function runningClaudeIds(): Promise<Set<string>> {
   return new Promise((resolve) => {
     try {
-      execFile('ps', ['-axo', 'command'], { maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
+      nodeCp().execFile('ps', ['-axo', 'command'], { maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
         const ids = new Set<string>();
         if (!err) for (const m of String(stdout).matchAll(/--(?:resume|session-id)[= ]([0-9a-f-]{36})/gi)) ids.add(m[1].toLowerCase());
         resolve(ids);
@@ -76,10 +73,10 @@ export function buildLaunchPlan(opts: { sessionId: string; cwd: string; promptFi
 
 /** Write the prompt to a temp file (keeps the shell line short and quoting sane) */
 export async function writePromptFile(sessionId: string, prompt: string): Promise<string> {
-  const dir = path.join(os.tmpdir(), 'ilc-launch');
-  await fsp.mkdir(dir, { recursive: true });
-  const file = path.join(dir, `${sessionId.slice(0, 8)}-${Date.now()}.txt`);
-  await fsp.writeFile(file, prompt, 'utf8');
+  const dir = nodePath().join(nodeOs().tmpdir(), 'ilc-launch');
+  await nodeFsp().mkdir(dir, { recursive: true });
+  const file = nodePath().join(dir, `${sessionId.slice(0, 8)}-${Date.now()}.txt`);
+  await nodeFsp().writeFile(file, prompt, 'utf8');
   return file;
 }
 
@@ -87,7 +84,7 @@ export async function writePromptFile(sessionId: string, prompt: string): Promis
 export async function launchInTerminal(plan: LaunchPlan): Promise<'launched' | 'logged' | 'unsupported'> {
   const log = process.env.ILC_LAUNCH_LOG;
   if (log) {
-    await fsp.appendFile(log, JSON.stringify({ ...plan, at: new Date().toISOString() }) + '\n', 'utf8');
+    await nodeFsp().appendFile(log, JSON.stringify({ ...plan, at: new Date().toISOString() }) + '\n', 'utf8');
     return 'logged';
   }
   if (process.platform !== 'darwin') return 'unsupported';
@@ -96,6 +93,6 @@ export async function launchInTerminal(plan: LaunchPlan): Promise<'launched' | '
   activate
   do script "${asq(plan.shell)}"
 end tell`;
-  await new Promise<void>((resolve) => execFile('osascript', ['-e', script], () => resolve()));
+  await new Promise<void>((resolve) => nodeCp().execFile('osascript', ['-e', script], () => resolve()));
   return 'launched';
 }
