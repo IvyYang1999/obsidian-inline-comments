@@ -62,14 +62,17 @@ body {
   padding: 1px 0;
   cursor: pointer;
   transition: filter var(--ilc-trans-std);
+  background: var(--ilc-hl-bg, var(--ilc-note));
 }
 .ilc-highlight:hover { filter: brightness(0.88); }
 
-.ilc-hl-agree     { background: var(--ilc-agree);     }
-.ilc-hl-disagree  { background: var(--ilc-disagree);  }
-.ilc-hl-question  { background: var(--ilc-question);  }
-.ilc-hl-important { background: var(--ilc-important); }
-.ilc-hl-note      { background: var(--ilc-note);      }
+/* Built-in types set the colour through their class; user-defined types get it
+   inline on the decoration (plugins may not inject <style> elements). */
+.ilc-hl-agree     { --ilc-hl-bg: var(--ilc-agree);     }
+.ilc-hl-disagree  { --ilc-hl-bg: var(--ilc-disagree);  }
+.ilc-hl-question  { --ilc-hl-bg: var(--ilc-question);  }
+.ilc-hl-important { --ilc-hl-bg: var(--ilc-important); }
+.ilc-hl-note      { --ilc-hl-bg: var(--ilc-note);      }
 
 /* Selection being commented on (draft open): rendered with the chosen type's own
    highlight class so it looks exactly like the finished highlight will. */
@@ -119,7 +122,6 @@ body {
   padding: 10px 12px 6px;
   font-size: var(--ilc-font-meta);
   color: var(--text-muted);
-  background: var(--ilc-panel-bg, var(--background-secondary));
   background: var(--ilc-panel-bg, rgb(from var(--background-secondary) r g b));
   box-shadow: 0 1px 0 var(--ilc-hairline-soft);
 }
@@ -144,7 +146,6 @@ body {
   position: absolute;
   left: 8px;
   right: 8px;
-  background: var(--ilc-surface);
   background: rgb(from var(--background-primary) r g b); /* strip theme alpha: cards must be opaque */
   border: 1px solid var(--ilc-hairline);
   border-radius: var(--ilc-radius-card);
@@ -910,7 +911,6 @@ body {
   display: flex;
   flex-direction: column;
   max-height: 280px;
-  background: var(--ilc-surface);
   background: rgb(from var(--background-primary) r g b); /* opaque even on translucent themes */
   border: 1px solid var(--ilc-hairline);
   border-radius: var(--ilc-radius-card);

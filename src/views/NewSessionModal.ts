@@ -68,7 +68,7 @@ export class NewSessionModal extends Modal {
       .addButton((b) => b.setButtonText('取消').onClick(() => this.close()))
       .addButton((b) => b.setButtonText('创建并 @').setCta().onClick(() => void this.submit()));
 
-    setTimeout(() => nameInput?.focus(), 50);
+    window.setTimeout(() => nameInput?.focus(), 50);
   }
 
   private async submit(): Promise<void> {

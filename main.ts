@@ -1,9 +1,9 @@
 import { execFile } from 'child_process';
 import { promises as fsp } from 'fs';
 import { join } from 'path';
-import { MarkdownView, Plugin, PluginSettingTab, App, Setting, Notice } from 'obsidian';
+import { MarkdownView, Plugin, PluginSettingTab, App, Setting, Notice, TFile } from 'obsidian';
 import type { EditorView } from '@codemirror/view';
-import type { TFile, Editor } from 'obsidian';
+import type { Editor } from 'obsidian';
 import { buildAgentReplyPrompt, cleanReplyText } from './src/agentReply.ts';
 import { buildCommentExtension, type ICommentHost, type AnnotationPosition } from './src/editor/cmExtension.ts';
 import { CommentPanel, VIEW_TYPE_COMMENTS } from './src/views/CommentPanel.ts';
@@ -91,7 +91,6 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
 
   async onload(): Promise<void> {
     await this.loadSettings();
-    this.injectTypeStyles();
 
     // Register sidebar view
     this.registerView(VIEW_TYPE_COMMENTS, (leaf) => new CommentPanel(leaf, this));
@@ -175,7 +174,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     // Unread reply tracker
     this.unreadTracker = new UnreadTracker(
       this.app,
-      this.manifest.dir ?? '.obsidian/plugins/inline-comments',
+      this.pluginDir(),
       () => this.settings.enableUnreadSignal,
       () => this.settings.authorName,
     );
@@ -195,9 +194,9 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
 
     this.registerEvent(
       this.app.vault.on('modify', (file) => {
-        if ((file as TFile).extension !== 'md') return;
-        this.unreadTracker.scheduleRecompute(file as TFile);
-        this.mentionDelivery.schedule(file as TFile);
+        if (!(file instanceof TFile) || file.extension !== 'md') return;
+        this.unreadTracker.scheduleRecompute(file);
+        this.mentionDelivery.schedule(file);
       }),
     );
   }
@@ -217,7 +216,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
 
   hookScriptPath(): string | null {
     const base = this.vaultBasePath();
-    const dir = this.manifest.dir ?? '.obsidian/plugins/inline-comments';
+    const dir = this.pluginDir();
     return base ? join(base, dir, 'hooks', HOOK_SCRIPT_NAME) : null;
   }
 
@@ -309,9 +308,14 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     });
   }
 
+  /** Vault-relative folder of this plugin (honours a custom config dir) */
+  pluginDir(): string {
+    return this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
+  }
+
   onunload(): void {
-    this.app.workspace.detachLeavesOfType(VIEW_TYPE_COMMENTS);
-    document.getElementById('ilc-type-styles')?.remove();
+    // Deliberately no detachLeavesOfType: Obsidian restores the leaf itself, and
+    // detaching here would reset a panel the user moved to another sidebar.
   }
 
   /** Badge after a highlight was clicked → open the panel and focus the card */
@@ -700,26 +704,15 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     new Notice(`${contextLabel}：当前编辑器已有新改动，未强制刷新视图`, 8000);
   }
 
-  /** Inject dynamic CSS for custom (non-builtin) type IDs */
-  injectTypeStyles(): void {
-    let el = document.getElementById('ilc-type-styles');
-    if (!el) {
-      el = document.createElement('style');
-      el.id = 'ilc-type-styles';
-      document.head.appendChild(el);
-    }
-
-    const custom = this.settings.commentTypes.filter(
-      (t) => !BUILTIN_TYPE_IDS.has(t.id),
-    );
-
-    el.textContent = custom
-      .map((t) => {
-        const bg = typeBgColor(t.color);
-        const id = CSS.escape(t.id);
-        return `.ilc-hl-${id} { background: ${bg}; }\n.ilc-card-${id} { --ilc-accent: ${t.color}; }`;
-      })
-      .join('\n');
+  /**
+   * Highlight background for a user-defined comment type, carried inline on the
+   * decoration. Built-in types return null and keep using their CSS class.
+   * (Plugins must not create `<style>` elements, so there is no generated sheet.)
+   */
+  highlightBg(typeId: string): string | null {
+    if (BUILTIN_TYPE_IDS.has(typeId)) return null;
+    const cfg = this.settings.commentTypes.find((t) => t.id === typeId);
+    return cfg?.color ? typeBgColor(cfg.color) : null;
   }
 
   private async activatePanel(): Promise<void> {
@@ -752,7 +745,6 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
-    this.injectTypeStyles();
   }
 }
 
@@ -877,7 +869,6 @@ class ILCSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl('h2', { text: 'Inline Comments 设置' });
 
     // ── Author ──
     new Setting(containerEl)
@@ -905,9 +896,9 @@ class ILCSettingTab extends PluginSettingTab {
       );
 
     // ── Comment types ──
-    containerEl.createEl('h3', { text: '评论类型' });
+    new Setting(containerEl).setName('评论类型').setHeading();
     containerEl.createEl('p', {
-      text: '每个类型对应一个快捷标签。内置类型（agree/disagree 等）颜色由样式表控制；自定义类型会根据颜色自动生成样式。',
+      text: '每个类型对应一个快捷标签。内置类型（agree/disagree 等）颜色由样式表控制；自定义类型按所选颜色着色。',
       cls: 'setting-item-description',
     });
 
@@ -928,7 +919,7 @@ class ILCSettingTab extends PluginSettingTab {
     );
 
     // ── AI agents ──
-    containerEl.createEl('h3', { text: 'AI 助手' });
+    new Setting(containerEl).setName('AI 助手').setHeading();
     containerEl.createEl('p', {
       text: '当评论作者名与此处配置的 AI 名称匹配时，会显示对应的头像和颜色。',
       cls: 'setting-item-description',
@@ -1160,7 +1151,7 @@ class ILCSettingTab extends PluginSettingTab {
       }) as HTMLInputElement;
       colorIn.addEventListener('change', async () => {
         agent.avatarBg = colorIn.value;
-        preview.style.background = agent.avatarBg;
+        preview.setCssStyles({ background: agent.avatarBg });
         await this.plugin.saveSettings();
       });
 

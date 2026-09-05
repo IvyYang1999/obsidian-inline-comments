@@ -132,7 +132,7 @@ export class MembersModal extends Modal {
     const row = container.createEl('div', { cls: `ilc-members-row ilc-at-status-${STATUS_CLS[e.status]}` });
 
     const avatar = row.createEl('span', { cls: 'ilc-at-avatar', text: e.name.charAt(0) });
-    avatar.style.background = avatarColor(e.name);
+    avatar.setCssStyles({ background: avatarColor(e.name) });
     avatar.createEl('span', { cls: `ilc-at-dot ilc-at-dot-${STATUS_CLS[e.status]}` });
 
     const main = row.createEl('div', { cls: 'ilc-members-main' });

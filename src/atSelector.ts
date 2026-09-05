@@ -255,7 +255,7 @@ export function attachAtSelector(
 
       const avatar = item.createEl('span', { cls: `ilc-at-avatar${entry.isAction ? ' ilc-at-avatar-new' : ''}`, text: entry.isAction ? '＋' : entry.name.charAt(0) });
       if (!entry.isAction) {
-        avatar.style.background = avatarColor(entry.name);
+        avatar.setCssStyles({ background: avatarColor(entry.name) });
         avatar.createEl('span', { cls: `ilc-at-dot ilc-at-dot-${STATUS_CLS[entry.status]}` });
       }
 
@@ -360,12 +360,12 @@ export function attachAtSelector(
       const spaceAbove = panelRect ? taRect.top - panelRect.top - 12 : 0;
       const WANT = 280;
       if (spaceBelow < 220 && spaceAbove > spaceBelow) {
-        dropdown.style.bottom = `${wrapper.clientHeight - textarea.offsetTop + 4}px`;
-        dropdown.style.maxHeight = `${Math.max(160, Math.min(WANT, spaceAbove))}px`;
+        dropdown.setCssStyles({ bottom: `${wrapper.clientHeight - textarea.offsetTop + 4}px` });
+        dropdown.setCssStyles({ maxHeight: `${Math.max(160, Math.min(WANT, spaceAbove))}px` });
         dropdown.addClass('ilc-at-dropdown-up');
       } else {
-        dropdown.style.top = `${textarea.offsetTop + textarea.offsetHeight + 4}px`;
-        dropdown.style.maxHeight = `${Math.max(160, Math.min(WANT, spaceBelow))}px`;
+        dropdown.setCssStyles({ top: `${textarea.offsetTop + textarea.offsetHeight + 4}px` });
+        dropdown.setCssStyles({ maxHeight: `${Math.max(160, Math.min(WANT, spaceBelow))}px` });
       }
     }
 
@@ -407,7 +407,7 @@ export function attachAtSelector(
         dismiss();
       }
     };
-    setTimeout(() => {
+    window.setTimeout(() => {
       if (outsideClickHandler) document.addEventListener('mousedown', outsideClickHandler);
     }, 50);
   });

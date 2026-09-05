@@ -69,7 +69,7 @@ export class AddCommentModal extends Modal {
         ta.setPlaceholder('写下你的想法…');
         ta.onChange((v) => { this.commentText = v; });
         // Focus and allow Enter to submit via Ctrl/Cmd+Enter
-        setTimeout(() => ta.inputEl.focus(), 50);
+        window.setTimeout(() => ta.inputEl.focus(), 50);
         ta.inputEl.addEventListener('keydown', (e) => {
           if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
             e.preventDefault();

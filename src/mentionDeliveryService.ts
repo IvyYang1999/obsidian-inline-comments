@@ -19,7 +19,7 @@ import {
 export class MentionDelivery {
   private processed = new Set<string>();
   private loaded = false;
-  private timers = new Map<string, ReturnType<typeof setTimeout>>();
+  private timers = new Map<string, number>();
   private sweeping = false;
 
   constructor(
@@ -56,7 +56,7 @@ export class MentionDelivery {
 
   /** Call once after plugin load: full sweep, delayed so the vault index is ready */
   init(delayMs = 4000): void {
-    setTimeout(() => void this.sweep(false), delayMs);
+    window.setTimeout(() => void this.sweep(false), delayMs);
   }
 
   /** Debounced per-file rescan — call on vault `modify` */
@@ -64,8 +64,8 @@ export class MentionDelivery {
     if (!this.settings().enabled) return;
     if (!isScannable(file.path, this.mailboxRoot)) return;
     const prev = this.timers.get(file.path);
-    if (prev) clearTimeout(prev);
-    this.timers.set(file.path, setTimeout(() => {
+    if (prev) window.clearTimeout(prev);
+    this.timers.set(file.path, window.setTimeout(() => {
       this.timers.delete(file.path);
       void this.scanFile(file, true);
     }, 1500));

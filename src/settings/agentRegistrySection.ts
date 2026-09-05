@@ -1,4 +1,4 @@
-import { Notice } from 'obsidian';
+import { Notice, Setting } from 'obsidian';
 import type { App } from 'obsidian';
 import { loadRoster } from '../atSelector.ts';
 import { removeAgent } from '../registry.ts';
@@ -8,7 +8,7 @@ export async function renderAgentRegistrySection(
   containerEl: HTMLElement,
   app: App,
 ): Promise<void> {
-  containerEl.createEl('h3', { text: '评论 @ 成员' });
+  new Setting(containerEl).setName('评论 @ 成员').setHeading();
   const desc = containerEl.createEl('p', { cls: 'setting-item-description' });
   desc.appendText('可以在评论里 @ 的 AI 会话。添加、移除和自动发现本机会话，都在 ');
   const openBtn = desc.createEl('button', { cls: 'ilc-members-open', text: '成员管理…' });

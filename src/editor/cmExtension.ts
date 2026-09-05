@@ -29,6 +29,17 @@ export interface ICommentHost {
   onEditorScroll(scrollTop: number, view?: EditorView): void;
   /** Badge after a highlight was clicked → reveal + focus the matching card */
   onBadgeClick?(annotationId: string): void;
+  /**
+   * Highlight background for a comment type, or null to use the built-in class.
+   * User-defined types carry their colour inline instead of through an injected
+   * stylesheet (plugins must not create `<style>` elements).
+   */
+  highlightBg?(typeId: string): string | null;
+}
+
+/** `--ilc-hl-bg: <colour>` as a decoration attribute, or nothing for built-ins */
+function bgAttrs(bg: string | null | undefined): { style: string } | undefined {
+  return bg ? { style: `--ilc-hl-bg: ${bg};` } : undefined;
 }
 
 // ─── Badge widget shown after each annotation ─────────────────────────────────
@@ -103,7 +114,7 @@ class CommentViewPlugin implements PluginValue {
     // Scroll listener on the editor's scroll container (throttled via rAF)
     this.onScroll = () => {
       if (this.scrollRAF) return;
-      this.scrollRAF = requestAnimationFrame(() => {
+      this.scrollRAF = window.requestAnimationFrame(() => {
         this.scrollRAF = 0;
         try {
           this.host.onEditorScroll(this.view.scrollDOM.scrollTop, this.view);
@@ -115,7 +126,7 @@ class CommentViewPlugin implements PluginValue {
     } catch { /* scrollDOM may not be ready */ }
 
     // Emit initial positions after a short delay (DOM needs to settle)
-    setTimeout(() => {
+    window.setTimeout(() => {
       try { this.emitPositions(view); } catch { /* ignore */ }
     }, 200);
   }
@@ -145,7 +156,7 @@ class CommentViewPlugin implements PluginValue {
   destroy(): void {
     this.view.scrollDOM.removeEventListener('scroll', this.onScroll);
     if (this.scrollRAF) {
-      cancelAnimationFrame(this.scrollRAF);
+      window.cancelAnimationFrame(this.scrollRAF);
     }
   }
 
@@ -203,6 +214,7 @@ class CommentViewPlugin implements PluginValue {
       if (hlEnd < hlStart || markupEnd < hlEnd) continue;
 
       const cls = highlightClass(ann);
+      const bg = this.host.highlightBg?.(ann.comments[0]?.type ?? 'note');
 
       try {
         // 1. Hide the `{==` prefix
@@ -213,7 +225,7 @@ class CommentViewPlugin implements PluginValue {
           builder.add(
             hlStart,
             hlEnd,
-            Decoration.mark({ class: `ilc-highlight ${cls}` }),
+            Decoration.mark({ class: `ilc-highlight ${cls}`, attributes: bgAttrs(bg) }),
           );
         }
 
@@ -239,7 +251,14 @@ class CommentViewPlugin implements PluginValue {
 
 // ─── Draft range: temporary highlight while a comment is being written ───────
 
-export interface DraftRange { from: number; to: number; /** CSS classes, e.g. "ilc-highlight ilc-hl-agree" */ cls?: string }
+export interface DraftRange {
+  from: number;
+  to: number;
+  /** CSS classes, e.g. "ilc-highlight ilc-hl-agree" */
+  cls?: string;
+  /** Inline highlight colour for user-defined types (built-ins use their class) */
+  bg?: string | null;
+}
 
 /** Dispatch with `{ from, to }` to show the pending selection, `null` to clear */
 export const setDraftRange = StateEffect.define<DraftRange | null>();
@@ -253,7 +272,10 @@ export const draftRangeField = StateField.define<DecorationSet>({
       if (e.is(setDraftRange)) {
         if (!e.value || e.value.to <= e.value.from) return Decoration.none;
         const to = Math.min(e.value.to, tr.newDoc.length);
-        const mark = Decoration.mark({ class: `ilc-draft-highlight ${e.value.cls ?? 'ilc-highlight ilc-hl-note'}` });
+        const mark = Decoration.mark({
+          class: `ilc-draft-highlight ${e.value.cls ?? 'ilc-highlight ilc-hl-note'}`,
+          attributes: bgAttrs(e.value.bg),
+        });
         return Decoration.set([mark.range(Math.max(0, e.value.from), to)]);
       }
     }

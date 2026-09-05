@@ -1,8 +1,8 @@
 {
   "id": "inline-comments",
   "name": "Inline Comments",
-  "version": "0.1.0",
-  "minAppVersion": "1.4.0",
+  "version": "0.1.1",
+  "minAppVersion": "1.8.0",
   "description": "Feishu-style inline comments stored right in your Markdown. Highlight text, leave a note, @ an AI coding session to reply.",
   "author": "yytyyf",
   "authorUrl": "https://yytyyf.com",

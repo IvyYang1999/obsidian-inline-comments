@@ -48,7 +48,7 @@ export function computeReadKey(
 export class UnreadTracker {
   private readSet = new Set<string>();
   private docCounts = new Map<string, number>();
-  private fileTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private fileTimers = new Map<string, number>();
 
   constructor(
     private app: App,
@@ -120,10 +120,10 @@ export class UnreadTracker {
       return;
     }
     const prev = this.fileTimers.get(file.path);
-    if (prev) clearTimeout(prev);
+    if (prev) window.clearTimeout(prev);
     this.fileTimers.set(
       file.path,
-      setTimeout(() => {
+      window.setTimeout(() => {
         this.fileTimers.delete(file.path);
         void this.recomputeFile(file);
       }, 1500),

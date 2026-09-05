@@ -161,7 +161,7 @@ export class CommentPanel extends ItemView {
     this.renderDraftCardEl();
     this.setEditorDraftRange({ from, to: from + highlightText.length, cls: `ilc-highlight ilc-hl-${defaultType}` });
     // Scroll panel to show the draft card
-    setTimeout(() => {
+    window.setTimeout(() => {
       this.draftInputEl?.focus();
       if (this.draftEl) {
         const cardTop = this.draftEl.offsetTop;
@@ -176,7 +176,7 @@ export class CommentPanel extends ItemView {
         this.cancelDraft();
       }
     };
-    setTimeout(() => {
+    window.setTimeout(() => {
       document.addEventListener('mousedown', this.clickAwayHandler!);
     }, 150);
   }
@@ -204,7 +204,7 @@ export class CommentPanel extends ItemView {
       const scrollTarget = cardTop - panelHeight / 4;
       this.panelContainer.scrollTo({ top: Math.max(0, scrollTarget), behavior: 'smooth' });
       // Re-layout because focused card may have different height (reply input shown)
-      setTimeout(() => this.layoutCards(), 50);
+      window.setTimeout(() => this.layoutCards(), 50);
     }
   }
 
@@ -228,7 +228,7 @@ export class CommentPanel extends ItemView {
     if (Date.now() < this.ignoreEditorScrollUntil) return;
     this.syncingScroll = true;
     this.panelContainer.scrollTop = scrollTop;
-    requestAnimationFrame(() => { this.syncingScroll = false; });
+    window.requestAnimationFrame(() => { this.syncingScroll = false; });
   }
 
   // ── Refresh ──────────────────────────────────────────────────────────────────
@@ -287,8 +287,8 @@ export class CommentPanel extends ItemView {
     this.layoutCards();
     // The editor may still be re-measuring (sidebar just opened, fonts loading):
     // settle with two deferred passes.
-    requestAnimationFrame(() => this.layoutCards());
-    setTimeout(() => this.layoutCards(), 300);
+    window.requestAnimationFrame(() => this.layoutCards());
+    window.setTimeout(() => this.layoutCards(), 300);
   }
 
   // ── Panel background (settings) ──────────────────────────────────────────────
@@ -303,7 +303,7 @@ export class CommentPanel extends ItemView {
     if (s.panelBackground === 'editor') {
       el.addClass('ilc-panel-bg-editor');
     } else if (s.panelBackground === 'custom' && s.panelBackgroundColor) {
-      el.style.setProperty('--ilc-panel-bg', s.panelBackgroundColor);
+      el.setCssProps({ '--ilc-panel-bg': s.panelBackgroundColor });
     }
   }
 
@@ -466,11 +466,11 @@ export class CommentPanel extends ItemView {
 
     const lastItem = items[items.length - 1];
     if (lastItem) {
-      this.cardsZone.style.minHeight = `${lastItem.actualTop + lastItem.height + 60}px`;
+      this.cardsZone.setCssStyles({ minHeight: `${lastItem.actualTop + lastItem.height + 60}px` });
     }
 
     for (const item of items) {
-      item.el.style.top = `${item.actualTop}px`;
+      item.el.setCssStyles({ top: `${item.actualTop}px` });
     }
   }
 
@@ -509,7 +509,7 @@ export class CommentPanel extends ItemView {
     const card = this.cardsZone.createEl('div', {
       cls: `ilc-card ilc-card-draft ilc-card-active`,
     });
-    card.style.setProperty('--ilc-accent', this.typeAccent(d.selectedType));
+    card.setCssProps({ '--ilc-accent': this.typeAccent(d.selectedType) });
     this.draftEl = card;
 
     // ── 1. Preview text + ⋯ button ──
@@ -538,9 +538,9 @@ export class CommentPanel extends ItemView {
     const authorRow = card.createEl('div', { cls: 'ilc-draft-author-row' });
     const avatar = authorRow.createEl('div', { cls: 'ilc-draft-avatar' });
     avatar.textContent = this.plugin.settings.authorName.charAt(0).toUpperCase();
-    avatar.style.background = this.plugin.settings.avatarBg;
-    avatar.style.color = '#fff';
-    avatar.style.border = 'none';
+    avatar.setCssStyles({ background: this.plugin.settings.avatarBg });
+    avatar.setCssStyles({ color: '#fff' });
+    avatar.setCssStyles({ border: 'none' });
     this.tryUpgradeAvatarToImage(avatar, this.plugin.settings.authorName);
     authorRow.createEl('span', {
       cls: 'ilc-draft-author-name',
@@ -556,7 +556,7 @@ export class CommentPanel extends ItemView {
         cls: `ilc-draft-type-btn ilc-draft-type-${type.id}`,
       });
       btn.createEl('span', { cls: 'ilc-draft-type-label', text: type.label });
-      btn.style.setProperty('--ilc-accent', this.typeAccent(type.id));
+      btn.setCssProps({ '--ilc-accent': this.typeAccent(type.id) });
 
       if (type.id === d.selectedType) {
         btn.addClass('ilc-draft-type-active');
@@ -569,7 +569,7 @@ export class CommentPanel extends ItemView {
         d.selectedType = type.id;
         d.typeChanged = true;
         btn.addClass('ilc-draft-type-active');
-        card.style.setProperty('--ilc-accent', this.typeAccent(type.id));
+        card.setCssProps({ '--ilc-accent': this.typeAccent(type.id) });
         this.setEditorDraftRange({ from: d.from, to: d.from + d.highlightText.length, cls: `ilc-highlight ilc-hl-${type.id}` });
         activeBtn = btn;
       });
@@ -602,7 +602,7 @@ export class CommentPanel extends ItemView {
     this.resizeObserver?.observe(card);
 
     // Schedule layout
-    requestAnimationFrame(() => this.layoutCards());
+    window.requestAnimationFrame(() => this.layoutCards());
   }
 
   private submitDraft(inputValue: string): void {
@@ -623,7 +623,7 @@ export class CommentPanel extends ItemView {
     this.cancelDraft();
 
     // Force panel refresh after document modification so the new comment card appears immediately
-    setTimeout(() => this.refresh(), 150);
+    window.setTimeout(() => this.refresh(), 150);
   }
 
   /** Show / clear the temporary "being commented" highlight in the editor */
@@ -663,7 +663,7 @@ export class CommentPanel extends ItemView {
     card.dataset.annotationId = ann.id;
     const firstType = ann.comments[0]?.type ?? 'note';
     card.addClass(`ilc-card-${firstType}`);
-    card.style.setProperty('--ilc-accent', this.typeAccent(firstType));
+    card.setCssProps({ '--ilc-accent': this.typeAccent(firstType) });
 
     // Apply active state if this card is currently active
     if (ann.id === this.activeAnnotationId) {
@@ -724,7 +724,7 @@ export class CommentPanel extends ItemView {
         submitBtn.addClass('ilc-hidden');
       }
       // Re-layout after height change
-      requestAnimationFrame(() => this.layoutCards());
+      window.requestAnimationFrame(() => this.layoutCards());
     });
 
     submitBtn.addEventListener('click', async (e) => {
@@ -777,12 +777,12 @@ export class CommentPanel extends ItemView {
     const avatarEl = header.createEl('div', { cls: 'ilc-entry-avatar' });
     if (agentConfig) {
       avatarEl.textContent = agentConfig.avatarChar;
-      avatarEl.style.background = agentConfig.avatarBg;
+      avatarEl.setCssStyles({ background: agentConfig.avatarBg });
       avatarEl.addClass('ilc-entry-avatar-ai');
     } else {
       avatarEl.textContent = comment.author.charAt(0).toUpperCase();
-      avatarEl.style.background = this.plugin.settings.avatarBg;
-      avatarEl.style.color = '#fff';
+      avatarEl.setCssStyles({ background: this.plugin.settings.avatarBg });
+      avatarEl.setCssStyles({ color: '#fff' });
     }
     this.tryUpgradeAvatarToImage(avatarEl, comment.author);
 
@@ -790,7 +790,7 @@ export class CommentPanel extends ItemView {
     if (comment.type !== 'reply') {
       const label = typeConfig?.label ?? builtinMeta?.label ?? comment.type;
       const chip = header.createEl('span', { cls: 'ilc-entry-chip', text: label });
-      chip.style.setProperty('--ilc-accent', this.typeAccent(comment.type));
+      chip.setCssProps({ '--ilc-accent': this.typeAccent(comment.type) });
       chip.setAttribute('title', `${emoji} ${label}`);
     }
     header.createEl('span', { cls: 'ilc-entry-date',   text: comment.date });
@@ -895,8 +895,8 @@ export class CommentPanel extends ItemView {
 
       avatarEl.empty();
       avatarEl.appendChild(img);
-      avatarEl.style.background = 'none';
-      avatarEl.style.color = 'transparent';
+      avatarEl.setCssStyles({ background: 'none' });
+      avatarEl.setCssStyles({ color: 'transparent' });
     } catch {
       // Silently fall back to letter avatar
     }
@@ -907,7 +907,6 @@ export class CommentPanel extends ItemView {
   private showEntryMenu(e: MouseEvent, ann: Annotation, entryIndex: number, file: TFile): void {
     const menu = new Menu();
     const isOnly = ann.comments.length === 1;
-    const isFirst = entryIndex === 0;
 
     if (isOnly) {
       // Only one entry — deleting it removes the whole annotation
@@ -981,10 +980,10 @@ export class CommentPanel extends ItemView {
     this.alignedCm = cm;
     this.syncingScroll = true;
     this.panelContainer.scrollTop = cm.scrollDOM.scrollTop;
-    requestAnimationFrame(() => { this.syncingScroll = false; });
+    window.requestAnimationFrame(() => { this.syncingScroll = false; });
     this.computePositionsFromEditor();
     this.layoutCards();
-    setTimeout(() => this.layoutCards(), 200);
+    window.setTimeout(() => this.layoutCards(), 200);
   }
 
   /** Whether an editor instance is the one this panel is aligned with */
@@ -1015,7 +1014,7 @@ export class CommentPanel extends ItemView {
     const card = this.cardEls.get(ann.id);
     if (card) {
       card.addClass('ilc-card-flash');
-      setTimeout(() => card.removeClass('ilc-card-flash'), 600);
+      window.setTimeout(() => card.removeClass('ilc-card-flash'), 600);
     }
   }
 }

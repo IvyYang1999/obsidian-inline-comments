@@ -41,7 +41,7 @@ export class GlobalThreadModal extends Modal {
       void this.submit();
     });
 
-    setTimeout(() => this.inputEl?.focus(), 50);
+    window.setTimeout(() => this.inputEl?.focus(), 50);
   }
 
   onClose(): void {

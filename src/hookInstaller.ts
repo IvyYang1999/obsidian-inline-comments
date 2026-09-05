@@ -66,7 +66,7 @@ export async function getHookStatus(scriptPath: string, mailboxRootAbs: string):
   const present = HOOK_EVENTS.filter((ev) => (hooks[ev] ?? []).some(isOurs));
   const exact = HOOK_EVENTS.every((ev) => (hooks[ev] ?? []).some((e) => e.hooks?.some((h) => h.command === command)));
   let scriptExists = false;
-  try { await fsp.access(scriptPath); scriptExists = true; } catch {}
+  try { await fsp.access(scriptPath); scriptExists = true; } catch { /* not installed yet */ }
   return {
     installed: present.length === HOOK_EVENTS.length,
     stale: present.length > 0 && !exact,
