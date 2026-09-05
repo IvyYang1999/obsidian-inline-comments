@@ -1,3 +1,4 @@
+import { t } from '../i18n.ts';
 import { App, Modal } from 'obsidian';
 import type { DeletedRecord } from '../types.ts';
 import type InlineCommentsPlugin from '../../main.ts';
@@ -13,19 +14,19 @@ export class HistoryModal extends Modal {
 
     // Header row
     const headerRow = contentEl.createEl('div', { cls: 'ilc-history-header' });
-    headerRow.createEl('h2', { text: '评论删除历史' });
+    headerRow.createEl('h2', { text: t('评论删除历史') });
 
     const history = await this.plugin.loadDeletedHistory();
 
     if (history.length === 0) {
-      contentEl.createEl('div', { cls: 'ilc-history-empty', text: '暂无删除记录' });
+      contentEl.createEl('div', { cls: 'ilc-history-empty', text: t('暂无删除记录') });
       return;
     }
 
     // Clear-all button
     const clearBtn = headerRow.createEl('button', {
       cls: 'ilc-history-clear-btn',
-      text: '清空历史',
+      text: t('清空历史'),
     });
     clearBtn.addEventListener('click', async () => {
       await this.plugin.clearDeletedHistory();
@@ -51,7 +52,7 @@ export class HistoryModal extends Modal {
         attr: { title: record.deletedAt },
       });
       if (record.wasFullAnnotation) {
-        itemHeader.createEl('span', { cls: 'ilc-history-item-badge', text: '整条' });
+        itemHeader.createEl('span', { cls: 'ilc-history-item-badge', text: t('整条') });
       }
 
       // Highlight text
@@ -86,12 +87,12 @@ function relativeTime(iso: string): string {
   try {
     const diff = Date.now() - new Date(iso).getTime();
     const mins = Math.floor(diff / 60_000);
-    if (mins < 1)  return '刚刚';
-    if (mins < 60) return `${mins} 分钟前`;
+    if (mins < 1)  return t('刚刚');
+    if (mins < 60) return t('{0} 分钟前', [mins]);
     const hours = Math.floor(mins / 60);
-    if (hours < 24) return `${hours} 小时前`;
+    if (hours < 24) return t('{0} 小时前', [hours]);
     const days = Math.floor(hours / 24);
-    return `${days} 天前`;
+    return t('{0} 天前', [days]);
   } catch {
     return iso;
   }

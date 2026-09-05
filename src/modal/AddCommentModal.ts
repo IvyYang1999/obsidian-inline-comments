@@ -1,3 +1,4 @@
+import { t } from '../i18n.ts';
 import { App, Modal, Setting } from 'obsidian';
 import type { CommentEntry, CommentType } from '../types.ts';
 import { COMMENT_TYPE_META } from '../types.ts';
@@ -25,18 +26,18 @@ export class AddCommentModal extends Modal {
     contentEl.addClass('ilc-add-modal');
 
     // Title
-    contentEl.createEl('h3', { text: '添加评论' });
+    contentEl.createEl('h3', { text: t('添加评论') });
 
     // Preview of selected text
     const preview = contentEl.createEl('div', { cls: 'ilc-modal-preview' });
-    preview.createEl('span', { cls: 'ilc-modal-preview-label', text: '选中文字：' });
+    preview.createEl('span', { cls: 'ilc-modal-preview-label', text: t('选中文字：') });
     preview.createEl('span', {
       cls: 'ilc-modal-preview-text',
       text: `"${this.highlightText.slice(0, 80)}${this.highlightText.length > 80 ? '…' : ''}"`,
     });
 
     // Type selector
-    contentEl.createEl('p', { cls: 'ilc-modal-section-label', text: '类型' });
+    contentEl.createEl('p', { cls: 'ilc-modal-section-label', text: t('类型') });
     const typeRow = contentEl.createEl('div', { cls: 'ilc-type-row' });
 
     const types: CommentType[] = ['agree', 'disagree', 'question', 'important', 'note'];
@@ -53,7 +54,7 @@ export class AddCommentModal extends Modal {
       const meta = COMMENT_TYPE_META[type];
       const btn = typeRow.createEl('button', {
         cls: `ilc-type-btn ilc-type-btn-${type}`,
-        text: `${meta.emoji} ${meta.label}`,
+        text: `${meta.emoji} ${t(meta.label)}`,
       });
       btn.addEventListener('click', () => selectType(type, btn));
       if (type === this.selectedType) {
@@ -64,9 +65,9 @@ export class AddCommentModal extends Modal {
 
     // Comment text area
     new Setting(contentEl)
-      .setName('评论内容')
+      .setName(t('评论内容'))
       .addTextArea((ta) => {
-        ta.setPlaceholder('写下你的想法…');
+        ta.setPlaceholder(t('写下你的想法…'));
         ta.onChange((v) => { this.commentText = v; });
         // Focus and allow Enter to submit via Ctrl/Cmd+Enter
         window.setTimeout(() => ta.inputEl.focus(), 50);
@@ -80,7 +81,7 @@ export class AddCommentModal extends Modal {
 
     // Author
     new Setting(contentEl)
-      .setName('署名')
+      .setName(t('署名'))
       .addText((t) => {
         t.setValue(this.authorName);
         t.onChange((v) => { this.authorName = v; });
@@ -90,11 +91,11 @@ export class AddCommentModal extends Modal {
     const footer = contentEl.createEl('div', { cls: 'ilc-modal-footer' });
     const submitBtn = footer.createEl('button', {
       cls: 'mod-cta',
-      text: '确认',
+      text: t('确认'),
     });
     submitBtn.addEventListener('click', () => this.doSubmit());
 
-    const cancelBtn = footer.createEl('button', { text: '取消' });
+    const cancelBtn = footer.createEl('button', { text: t('取消') });
     cancelBtn.addEventListener('click', () => this.close());
   }
 

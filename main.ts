@@ -1,3 +1,4 @@
+import { getLocale, setLocale, t } from './src/i18n.ts';
 import { nodeCp, nodeFsp, nodePath } from './src/node.ts';
 import { MarkdownView, Platform, Plugin, PluginSettingTab, App, Setting, Notice, TFile } from 'obsidian';
 import type { EditorView } from '@codemirror/view';
@@ -66,6 +67,8 @@ interface ILCSettings {
   mailboxRoot: string;
   /** Show resolved threads in the panel (collapsed) or hide them */
   showResolved: boolean;
+  /** UI language: follow Obsidian, or force zh / en */
+  language: 'auto' | 'zh' | 'en';
 }
 
 const DEFAULT_SETTINGS: ILCSettings = {
@@ -81,6 +84,7 @@ const DEFAULT_SETTINGS: ILCSettings = {
   enableMentionDelivery: true,
   mailboxRoot: DEFAULT_MAILBOX_ROOT,
   showResolved: true,
+  language: 'auto',
 };
 
 // ─── Plugin ───────────────────────────────────────────────────────────────────
@@ -95,6 +99,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    setLocale(this.settings.language);
 
     // Register sidebar view
     this.registerView(VIEW_TYPE_COMMENTS, (leaf) => new CommentPanel(leaf, this));
@@ -110,7 +115,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     // Command: add inline comment → opens draft card in sidebar
     this.addCommand({
       id: 'add-inline-comment',
-      name: '添加划线评论',
+      name: t('添加划线评论'),
       editorCallback: (editor) => this.addCommentFromSelection(editor),
     });
 
@@ -120,7 +125,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
         if (!editor.getSelection()) return;
         menu.addItem((item) =>
           item
-            .setTitle('添加划线评论')
+            .setTitle(t('添加划线评论'))
             .setIcon('message-square')
             .setSection('selection')
             .onClick(() => this.addCommentFromSelection(editor)),
@@ -131,7 +136,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     // Command: open/reveal comments panel
     this.addCommand({
       id: 'open-comments-panel',
-      name: '打开评论面板',
+      name: t('打开评论面板'),
       callback: async () => {
         await this.activatePanel();
       },
@@ -140,7 +145,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     // Command: open deletion history
     this.addCommand({
       id: 'open-comment-history',
-      name: '查看评论删除历史',
+      name: t('查看评论删除历史'),
       callback: () => {
         new HistoryModal(this.app, this).open();
       },
@@ -149,28 +154,28 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     // Command: deliver pending @ mentions now (full sweep)
     this.addCommand({
       id: 'deliver-mentions-now',
-      name: '投递未送达的 @ 留言（全库扫描）',
+      name: t('投递未送达的 @ 留言（全库扫描）'),
       callback: () => void this.mentionDelivery.sweep(true),
     });
 
     // Command: manage @-mention members
     this.addCommand({
       id: 'manage-comment-members',
-      name: '管理评论 @ 成员',
+      name: t('管理评论 @ 成员'),
       callback: () => new MembersModal(this.app).open(),
     });
 
     // Command: document-level AI conversation block
     this.addCommand({
       id: 'start-or-continue-global-thread',
-      name: '开始/继续文档对话',
+      name: t('开始/继续文档对话'),
       callback: () => {
         this.openGlobalThreadModal();
       },
     });
 
     // Ribbon icon
-    this.addRibbonIcon('message-square', '评论面板', async () => {
+    this.addRibbonIcon('message-square', t('评论面板'), async () => {
       await this.activatePanel();
     });
 
@@ -201,7 +206,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       () => ({ enabled: this.settings.enableMentionDelivery, mailboxRoot: this.settings.mailboxRoot }),
       (msg) => new Notice(msg),
       (c, relPath, letterPath) => {
-        this.notifyDesktop(`评论区有新留言给 ${c.name}`, `${relPath.split('/').pop()} · 它下一次说话/收尾时会看到`);
+        this.notifyDesktop(t('评论区有新留言给 {0}', [c.name]), t('{0} · 它下一次说话/收尾时会看到', [relPath.split('/').pop()]));
         void this.maybeAutoStart(c, letterPath);
       },
     );
@@ -240,24 +245,24 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     const script = this.hookScriptPath();
     const root = this.mailboxRootAbs();
     if (!script || !root) return null;
-    try { return await getHookStatus(script, root); } catch { return null; }
+    try { return await getHookStatus(script, root, getLocale()); } catch { return null; }
   }
 
   /** Write the hook script and register it in ~/.claude/settings.json (idempotent, backed up) */
   async installHooks(): Promise<{ backup?: string; settingsPath: string } | null> {
-    if (!Platform.isDesktop) { new Notice('唤醒 hook 只能在桌面端安装'); return null; }
+    if (!Platform.isDesktop) { new Notice(t('唤醒 hook 只能在桌面端安装')); return null; }
     const script = this.hookScriptPath();
     const root = this.mailboxRootAbs();
-    if (!script || !root) { new Notice('仅桌面端支持安装唤醒 hook'); return null; }
-    const res = await installClaudeHooks(script, root);
-    new Notice(`唤醒 hook 已安装到 ${res.settingsPath}${res.backup ? '（原文件已备份）' : ''}`);
+    if (!script || !root) { new Notice(t('仅桌面端支持安装唤醒 hook')); return null; }
+    const res = await installClaudeHooks(script, root, getLocale());
+    new Notice(t('唤醒 hook 已安装到 {0}{1}', [res.settingsPath, res.backup ? '（原文件已备份）' : '']));
     return res;
   }
 
   async uninstallHooks(): Promise<void> {
     if (!Platform.isDesktop) return;
     await uninstallClaudeHooks();
-    new Notice('唤醒 hook 已移除');
+    new Notice(t('唤醒 hook 已移除'));
   }
 
   /** macOS notification (best-effort, desktop only) */
@@ -272,11 +277,11 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
 
   /** Open a terminal that resumes (or starts) the given session in its directory (macOS) */
   async resumeInTerminal(sessionId: string, cwd?: string): Promise<void> {
-    if (!Platform.isDesktop) { new Notice('在终端恢复会话只支持桌面端'); return; }
+    if (!Platform.isDesktop) { new Notice(t('在终端恢复会话只支持桌面端')); return; }
     const exists = await sessionFileExists(sessionId);
     const plan = buildLaunchPlan({ sessionId, cwd: cwd || this.vaultBasePath() || process.cwd(), exists });
     const r = await launchInTerminal(plan);
-    if (r === 'unsupported') new Notice('仅 macOS 支持在终端启动会话');
+    if (r === 'unsupported') new Notice(t('仅 macOS 支持在终端启动会话'));
   }
 
   /**
@@ -296,16 +301,16 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       if (!raw.includes('status: 未读')) return; // already handed over by the hook
       await adapter.write(letterPath, raw.replace('status: 未读', 'status: 已读（启动代标）'));
       const body = raw.split('\n---\n').slice(1).join('\n---\n');
-      const prompt = buildLaunchPrompt(c.name, body, todayIsoDate());
+      const prompt = buildLaunchPrompt(c.name, body, todayIsoDate(), getLocale());
       const promptFile = await writePromptFile(c.sessionId, prompt);
       const exists = await sessionFileExists(c.sessionId);
       const plan = buildLaunchPlan({ sessionId: c.sessionId, cwd: c.cwd || this.vaultBasePath() || process.cwd(), promptFile, exists });
       const r = await launchInTerminal(plan);
-      if (r === 'launched') new Notice(`已在终端${plan.mode === 'new' ? '启动' : '恢复'}会话「${c.name}」，留言已交给它`);
-      else if (r === 'unsupported') new Notice(`「${c.name}」未在运行，且当前平台不支持自动启动`);
+      if (r === 'launched') new Notice(t('已在终端{0}会话「{1}」，留言已交给它', [plan.mode === 'new' ? '启动' : '恢复', c.name]));
+      else if (r === 'unsupported') new Notice(t('「{0}」未在运行，且当前平台不支持自动启动', [c.name]));
     } catch (err) {
       console.error('[ilc] auto-start failed', err);
-      new Notice(`自动启动「${c.name}」失败：${String((err as Error)?.message ?? err)}`);
+      new Notice(t('自动启动「{0}」失败：{1}', [c.name, String((err as Error)?.message ?? err)]));
     }
   }
 
@@ -452,7 +457,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
   private openGlobalThreadModal(): void {
     const file = this.app.workspace.getActiveFile();
     if (!file || file.extension !== 'md') {
-      new Notice('请先打开一篇 Markdown 笔记');
+      new Notice(t('请先打开一篇 Markdown 笔记'));
       return;
     }
 
@@ -463,13 +468,13 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
 
   private async continueGlobalThread(file: TFile, message: string): Promise<void> {
     if (this.runningGlobalThreads.has(file.path)) {
-      new Notice('文档对话正在进行中');
+      new Notice(t('文档对话正在进行中'));
       return;
     }
 
     const absolutePath = this.getAbsoluteFilePath(file);
     if (!absolutePath) {
-      new Notice('文档对话需要桌面文件系统路径，当前 vault adapter 不支持');
+      new Notice(t('文档对话需要桌面文件系统路径，当前 vault adapter 不支持'));
       return;
     }
 
@@ -488,10 +493,10 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
         text: message,
       });
       const expectedBlock = parseGlobalThreadBlock(contentWithUserMessage);
-      if (!expectedBlock) throw new Error('无法创建文档对话块');
+      if (!expectedBlock) throw new Error(t('无法创建文档对话块'));
 
       await this.app.vault.modify(file, contentWithUserMessage);
-      new Notice(`文档对话：正在请求 ${aiName}...`);
+      new Notice(t('文档对话：正在请求 {0}...', [aiName]));
 
       await this.runGlobalThreadEngine(engine, absolutePath, aiName, date);
 
@@ -500,7 +505,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       this.refreshActiveMarkdownView(file, after, contentWithUserMessage);
 
       if (!afterBlock) {
-        new Notice('文档对话：AI 执行完成，但全局对话块未解析成功，请检查', 10000);
+        new Notice(t('文档对话：AI 执行完成，但全局对话块未解析成功，请检查'), 10000);
         return;
       }
 
@@ -511,16 +516,16 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       const appendedReply = afterBlock.entries.length > expectedBlock.entries.length;
 
       if (!onlyThreadChanged) {
-        new Notice('文档对话：AI 已返回，但检测到块外内容变化，请检查文档', 10000);
+        new Notice(t('文档对话：AI 已返回，但检测到块外内容变化，请检查文档'), 10000);
       } else if (!appendedReply) {
-        new Notice('文档对话：AI 已返回，但未检测到新增回复', 10000);
+        new Notice(t('文档对话：AI 已返回，但未检测到新增回复'), 10000);
       } else {
-        new Notice('文档对话：AI 回复已写回');
+        new Notice(t('文档对话：AI 回复已写回'));
       }
     } catch (error) {
       const messageText = formatProcessError(error);
       console.error('ILC: global thread engine failed:', messageText);
-      new Notice(`文档对话：AI 应答失败：${messageText}`, 10000);
+      new Notice(t('文档对话：AI 应答失败：{0}', [messageText]), 10000);
     } finally {
       this.runningGlobalThreads.delete(file.path);
     }
@@ -532,26 +537,26 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     annotationFrom: number,
     agentName: string,
   ): Promise<void> {
-    if (!Platform.isDesktop) { new Notice('请 AI 直接回应只支持桌面端'); return; }
+    if (!Platform.isDesktop) { new Notice(t('请 AI 直接回应只支持桌面端')); return; }
     const lockKey = `${file.path}:${annotationFrom}`;
     if (this.runningAgentReplies.has(lockKey)) {
-      new Notice('评论回应正在进行中');
+      new Notice(t('评论回应正在进行中'));
       return;
     }
 
     const registeredAgent = this.getRegisteredAgentSession(agentName);
     if (!registeredAgent) {
-      new Notice('未找到已注册会话: ' + agentName);
+      new Notice(t('未找到已注册会话: ') + agentName);
       return;
     }
     if (registeredAgent.resumeType !== 'claude-resume') {
-      new Notice('暂不支持会话类型: ' + registeredAgent.resumeType);
+      new Notice(t('暂不支持会话类型: ') + registeredAgent.resumeType);
       return;
     }
 
     const absolutePath = this.getAbsoluteFilePath(file);
     if (!absolutePath) {
-      new Notice('评论回应需要桌面文件系统路径，当前 vault adapter 不支持');
+      new Notice(t('评论回应需要桌面文件系统路径，当前 vault adapter 不支持'));
       return;
     }
 
@@ -567,7 +572,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
         (item) => item.from === annotationFrom,
       );
       if (!annotation) {
-        new Notice('评论回应：未找到目标评论块', 10000);
+        new Notice(t('评论回应：未找到目标评论块'), 10000);
         return;
       }
 
@@ -583,7 +588,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
         date,
       });
 
-      new Notice(`评论回应：正在请求 ${registeredAgent.agent.name}...`);
+      new Notice(t('评论回应：正在请求 {0}...', [registeredAgent.agent.name]));
       const replyOutput = await runHeadlessCommandCapture(
         'claude',
         ['--print', '--resume', registeredAgent.sessionId, '-p', prompt],
@@ -592,7 +597,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       const replyText = cleanReplyText(replyOutput);
 
       if (!replyText) {
-        new Notice('评论回应：Agent 未返回内容', 10000);
+        new Notice(t('评论回应：Agent 未返回内容'), 10000);
         return;
       }
 
@@ -604,23 +609,23 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       };
       const current = await this.app.vault.read(file);
       if (current !== before) {
-        new Notice('评论回应：文档已变更，请重试', 10000);
+        new Notice(t('评论回应：文档已变更，请重试'), 10000);
         return;
       }
       const after = appendReply(before, annotationFrom, reply);
       await this.app.vault.modify(file, after);
-      this.refreshActiveMarkdownView(file, after, before, '评论回应');
+      this.refreshActiveMarkdownView(file, after, before, t('评论回应'));
       await this.appendAgentReplyLog(
         cwd,
         registeredAgent.agent.name,
         file,
         annotation.highlightText,
       );
-      new Notice('评论回应：AI 回复已写回');
+      new Notice(t('评论回应：AI 回复已写回'));
     } catch (error) {
       const messageText = formatProcessError(error);
       console.error('ILC: agent reply failed:', messageText);
-      new Notice(`评论回应：AI 应答失败：${messageText}`, 10000);
+      new Notice(t('评论回应：AI 应答失败：{0}', [messageText]), 10000);
     } finally {
       this.runningAgentReplies.delete(lockKey);
     }
@@ -712,7 +717,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     file: TFile,
     latestContent: string,
     expectedBeforeAI: string,
-    contextLabel = '文档对话',
+    contextLabel = t('文档对话'),
   ): void {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     if (!view || view.file?.path !== file.path) return;
@@ -724,7 +729,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       return;
     }
 
-    new Notice(`${contextLabel}：当前编辑器已有新改动，未强制刷新视图`, 8000);
+    new Notice(t('{0}：当前编辑器已有新改动，未强制刷新视图', [contextLabel]), 8000);
   }
 
   /**
@@ -895,8 +900,8 @@ class ILCSettingTab extends PluginSettingTab {
 
     // ── Author ──
     new Setting(containerEl)
-      .setName('默认署名')
-      .setDesc('添加评论时使用的作者名')
+      .setName(t('默认署名'))
+      .setDesc(t('添加评论时使用的作者名'))
       .addText((text) =>
         text
           .setValue(this.plugin.settings.authorName)
@@ -907,8 +912,8 @@ class ILCSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('头像颜色')
-      .setDesc('评论头像的背景色')
+      .setName(t('头像颜色'))
+      .setDesc(t('评论头像的背景色'))
       .addColorPicker((cp) =>
         cp
           .setValue(this.plugin.settings.avatarBg)
@@ -919,9 +924,9 @@ class ILCSettingTab extends PluginSettingTab {
       );
 
     // ── Comment types ──
-    new Setting(containerEl).setName('评论类型').setHeading();
+    new Setting(containerEl).setName(t('评论类型')).setHeading();
     containerEl.createEl('p', {
-      text: '每个类型对应一个快捷标签。内置类型（agree/disagree 等）颜色由样式表控制；自定义类型按所选颜色着色。',
+      text: t('每个类型对应一个快捷标签。内置类型（agree/disagree 等）颜色由样式表控制；自定义类型按所选颜色着色。'),
       cls: 'setting-item-description',
     });
 
@@ -929,11 +934,11 @@ class ILCSettingTab extends PluginSettingTab {
     this.renderTypesList(typesEl);
 
     new Setting(containerEl).addButton((btn) =>
-      btn.setButtonText('+ 添加类型').onClick(async () => {
+      btn.setButtonText(t('+ 添加类型')).onClick(async () => {
         this.plugin.settings.commentTypes.push({
           id: 'custom',
           emoji: '💬',
-          label: '自定义',
+          label: t('自定义'),
           color: '#9C27B0',
         });
         await this.plugin.saveSettings();
@@ -942,9 +947,9 @@ class ILCSettingTab extends PluginSettingTab {
     );
 
     // ── AI agents ──
-    new Setting(containerEl).setName('AI 助手').setHeading();
+    new Setting(containerEl).setName(t('AI 助手')).setHeading();
     containerEl.createEl('p', {
-      text: '当评论作者名与此处配置的 AI 名称匹配时，会显示对应的头像和颜色。',
+      text: t('当评论作者名与此处配置的 AI 名称匹配时，会显示对应的头像和颜色。'),
       cls: 'setting-item-description',
     });
 
@@ -952,7 +957,7 @@ class ILCSettingTab extends PluginSettingTab {
     this.renderAgentsList(agentsEl);
 
     new Setting(containerEl).addButton((btn) =>
-      btn.setButtonText('+ 添加 AI 助手').onClick(async () => {
+      btn.setButtonText(t('+ 添加 AI 助手')).onClick(async () => {
         this.plugin.settings.aiAgents.push({
           id: `agent-${Date.now()}`,
           name: 'NewAgent',
@@ -966,8 +971,8 @@ class ILCSettingTab extends PluginSettingTab {
 
     // ── Default AI agent ──
     new Setting(containerEl)
-      .setName('默认 AI 助手')
-      .setDesc('点击「请 AI 回应」时，默认请求哪个 AI')
+      .setName(t('默认 AI 助手'))
+      .setDesc(t('点击「请 AI 回应」时，默认请求哪个 AI'))
       .addDropdown((drop) => {
         for (const agent of this.plugin.settings.aiAgents) {
           drop.addOption(agent.id, agent.name);
@@ -982,11 +987,11 @@ class ILCSettingTab extends PluginSettingTab {
 
     // ── Document-level thread engine ──
     new Setting(containerEl)
-      .setName('文档对话引擎')
-      .setDesc('「开始/继续文档对话」命令调用的 headless 引擎')
+      .setName(t('文档对话引擎'))
+      .setDesc(t('「开始/继续文档对话」命令调用的 headless 引擎'))
       .addDropdown((drop) => {
         drop.addOption('claude', 'Claude CLI');
-        drop.addOption('glm', 'GLM 脚本');
+        drop.addOption('glm', t('GLM 脚本'));
         drop.setValue(this.plugin.settings.globalThreadEngine);
         drop.onChange(async (value) => {
           this.plugin.settings.globalThreadEngine =
@@ -999,10 +1004,26 @@ class ILCSettingTab extends PluginSettingTab {
     // ── Agent registry (评论互动成员) ──
     renderAgentRegistrySection(containerEl, this.app);
 
+    // ── Language ──
+    new Setting(containerEl)
+      .setName(t('语言'))
+      .setDesc(t('面板、设置和提示的语言。命令名和视图标题在重启 Obsidian 后更新。'))
+      .addDropdown((d) =>
+        d.addOptions({ auto: t('跟随 Obsidian'), zh: '中文', en: 'English' })
+          .setValue(this.plugin.settings.language)
+          .onChange(async (v) => {
+            this.plugin.settings.language = v as 'auto' | 'zh' | 'en';
+            await this.plugin.saveSettings();
+            setLocale(this.plugin.settings.language);
+            this.display();
+            for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_COMMENTS)) void (leaf.view as CommentPanel).refresh();
+          }),
+      );
+
     // ── Unread signal ──
     new Setting(containerEl)
-      .setName('未读通知')
-      .setDesc('别人（或 AI）的回复带红点、面板顶部显示未读数、文件目录里对应文档显示红色角标，看完点「标为已读」。关闭后这些都不出现。')
+      .setName(t('未读通知'))
+      .setDesc(t('别人（或 AI）的回复带红点、面板顶部显示未读数、文件目录里对应文档显示红色角标，看完点「标为已读」。关闭后这些都不出现。'))
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.enableUnreadSignal)
@@ -1019,8 +1040,8 @@ class ILCSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('投递 @ 留言到信箱')
-      .setDesc('评论里带「通知对方」的 @ 会写成一封信放进对方信箱（插件内置，不再依赖 cron 脚本）。文档保存后约 1.5 秒投递；启动时全库补扫一次。')
+      .setName(t('投递 @ 留言到信箱'))
+      .setDesc(t('评论里带「通知对方」的 @ 会写成一封信放进对方信箱（插件内置，不再依赖 cron 脚本）。文档保存后约 1.5 秒投递；启动时全库补扫一次。'))
       .addToggle((t) =>
         t.setValue(this.plugin.settings.enableMentionDelivery).onChange(async (v) => {
           this.plugin.settings.enableMentionDelivery = v;
@@ -1028,21 +1049,21 @@ class ILCSettingTab extends PluginSettingTab {
         }),
       );
     const hookSetting = new Setting(containerEl)
-      .setName('唤醒 hook（Claude Code）')
-      .setDesc('装进 ~/.claude/settings.json 的三条 hook：会话说话前 / 收尾时 / 恢复时自动把新留言递给它并附回复方法。只添加自己的条目，安装前自动备份原文件。');
+      .setName(t('唤醒 hook（Claude Code）'))
+      .setDesc(t('装进 ~/.claude/settings.json 的三条 hook：会话说话前 / 收尾时 / 恢复时自动把新留言递给它并附回复方法。只添加自己的条目，安装前自动备份原文件。'));
     void (async () => {
       const st = await this.plugin.hookStatus();
-      if (!st) { hookSetting.setDesc('仅桌面端可用。'); return; }
-      hookSetting.setDesc(`${st.installed ? (st.stale ? '已安装（路径已变，建议重装）' : '已安装') : '未安装'} · ${st.settingsPath}`);
+      if (!st) { hookSetting.setDesc(t('仅桌面端可用。')); return; }
+      hookSetting.setDesc(t('{0} · {1}', [st.installed ? (st.stale ? '已安装（路径已变，建议重装）' : '已安装') : '未安装', st.settingsPath]));
       hookSetting.addButton((b) =>
-        b.setButtonText(st.installed ? '重新安装' : '安装').setCta().onClick(async () => {
+        b.setButtonText(st.installed ? t('重新安装') : t('安装')).setCta().onClick(async () => {
           await this.plugin.installHooks();
           this.display();
         }),
       );
       if (st.installed) {
         hookSetting.addButton((b) =>
-          b.setButtonText('移除').onClick(async () => {
+          b.setButtonText(t('移除')).onClick(async () => {
             await this.plugin.uninstallHooks();
             this.display();
           }),
@@ -1051,8 +1072,8 @@ class ILCSettingTab extends PluginSettingTab {
     })();
 
     new Setting(containerEl)
-      .setName('信箱根目录')
-      .setDesc(`vault 内相对路径，信放在 <根目录>/<会话短 id>/ 下。默认 ${DEFAULT_MAILBOX_ROOT}。`)
+      .setName(t('信箱根目录'))
+      .setDesc(t('vault 内相对路径，信放在 <根目录>/<会话短 id>/ 下。默认 {0}。', [DEFAULT_MAILBOX_ROOT]))
       .addText((t) =>
         t.setPlaceholder(DEFAULT_MAILBOX_ROOT).setValue(this.plugin.settings.mailboxRoot).onChange(async (v) => {
           const clean = v.trim().replace(/^\/+|\/+$/g, '');
@@ -1060,14 +1081,14 @@ class ILCSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }),
       )
-      .addButton((b) => b.setButtonText('立即全库投递').onClick(() => void this.plugin.mentionDelivery.sweep(true)));
+      .addButton((b) => b.setButtonText(t('立即全库投递')).onClick(() => void this.plugin.mentionDelivery.sweep(true)));
 
     const bgSetting = new Setting(containerEl)
-      .setName('面板背景')
-      .setDesc('评论面板的底色：跟随侧栏＝主题侧栏色；跟随正文＝与编辑区同色；自定义＝右侧取色。')
+      .setName(t('面板背景'))
+      .setDesc(t('评论面板的底色：跟随侧栏＝主题侧栏色；跟随正文＝与编辑区同色；自定义＝右侧取色。'))
       .addDropdown((d) =>
         d
-          .addOptions({ sidebar: '跟随侧栏', editor: '跟随正文', custom: '自定义颜色' })
+          .addOptions({ sidebar: t('跟随侧栏'), editor: t('跟随正文'), custom: t('自定义颜色') })
           .setValue(this.plugin.settings.panelBackground)
           .onChange(async (value) => {
             this.plugin.settings.panelBackground = value as ILCSettings['panelBackground'];
@@ -1105,7 +1126,7 @@ class ILCSettingTab extends PluginSettingTab {
 
       const idIn = row.createEl('input', {
         cls: 'ilc-settings-input-id',
-        attr: { type: 'text', value: type.id, title: '类型 ID（写入 Markdown）', placeholder: 'id' },
+        attr: { type: 'text', value: type.id, title: t('类型 ID（写入 Markdown）'), placeholder: 'id' },
       }) as HTMLInputElement;
       idIn.addEventListener('change', async () => {
         type.id = idIn.value.trim().replace(/\s+/g, '_') || 'custom';
@@ -1114,7 +1135,7 @@ class ILCSettingTab extends PluginSettingTab {
 
       const labelIn = row.createEl('input', {
         cls: 'ilc-settings-input-label',
-        attr: { type: 'text', value: type.label, title: '显示标签', placeholder: '标签' },
+        attr: { type: 'text', value: type.label, title: t('显示标签'), placeholder: t('标签') },
       }) as HTMLInputElement;
       labelIn.addEventListener('change', async () => {
         type.label = labelIn.value.trim() || type.id;
@@ -1123,7 +1144,7 @@ class ILCSettingTab extends PluginSettingTab {
 
       const colorIn = row.createEl('input', {
         cls: 'ilc-settings-input-color',
-        attr: { type: 'color', value: type.color, title: '颜色' },
+        attr: { type: 'color', value: type.color, title: t('颜色') },
       }) as HTMLInputElement;
       colorIn.addEventListener('change', async () => {
         type.color = colorIn.value;
@@ -1133,7 +1154,7 @@ class ILCSettingTab extends PluginSettingTab {
       const delBtn = row.createEl('button', {
         cls: 'ilc-settings-del-btn',
         text: '×',
-        attr: { title: '删除' },
+        attr: { title: t('删除') },
       });
       delBtn.addEventListener('click', async () => {
         this.plugin.settings.commentTypes.splice(i, 1);
@@ -1156,7 +1177,7 @@ class ILCSettingTab extends PluginSettingTab {
 
       const nameIn = row.createEl('input', {
         cls: 'ilc-settings-input-label',
-        attr: { type: 'text', value: agent.name, title: '显示名称', placeholder: '名称' },
+        attr: { type: 'text', value: agent.name, title: t('显示名称'), placeholder: t('名称') },
       }) as HTMLInputElement;
       nameIn.addEventListener('change', async () => {
         agent.name = nameIn.value.trim() || 'Agent';
@@ -1165,7 +1186,7 @@ class ILCSettingTab extends PluginSettingTab {
 
       const charIn = row.createEl('input', {
         cls: 'ilc-settings-input-emoji',
-        attr: { type: 'text', value: agent.avatarChar, title: '头像字符（1个字符）', maxlength: '2' },
+        attr: { type: 'text', value: agent.avatarChar, title: t('头像字符（1个字符）'), maxlength: '2' },
       }) as HTMLInputElement;
       charIn.addEventListener('change', async () => {
         agent.avatarChar = charIn.value.trim().charAt(0).toUpperCase() || 'A';
@@ -1175,7 +1196,7 @@ class ILCSettingTab extends PluginSettingTab {
 
       const colorIn = row.createEl('input', {
         cls: 'ilc-settings-input-color',
-        attr: { type: 'color', value: agent.avatarBg, title: '头像背景色' },
+        attr: { type: 'color', value: agent.avatarBg, title: t('头像背景色') },
       }) as HTMLInputElement;
       colorIn.addEventListener('change', async () => {
         agent.avatarBg = colorIn.value;
@@ -1188,8 +1209,8 @@ class ILCSettingTab extends PluginSettingTab {
         attr: {
           type: 'text',
           value: agent.sessionId ?? '',
-          title: '会话 ID',
-          placeholder: 'claude session id（填了才能 @它回应）',
+          title: t('会话 ID'),
+          placeholder: t('claude session id（填了才能 @它回应）'),
         },
       }) as HTMLInputElement;
       sessionIn.addEventListener('change', async () => {
@@ -1203,14 +1224,14 @@ class ILCSettingTab extends PluginSettingTab {
         row.createEl('span', {
           cls: 'ilc-settings-session-tag',
           text: 'claude-resume',
-          attr: { title: '会话类型' },
+          attr: { title: t('会话类型') },
         });
       }
 
       const delBtn = row.createEl('button', {
         cls: 'ilc-settings-del-btn',
         text: '×',
-        attr: { title: '删除' },
+        attr: { title: t('删除') },
       });
       delBtn.addEventListener('click', async () => {
         this.plugin.settings.aiAgents.splice(i, 1);

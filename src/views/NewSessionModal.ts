@@ -1,3 +1,4 @@
+import { t } from '../i18n.ts';
 import { App, Modal, Notice, Setting } from 'obsidian';
 import { upsertAgent, validateName } from '../registry.ts';
 import type { RosterEntry } from '../atSelector.ts';
@@ -44,29 +45,29 @@ export class NewSessionModal extends Modal {
   onOpen(): void {
     const { contentEl } = this;
     contentEl.addClass('ilc-newsession-modal');
-    contentEl.createEl('h2', { text: '新会话' });
+    contentEl.createEl('h2', { text: t('新会话') });
     contentEl.createEl('p', {
       cls: 'ilc-members-intro',
-      text: '起个名字。你在评论里 @ 它并发送后，插件会在终端里启动一个真正的 Claude Code 会话，把留言作为第一句话交给它；它会把回复写回文档，之后你可以继续在终端或评论里跟它聊。',
+      text: t('起个名字。你在评论里 @ 它并发送后，插件会在终端里启动一个真正的 Claude Code 会话，把留言作为第一句话交给它；它会把回复写回文档，之后你可以继续在终端或评论里跟它聊。'),
     });
 
     let nameInput: HTMLInputElement | null = null;
     new Setting(contentEl)
-      .setName('名字')
-      .setDesc('2–12 个字，评论里就用 @这个名字')
-      .addText((t) => {
-        nameInput = t.inputEl;
-        t.setPlaceholder('例如：日记助理').setValue(this.name).onChange((v) => { this.name = v; });
-        t.inputEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); void this.submit(); } });
+      .setName(t('名字'))
+      .setDesc(t('2–12 个字，评论里就用 @这个名字'))
+      .addText((txt) => {
+        nameInput = txt.inputEl;
+        txt.setPlaceholder(t('例如：日记助理')).setValue(this.name).onChange((v) => { this.name = v; });
+        txt.inputEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); void this.submit(); } });
       });
     new Setting(contentEl)
-      .setName('工作目录')
-      .setDesc('会话在哪个目录启动；默认 vault 根目录，这样它能直接读写文档')
-      .addText((t) => t.setValue(this.cwd).onChange((v) => { this.cwd = v.trim() || defaultSessionCwd(this.app); }));
+      .setName(t('工作目录'))
+      .setDesc(t('会话在哪个目录启动；默认 vault 根目录，这样它能直接读写文档'))
+      .addText((txt) => txt.setValue(this.cwd).onChange((v) => { this.cwd = v.trim() || defaultSessionCwd(this.app); }));
 
     new Setting(contentEl)
-      .addButton((b) => b.setButtonText('取消').onClick(() => this.close()))
-      .addButton((b) => b.setButtonText('创建并 @').setCta().onClick(() => void this.submit()));
+      .addButton((b) => b.setButtonText(t('取消')).onClick(() => this.close()))
+      .addButton((b) => b.setButtonText(t('创建并 @')).setCta().onClick(() => void this.submit()));
 
     window.setTimeout(() => nameInput?.focus(), 50);
   }

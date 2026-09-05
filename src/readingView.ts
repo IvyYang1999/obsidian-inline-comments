@@ -1,3 +1,4 @@
+import { t } from './i18n.ts';
 import type { MarkdownPostProcessorContext } from 'obsidian';
 import { isResolved, parseAnnotations } from './parser.ts';
 
@@ -80,7 +81,7 @@ export function readingPostProcessor(host: ReadingHost) {
       const bg = resolved ? null : host.highlightBg?.(firstType);
       if (bg) span.setCssProps({ '--ilc-hl-bg': bg });
       const badge = createSpan({ cls: 'ilc-badge', text: String(ann.comments.filter((c) => c.type !== 'resolve' && c.type !== 'react').length) });
-      badge.title = `${ann.comments.length} 条评论 · 点击定位`;
+      badge.title = t('{0} 条评论 · 点击定位', [ann.comments.length]);
       badge.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); host.onBadgeClick?.(ann.id); });
       const frag = document.createDocumentFragment();
       frag.append(span, badge);

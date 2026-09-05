@@ -1,4 +1,5 @@
 /** Obsidian-bound half of the in-plugin mention scanner (see mentionDelivery.ts). */
+import { t } from './i18n.ts';
 import type { App, TFile } from 'obsidian';
 import { parseAnnotations } from './parser.ts';
 import { loadRoster, type RosterEntry } from './atSelector.ts';
@@ -83,7 +84,7 @@ export class MentionDelivery {
         if (!isScannable(file.path, this.mailboxRoot)) continue;
         delivered += await this.scanFileWith(file, candidates, true);
       }
-      if (notice) this.notice(delivered > 0 ? `已投递 ${delivered} 封 @ 留言` : '没有待投递的 @ 留言');
+      if (notice) this.notice(delivered > 0 ? t('已投递 {0} 封 @ 留言', [delivered]) : t('没有待投递的 @ 留言'));
       return delivered;
     } finally {
       this.sweeping = false;
@@ -144,14 +145,14 @@ export class MentionDelivery {
           dirty = true;
           if (written) {
             delivered++;
-            if (!quiet) this.notice(`已投信给 @${m.name}`);
+            if (!quiet) this.notice(t('已投信给 @{0}', [m.name]));
             try { this.onDelivered(candidate!, relPath, written); } catch { /* notification is best-effort */ }
           }
         }
       }
     }
     if (dirty) await this.saveState();
-    if (delivered > 0 && quiet) this.notice(`已投信 ${delivered} 封（${relPath.split('/').pop()}）`);
+    if (delivered > 0 && quiet) this.notice(t('已投信 {0} 封（{1}）', [delivered, relPath.split('/').pop()]));
     return delivered;
   }
 
@@ -170,8 +171,8 @@ export class MentionDelivery {
         return p;
       }
     } catch (err) {
-      console.error('[ilc] 投信失败', dir, err);
-      this.notice(`投信失败：${dir}（${String((err as Error)?.message ?? err)}）`);
+      console.error(t('[ilc] 投信失败'), dir, err);
+      this.notice(t('投信失败：{0}（{1}）', [dir, String((err as Error)?.message ?? err)]));
     }
     return null;
   }

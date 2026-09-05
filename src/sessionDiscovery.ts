@@ -10,6 +10,7 @@
  *    the id on its process command line, so "running" = a codex process exists and
  *    the log was touched in the last 15 minutes.
  */
+import { t } from './i18n.ts';
 import { nodeCp, nodeFsp, nodeOs, nodePath } from './node.ts';
 import type { FileHandle } from 'fs/promises';
 
@@ -193,12 +194,12 @@ export async function discoverLocalSessions(): Promise<LocalSession[]> {
 
 export function timeAgo(ts: number, now = Date.now()): string {
   const s = Math.max(0, Math.round((now - ts) / 1000));
-  if (s < 60) return '刚刚';
+  if (s < 60) return t('刚刚');
   const m = Math.round(s / 60);
-  if (m < 60) return `${m} 分钟前`;
+  if (m < 60) return t('{0} 分钟前', [m]);
   const h = Math.round(m / 60);
-  if (h < 24) return `${h} 小时前`;
-  return `${Math.round(h / 24)} 天前`;
+  if (h < 24) return t('{0} 小时前', [h]);
+  return t('{0} 天前', [Math.round(h / 24)]);
 }
 
 export function shortCwd(cwd: string | undefined): string | undefined {

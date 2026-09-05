@@ -32,7 +32,7 @@ export function setupVault() {
   for (const f of ['main.js', 'manifest.json', 'styles.css']) {
     fs.copyFileSync(path.join(ROOT, f), path.join(pluginDir, f));
   }
-  fs.writeFileSync(path.join(pluginDir, 'data.json'), JSON.stringify({ authorName: 'yyt' }, null, 2));
+  fs.writeFileSync(path.join(pluginDir, 'data.json'), JSON.stringify({ authorName: 'yyt', language: 'zh' }, null, 2));
   fs.writeFileSync(path.join(obs, 'community-plugins.json'), JSON.stringify([PLUGIN_ID]));
 
   // Mirror the real vault's look: theme choice, snippets, app settings

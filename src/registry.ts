@@ -1,3 +1,4 @@
+import { t } from './i18n.ts';
 import type { App } from 'obsidian';
 
 /** Self-service member registry: sessions that can be @-mentioned in comments */
@@ -45,18 +46,18 @@ export async function writeRegistry(app: App, data: RegistryFile): Promise<void>
 export function nextAutoSessionName(taken: Iterable<string>): string {
   const set = new Set([...taken]);
   for (let i = 1; i < 1000; i++) {
-    const n = `新会话${i}`;
+    const n = t('新会话{0}', [i]);
     if (!set.has(n)) return n;
   }
-  return `新会话${Date.now() % 100000}`;
+  return t('新会话{0}', [Date.now() % 100000]);
 }
 
 /** 2–12 chars, no whitespace or slashes */
 export function validateName(name: string): string | null {
   const n = name.trim();
-  if (!n) return '请输入名字';
-  if (n.length < 2 || n.length > 12) return '名字 2–12 个字';
-  if (/[\s/\\]/.test(n)) return '名字不能含空格或斜杠';
+  if (!n) return t('请输入名字');
+  if (n.length < 2 || n.length > 12) return t('名字 2–12 个字');
+  if (/[\s/\\]/.test(n)) return t('名字不能含空格或斜杠');
   return null;
 }
 
@@ -74,7 +75,7 @@ export async function upsertAgent(
   const data = await readRegistry(app);
   const name = agent.name.trim();
   const clash = data.agents.find((a) => a.name === name && a.sessionId !== agent.sessionId);
-  if (clash) return { ok: false, error: `「${name}」已被另一个会话使用` };
+  if (clash) return { ok: false, error: t('「{0}」已被另一个会话使用', [name]) };
 
   const entry: RegistryAgent = {
     name,

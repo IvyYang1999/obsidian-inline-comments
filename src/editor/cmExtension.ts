@@ -1,3 +1,4 @@
+import { t } from '../i18n.ts';
 import {
   Decoration,
   type DecorationSet,
@@ -58,7 +59,7 @@ class CommentBadgeWidget extends WidgetType {
     el.className = 'ilc-badge';
     el.textContent = String(this.count);
     el.dataset.annotationId = this.annotationId;
-    el.title = `${this.count} 条评论 · 点击定位`;
+    el.title = t('{0} 条评论 · 点击定位', [this.count]);
     // Take the click ourselves: never let CodeMirror move the cursor into the markup
     el.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
     el.addEventListener('click', (e) => {

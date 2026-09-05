@@ -37,10 +37,14 @@
 **Unread, at a glance.** Replies from other people or AI get a red dot, the panel header shows *N comments · M unread*, and the file explorer shows a red count on the document. Mark as read with one click, resolve a thread when it's done, react with an emoji. One switch turns the unread signals off.
 
 <p align="center">
-  <img src="docs/panel-en.png" width="912" alt="The comment panel after the AI session replied: unread dot, explorer badge, mark as read">
+  <img src="docs/obsidian-en.png" width="1000" alt="Obsidian with the comments panel: a question, the AI session's reply with an unread dot, a resolved thread, and the unread badge in the file explorer">
 </p>
 
 **Editing and reading view, desktop and mobile.** The same highlight and badge appear in reading view, with the raw markup hidden. Long threads fold to a preview until you expand or focus them.
+
+<p align="center">
+  <img src="docs/reading-en.png" width="1000" alt="Reading view: the same highlights and badges, a suggested edit with Accept / Decline in the panel">
+</p>
 
 **Plain text storage.** A comment is one line of CriticMarkup-style text next to the passage:
 
@@ -61,7 +65,7 @@ Obsidian 1.8+, desktop and mobile. Session discovery, the hook, and *Answer with
 ## Using @
 
 <p align="center">
-  <img src="docs/at-picker-en.png" width="760" alt="The @ picker: answer with a new session, or pick a running one">
+  <img src="docs/picker-en.png" width="420" alt="The @ picker inside a reply: answer with a new session, or pick a running one">
 </p>
 
 1. **Manage members** (from the `@` dropdown or the settings tab) lists the Claude Code / Codex sessions running on this machine. Give one a name to make it mentionable — or just `@` a name that doesn't exist yet and the plugin creates the session for you.
@@ -69,6 +73,8 @@ Obsidian 1.8+, desktop and mobile. Session discovery, the hook, and *Answer with
 3. Write `@Name` in a comment and send. The letter lands in `<vault>/<mailbox root>/<session-id-prefix>/`; the session sees it the next time it speaks or finishes, reads the note, and appends a reply.
 
 The plugin never talks to the network. Letters and replies are local files in your vault; what your AI tool does with them is up to that tool.
+
+The UI follows Obsidian's language (English or 中文); you can pin either in settings.
 
 ## Settings
 

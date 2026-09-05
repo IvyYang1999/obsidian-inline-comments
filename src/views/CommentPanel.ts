@@ -1,3 +1,4 @@
+import { t } from '../i18n.ts';
 import { ItemView, MarkdownRenderer, MarkdownView, Menu, TFile, WorkspaceLeaf } from 'obsidian';
 import { EditorView } from '@codemirror/view';
 import type { Annotation, CommentEntry } from '../types.ts';
@@ -117,7 +118,7 @@ export class CommentPanel extends ItemView {
   }
 
   getViewType(): string { return VIEW_TYPE_COMMENTS; }
-  getDisplayText(): string { return '评论'; }
+  getDisplayText(): string { return t('评论'); }
   getIcon(): string { return 'message-square'; }
 
   async onOpen(): Promise<void> {
@@ -129,7 +130,7 @@ export class CommentPanel extends ItemView {
     this.cardsZone = this.panelContainer.createEl('div', { cls: 'ilc-cards-zone' });
 
     // History button in the view header (top-right clock icon)
-    this.addAction('clock', '删除历史', () => {
+    this.addAction('clock', t('删除历史'), () => {
       new HistoryModal(this.app, this.plugin).open();
     });
 
@@ -282,7 +283,7 @@ export class CommentPanel extends ItemView {
       this.headerEl.addClass('ilc-hidden');
       this.cardsZone.createEl('div', {
         cls: 'ilc-empty',
-        text: '请打开一篇 Markdown 笔记',
+        text: t('请打开一篇 Markdown 笔记'),
       });
       return;
     }
@@ -293,7 +294,7 @@ export class CommentPanel extends ItemView {
     if (this.annotations.length === 0 && !this.draft) {
       this.cardsZone.createEl('div', {
         cls: 'ilc-empty',
-        text: '暂无评论。选中文字后按 ⌘⇧K 添加。',
+        text: t('暂无评论。选中文字后按 ⌘⇧K 添加。'),
       });
     }
 
@@ -368,16 +369,16 @@ export class CommentPanel extends ItemView {
 
     const count = this.headerEl.createEl('span', { cls: 'ilc-panel-count' });
     count.createEl('strong', { text: String(total) });
-    count.appendText(' 条评论');
+    count.appendText(t(' 条评论'));
     if (unread > 0) {
-      this.headerEl.createEl('span', { cls: 'ilc-panel-unread', text: `· ${unread} 未读` });
+      this.headerEl.createEl('span', { cls: 'ilc-panel-unread', text: t('· {0} 未读', [unread]) });
     }
     const resolvedN = this.annotations.filter(isResolved).length;
     if (resolvedN > 0) {
       const show = this.plugin.settings.showResolved;
-      const t = this.headerEl.createEl('button', { cls: 'ilc-resolved-toggle', text: `已解决 ${resolvedN}`, attr: { title: show ? '点击隐藏已解决的评论' : '点击显示已解决的评论' } });
-      t.toggleClass('is-off', !show);
-      t.addEventListener('click', async (e) => {
+      const tog = this.headerEl.createEl('button', { cls: 'ilc-resolved-toggle', text: t('已解决 {0}', [resolvedN]), attr: { title: show ? t('点击隐藏已解决的评论') : t('点击显示已解决的评论') } });
+      tog.toggleClass('is-off', !show);
+      tog.addEventListener('click', async (e) => {
         e.stopPropagation();
         this.plugin.settings.showResolved = !show;
         await this.plugin.saveSettings();
@@ -401,7 +402,7 @@ export class CommentPanel extends ItemView {
     if (needs && !has) {
       wrap.addClass('is-clamped');
       const n = wrap.querySelectorAll('.ilc-entry').length;
-      const btn = createEl('button', { cls: 'ilc-expand-btn', text: `展开全部 ${n} 条` });
+      const btn = createEl('button', { cls: 'ilc-expand-btn', text: t('展开全部 {0} 条', [n]) });
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         this.expanded.add(annId);
@@ -635,14 +636,14 @@ export class CommentPanel extends ItemView {
     });
     const cardMoreBtn = previewBar.createEl('button', {
       cls: 'ilc-more-btn',
-      attr: { 'aria-label': '更多操作' },
+      attr: { 'aria-label': t('更多操作') },
     });
     cardMoreBtn.textContent = '⋯';
     cardMoreBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       const menu = new Menu();
       menu.addItem((item) =>
-        item.setTitle('取消').setIcon('x').onClick(() => this.cancelDraft()),
+        item.setTitle(t('取消')).setIcon('x').onClick(() => this.cancelDraft()),
       );
       menu.showAtMouseEvent(e);
     });
@@ -668,7 +669,7 @@ export class CommentPanel extends ItemView {
       const btn = typeRow.createEl('button', {
         cls: `ilc-draft-type-btn ilc-draft-type-${type.id}`,
       });
-      btn.createEl('span', { cls: 'ilc-draft-type-label', text: type.label });
+      btn.createEl('span', { cls: 'ilc-draft-type-label', text: t(type.label) });
       btn.setCssProps({ '--ilc-accent': this.typeAccent(type.id) });
 
       if (type.id === d.selectedType) {
@@ -692,15 +693,15 @@ export class CommentPanel extends ItemView {
     const inputWrapper = card.createEl('div', { cls: 'ilc-draft-input-wrapper' });
     const input = inputWrapper.createEl('textarea', {
       cls: 'ilc-draft-input',
-      attr: { placeholder: '添加评论（可选）…', rows: '3' },
+      attr: { placeholder: t('添加评论（可选）…'), rows: '3' },
     });
     this.draftInputEl = input;
     attachAtSelector(input, inputWrapper, this.app);
 
     // ── 5. Action buttons (always visible) ──
     const actionRow = card.createEl('div', { cls: 'ilc-draft-actions' });
-    const cancelBtn = actionRow.createEl('button', { cls: 'ilc-draft-cancel', text: '取消' });
-    const postBtn   = actionRow.createEl('button', { cls: 'ilc-draft-post mod-cta', text: '发送' });
+    const cancelBtn = actionRow.createEl('button', { cls: 'ilc-draft-cancel', text: t('取消') });
+    const postBtn   = actionRow.createEl('button', { cls: 'ilc-draft-post mod-cta', text: t('发送') });
 
     input.addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); this.submitDraft(input.value); }
@@ -809,13 +810,13 @@ export class CommentPanel extends ItemView {
       }
     };
     if (!resolved) {
-      const resolveBtn = preview.createEl('button', { cls: 'ilc-more-btn ilc-resolve-btn', attr: { 'aria-label': '标为已解决', title: '标为已解决' } });
+      const resolveBtn = preview.createEl('button', { cls: 'ilc-more-btn ilc-resolve-btn', attr: { 'aria-label': t('标为已解决'), title: t('标为已解决') } });
       resolveBtn.textContent = '✓';
       resolveBtn.addEventListener('click', (e) => { e.stopPropagation(); void setResolved(true); });
     }
     const cardMoreBtn = preview.createEl('button', {
       cls: 'ilc-more-btn',
-      attr: { 'aria-label': '更多操作' },
+      attr: { 'aria-label': t('更多操作') },
     });
     cardMoreBtn.textContent = '⋯';
     cardMoreBtn.addEventListener('click', (e) => {
@@ -823,13 +824,13 @@ export class CommentPanel extends ItemView {
       const menu = new Menu();
       menu.addItem((item) =>
         item
-          .setTitle(resolved ? '重新打开' : '标为已解决')
+          .setTitle(resolved ? t('重新打开') : t('标为已解决'))
           .setIcon(resolved ? 'rotate-ccw' : 'check')
           .onClick(() => void setResolved(!resolved)),
       );
       menu.addItem((item) =>
         item
-          .setTitle('删除整条评论')
+          .setTitle(t('删除整条评论'))
           .setIcon('trash-2')
           .onClick(() => this.deleteWholeAnnotation(ann, file)),
       );
@@ -840,8 +841,8 @@ export class CommentPanel extends ItemView {
     if (resolved) {
       const line = card.createEl('div', { cls: 'ilc-resolved-line' });
       const last = ann.comments[ann.comments.length - 1];
-      line.createEl('span', { text: `已解决 · ${ann.comments.length - 1} 条 · ${last.author} ${last.date}` });
-      const reopen = line.createEl('button', { cls: 'ilc-reopen-btn', text: '重新打开' });
+      line.createEl('span', { text: t('已解决 · {0} 条 · {1} {2}', [ann.comments.length - 1, last.author, last.date]) });
+      const reopen = line.createEl('button', { cls: 'ilc-reopen-btn', text: t('重新打开') });
       reopen.addEventListener('click', (e) => { e.stopPropagation(); void setResolved(false); });
       this.resizeObserver?.observe(card);
       return card;
@@ -860,20 +861,20 @@ export class CommentPanel extends ItemView {
     const inputRow  = card.createEl('div', { cls: 'ilc-reply-input-row' });
     const input     = inputRow.createEl('textarea', {
       cls: 'ilc-reply-input',
-      attr: { placeholder: '写下回复…', rows: '2' },
+      attr: { placeholder: t('写下回复…'), rows: '2' },
     });
     const btnRow = inputRow.createEl('div', { cls: 'ilc-reply-btn-row' });
     // 「作为修改建议」— the reply text becomes a proposed replacement for the passage
-    const suggestLabel = btnRow.createEl('label', { cls: 'ilc-suggest-toggle', attr: { title: '把这条回复作为对划线原文的修改建议，对方可一键采纳' } });
+    const suggestLabel = btnRow.createEl('label', { cls: 'ilc-suggest-toggle', attr: { title: t('把这条回复作为对划线原文的修改建议，对方可一键采纳') } });
     const suggestBox = suggestLabel.createEl('input', { attr: { type: 'checkbox' } });
-    suggestLabel.appendText('作为修改建议');
+    suggestLabel.appendText(t('作为修改建议'));
     suggestBox.addEventListener('change', () => {
-      input.placeholder = suggestBox.checked ? '输入替换后的原文…' : '写下回复…';
+      input.placeholder = suggestBox.checked ? t('输入替换后的原文…') : t('写下回复…');
       inputRow.toggleClass('ilc-reply-suggest', suggestBox.checked);
       input.focus();
     });
     suggestLabel.addEventListener('click', (e) => e.stopPropagation());
-    const submitBtn = btnRow.createEl('button', { cls: 'ilc-reply-submit mod-cta ilc-hidden', text: '发送' });
+    const submitBtn = btnRow.createEl('button', { cls: 'ilc-reply-submit mod-cta ilc-hidden', text: t('发送') });
 
     // Show submit button only when input has content
     input.addEventListener('input', () => {
@@ -923,7 +924,7 @@ export class CommentPanel extends ItemView {
       entry.addClass('ilc-entry-pending');
       const row = entry.createEl('div', { cls: 'ilc-pending-row' });
       row.createEl('span', { cls: 'ilc-pending-spinner', text: '⏳' });
-      row.createEl('span', { cls: 'ilc-pending-label', text: `等待 ${comment.author} 回应…` });
+      row.createEl('span', { cls: 'ilc-pending-label', text: t('等待 {0} 回应…', [comment.author]) });
       const moreBtn = row.createEl('button', { cls: 'ilc-more-btn ilc-entry-more-btn', text: '⋯' });
       moreBtn.addEventListener('click', (e) => { e.stopPropagation(); this.showEntryMenu(e, ann, entryIndex, file); });
       return;
@@ -947,7 +948,7 @@ export class CommentPanel extends ItemView {
 
     header.createEl('span', { cls: 'ilc-entry-author', text: comment.author });
     if (comment.type !== 'reply') {
-      const label = typeConfig?.label ?? builtinMeta?.label ?? comment.type;
+      const label = t(typeConfig?.label ?? builtinMeta?.label ?? comment.type);
       const chip = header.createEl('span', { cls: 'ilc-entry-chip', text: label });
       chip.setCssProps({ '--ilc-accent': this.typeAccent(comment.type) });
       chip.setAttribute('title', `${emoji} ${label}`);
@@ -966,8 +967,8 @@ export class CommentPanel extends ItemView {
       box.createEl('ins', { cls: 'ilc-suggest-new', text: comment.text });
       if (comment.type === 'suggest') {
         const acts = entry.createEl('div', { cls: 'ilc-suggest-actions' });
-        const accept = acts.createEl('button', { cls: 'ilc-suggest-accept', text: '采纳' });
-        const decline = acts.createEl('button', { cls: 'ilc-suggest-decline', text: '不采纳' });
+        const accept = acts.createEl('button', { cls: 'ilc-suggest-accept', text: t('采纳') });
+        const decline = acts.createEl('button', { cls: 'ilc-suggest-decline', text: t('不采纳') });
         accept.addEventListener('click', async (e) => {
           e.stopPropagation();
           accept.disabled = decline.disabled = true;
@@ -994,19 +995,19 @@ export class CommentPanel extends ItemView {
     if (mentionedAgent && mentionedAgent.toLowerCase() !== comment.author.toLowerCase()) {
       const btn = entry.createEl('button', {
         cls: 'ilc-agent-reply-btn',
-        text: `🗨 请 ${mentionedAgent} 回应`,
+        text: t('🗨 请 {0} 回应', [mentionedAgent]),
       });
       const agentName = mentionedAgent;
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         btn.disabled = true;
-        btn.textContent = `${agentName} 思考中…`;
+        btn.textContent = t('{0} 思考中…', [agentName]);
         btn.addClass('ilc-agent-reply-pending');
         try {
           await this.plugin.requestAgentReply(file, ann.from, agentName);
         } finally {
           btn.disabled = false;
-          btn.textContent = `🗨 请 ${agentName} 回应`;
+          btn.textContent = t('🗨 请 {0} 回应', [agentName]);
           btn.removeClass('ilc-agent-reply-pending');
         }
       });
@@ -1036,7 +1037,7 @@ export class CommentPanel extends ItemView {
         }
       }
       // ☺ lives in the header next to ⋯ (both zero-width until hover) — never an invisible click target
-      const add = createEl('button', { cls: 'ilc-more-btn ilc-react-add', text: '☺', attr: { title: '添加反应', 'aria-label': '添加反应' } });
+      const add = createEl('button', { cls: 'ilc-more-btn ilc-react-add', text: '☺', attr: { title: t('添加反应'), 'aria-label': t('添加反应') } });
       header.insertBefore(add, moreBtn);
       const picker = entry.createEl('div', { cls: 'ilc-react-picker' });
       for (const emoji of ['👍', '❤️', '😂', '🙏', '👀']) {
@@ -1054,7 +1055,7 @@ export class CommentPanel extends ItemView {
       if (!tracker.isRead(readKey)) {
         entry.addClass('ilc-entry-unread');
         const footer = entry.createEl('div', { cls: 'ilc-entry-footer' });
-        const readBtn = footer.createEl('button', { cls: 'ilc-read-btn', text: '标为已读' });
+        const readBtn = footer.createEl('button', { cls: 'ilc-read-btn', text: t('标为已读') });
         readBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           entry.removeClass('ilc-entry-unread');
@@ -1079,7 +1080,7 @@ export class CommentPanel extends ItemView {
       for (const a of Array.from(container.querySelectorAll<HTMLAnchorElement>('a[href^="agent:"]'))) {
         const isNotify = a.getAttribute('href')?.includes('?notify') ?? false;
         const span = createSpan({ cls: `ilc-mention${isNotify ? ' ilc-mention-notify' : ''}`, text: a.textContent ?? '' });
-        span.setAttribute('title', isNotify ? '通知此人' : '仅引用');
+        span.setAttribute('title', isNotify ? t('通知此人') : t('仅引用'));
         a.replaceWith(span);
       }
     });
@@ -1119,13 +1120,13 @@ export class CommentPanel extends ItemView {
     if (isOnly) {
       // Only one entry — deleting it removes the whole annotation
       menu.addItem((item) =>
-        item.setTitle('删除整条评论').setIcon('trash-2')
+        item.setTitle(t('删除整条评论')).setIcon('trash-2')
           .onClick(() => this.deleteWholeAnnotation(ann, file)),
       );
     } else {
       // Multiple entries — only show "删除此条"
       menu.addItem((item) =>
-        item.setTitle('删除此条').setIcon('trash-2')
+        item.setTitle(t('删除此条')).setIcon('trash-2')
           .onClick(() => this.deleteEntry(ann, entryIndex, file)),
       );
     }

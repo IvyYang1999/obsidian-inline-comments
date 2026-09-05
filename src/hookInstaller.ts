@@ -33,8 +33,8 @@ export function claudeSettingsPath(): string {
   return nodePath().join(homeDir(), '.claude', 'settings.json');
 }
 
-export function hookCommand(scriptPath: string, mailboxRootAbs: string): string {
-  return `bash "${scriptPath}" --root "${mailboxRootAbs}"`;
+export function hookCommand(scriptPath: string, mailboxRootAbs: string, lang: 'zh' | 'en' = 'zh'): string {
+  return `bash "${scriptPath}" --root "${mailboxRootAbs}"${lang === 'en' ? ' --lang en' : ''}`;
 }
 
 /** Write (or refresh) the hook script and make it executable */
@@ -56,9 +56,9 @@ async function readSettings(file: string): Promise<ClaudeSettings> {
 
 const isOurs = (e: HookEntry) => e.hooks?.some((h) => typeof h.command === 'string' && h.command.includes(HOOK_SCRIPT_NAME));
 
-export async function getHookStatus(scriptPath: string, mailboxRootAbs: string): Promise<HookStatus> {
+export async function getHookStatus(scriptPath: string, mailboxRootAbs: string, lang: 'zh' | 'en' = 'zh'): Promise<HookStatus> {
   const settingsPath = claudeSettingsPath();
-  const command = hookCommand(scriptPath, mailboxRootAbs);
+  const command = hookCommand(scriptPath, mailboxRootAbs, lang);
   const settings = await readSettings(settingsPath);
   const hooks = settings.hooks ?? {};
   const present = HOOK_EVENTS.filter((ev) => (hooks[ev] ?? []).some(isOurs));
@@ -76,7 +76,7 @@ export async function getHookStatus(scriptPath: string, mailboxRootAbs: string):
 }
 
 /** Install (or refresh) our hook entries. Returns the backup path if one was written. */
-export async function installClaudeHooks(scriptPath: string, mailboxRootAbs: string): Promise<{ backup?: string; settingsPath: string }> {
+export async function installClaudeHooks(scriptPath: string, mailboxRootAbs: string, lang: 'zh' | 'en' = 'zh'): Promise<{ backup?: string; settingsPath: string }> {
   await writeHookScript(scriptPath);
   const settingsPath = claudeSettingsPath();
   await nodeFsp().mkdir(nodePath().dirname(settingsPath), { recursive: true });
@@ -92,7 +92,7 @@ export async function installClaudeHooks(scriptPath: string, mailboxRootAbs: str
 
   const settings = await readSettings(settingsPath);
   const hooks: Record<string, HookEntry[]> = { ...(settings.hooks ?? {}) };
-  const command = hookCommand(scriptPath, mailboxRootAbs);
+  const command = hookCommand(scriptPath, mailboxRootAbs, lang);
   for (const ev of HOOK_EVENTS) {
     const kept = (hooks[ev] ?? []).filter((e) => !isOurs(e));
     kept.push({ hooks: [{ type: 'command', command, timeout: 20 }] });

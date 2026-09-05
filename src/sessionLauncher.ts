@@ -51,7 +51,18 @@ export function runningClaudeIds(): Promise<Set<string>> {
 }
 
 /** The message a freshly started session receives: the letter + how to answer */
-export function buildLaunchPrompt(name: string, letterBody: string, today: string): string {
+export function buildLaunchPrompt(name: string, letterBody: string, today: string, lang: 'zh' | 'en' = 'zh'): string {
+  if (lang === 'en') {
+    return `📬 You have 1 new comment from Obsidian (your name in the comments: ${name}).
+${letterBody.trim()}
+
+How to reply: open the note named in the letter, find the comment block for the quoted passage (it looks like {==passage==}{>>author|date|type: text<<}), and append one entry right after that block's last <<}:
+{>>${name}|${today}|reply: your reply<<}
+To change the highlighted passage itself, append a suggestion (body = the replacement text only; put any explanation in a separate reply):
+{>>${name}|${today}|suggest: replacement text<<}
+The passage only changes when the user clicks Accept — never edit {==passage==} yourself.
+Rules: do not delete or alter existing comments or the {==passage==}; avoid consecutive << or >> in your text; read the note first if you need context. Once written, the user sees your reply in the comments panel, and may @ you again — new letters arrive here automatically.`;
+  }
   return `📬 Obsidian 评论区有 1 封新留言给你（你在评论区的名字：${name}）。
 ${letterBody.trim()}
 

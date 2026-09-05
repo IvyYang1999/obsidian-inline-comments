@@ -1,3 +1,4 @@
+import { t } from '../i18n.ts';
 import { App, Modal } from 'obsidian';
 
 type OnSubmit = (message: string) => void | Promise<void>;
@@ -15,11 +16,11 @@ export class GlobalThreadModal extends Modal {
   onOpen(): void {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createEl('h3', { text: '文档对话' });
+    contentEl.createEl('h3', { text: t('文档对话') });
 
     this.inputEl = contentEl.createEl('textarea', {
       cls: 'ilc-global-thread-input',
-      attr: { placeholder: '输入消息…', rows: '6' },
+      attr: { placeholder: t('输入消息…'), rows: '6' },
     });
 
     this.inputEl.addEventListener('keydown', (e) => {
@@ -30,12 +31,12 @@ export class GlobalThreadModal extends Modal {
     });
 
     const footer = contentEl.createEl('div', { cls: 'modal-button-container' });
-    const cancelBtn = footer.createEl('button', { text: '取消' });
+    const cancelBtn = footer.createEl('button', { text: t('取消') });
     cancelBtn.addEventListener('click', () => this.close());
 
     const submitBtn = footer.createEl('button', {
       cls: 'mod-cta',
-      text: '发送',
+      text: t('发送'),
     });
     submitBtn.addEventListener('click', () => {
       void this.submit();

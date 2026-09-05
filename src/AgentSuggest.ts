@@ -1,3 +1,4 @@
+import { t } from './i18n.ts';
 import {
   type EditorPosition,
   type EditorSuggestContext,
@@ -56,7 +57,7 @@ export class AgentSuggest extends EditorSuggest<RosterEntry> {
     const filtered = q ? entries.filter((e) => e.name.toLowerCase().includes(q)) : entries;
 
     const manageAction: RosterEntry = {
-      name: '⚙ 管理成员…',
+      name: t('⚙ 管理成员…'),
       shortId: '',
       role: '',
       status: '离线',
@@ -83,7 +84,7 @@ export class AgentSuggest extends EditorSuggest<RosterEntry> {
     el.addClass(statusClass);
 
     if (entry.source === 'registry') {
-      const label = `自助·${entry.harness ?? ''}`;
+      const label = t('自助·{0}', [entry.harness ?? '']);
       el.createEl('span', { cls: 'ilc-at-badge ilc-at-badge-idle', text: label });
     } else {
       const badgeCls =

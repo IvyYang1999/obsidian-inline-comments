@@ -1,3 +1,4 @@
+import { t } from './i18n.ts';
 import type { App } from 'obsidian';
 import { REGISTRY_PATH, readRegistry } from './registry.ts';
 import { MembersModal } from './views/MembersModal.ts';
@@ -142,14 +143,14 @@ function avatarColor(name: string): string {
 }
 
 /** Pseudo-entry shown first in the list: pick it to answer with a brand-new session */
-const NEW_SESSION_ACTION: RosterEntry = {
-  name: '用新会话回答',
+const newSessionAction = (): RosterEntry => ({
+  name: t('用新会话回答'),
   shortId: '',
-  role: '自动起名并启动一个新的 Claude Code 会话来回复',
+  role: t('自动起名并启动一个新的 Claude Code 会话来回复'),
   status: '在线',
   source: 'registry',
   isAction: true,
-};
+});
 
 /** Strip a leading role prefix like "@审计员" so the role column reads as a job title, not a mention */
 function cleanRole(role: string): string {
@@ -226,7 +227,8 @@ export function attachAtSelector(
       ? allEntries.filter((e) => e.name.toLowerCase().includes(q) || cleanRole(e.role).toLowerCase().includes(q))
       : allEntries;
     // "用新会话回答" leads the list whenever nothing specific is typed (or the label itself matches)
-    visible = !q || NEW_SESSION_ACTION.name.includes(query.trim()) ? [NEW_SESSION_ACTION, ...matches] : matches;
+    const action = newSessionAction();
+    visible = !q || action.name.includes(query.trim()) ? [action, ...matches] : matches;
     activeIndex = Math.min(activeIndex, Math.max(0, visible.length - 1));
 
     createCandidate = q && !validateName(query.trim()) ? query.trim() : null;
@@ -235,14 +237,14 @@ export function attachAtSelector(
         const item = listEl.createEl('div', { cls: 'ilc-at-item ilc-at-create is-active' });
         item.createEl('span', { cls: 'ilc-at-avatar ilc-at-avatar-new', text: '＋' });
         const main = item.createEl('span', { cls: 'ilc-at-main' });
-        main.createEl('span', { cls: 'ilc-at-name', text: `创建新会话「${createCandidate}」并 @ 它` });
-        main.createEl('span', { cls: 'ilc-at-role', text: '发送后在终端里启动一个真正的 Claude Code 会话来回复' });
+        main.createEl('span', { cls: 'ilc-at-name', text: t('创建新会话「{0}」并 @ 它', [createCandidate]) });
+        main.createEl('span', { cls: 'ilc-at-role', text: t('发送后在终端里启动一个真正的 Claude Code 会话来回复') });
         item.addEventListener('mousedown', (e) => e.preventDefault());
         item.addEventListener('click', (e) => { e.stopPropagation(); void createAndMention(createCandidate!); });
       } else {
         listEl.createEl('div', {
           cls: 'ilc-at-empty',
-          text: allEntries.length === 0 ? '还没有可以 @ 的成员——输入一个名字直接创建新会话，或点「管理成员」' : '没有匹配的成员',
+          text: allEntries.length === 0 ? t('还没有可以 @ 的成员——输入一个名字直接创建新会话，或点「管理成员」') : t('没有匹配的成员'),
         });
       }
       return;
@@ -267,8 +269,8 @@ export function attachAtSelector(
       if (entry.isAction) {
         // no source pill
       } else if (entry.source === 'registry') {
-        const pill = item.createEl('span', { cls: 'ilc-at-source', text: entry.harness ?? '会话' });
-        pill.setAttribute('title', `${entry.harness ?? ''} 会话 ${entry.shortId}，自己加入的成员`);
+        const pill = item.createEl('span', { cls: 'ilc-at-source', text: entry.harness ?? t('会话') });
+        pill.setAttribute('title', t('{0} 会话 {1}，自己加入的成员', [entry.harness ?? '', entry.shortId]));
       } else if (entry.status === '离线') {
         item.createEl('span', { cls: 'ilc-at-source ilc-at-source-muted', text: '离线' });
       }
@@ -374,9 +376,9 @@ export function attachAtSelector(
     const notifyLabel = head.createEl('label', { cls: 'ilc-at-notify' });
     notifyCb = notifyLabel.createEl('input', { attr: { type: 'checkbox' } }) as HTMLInputElement;
     notifyCb.checked = true;
-    notifyLabel.createEl('span', { text: '通知对方' });
-    notifyLabel.setAttribute('title', '勾选：对方会收到这条评论并把回复写回这里。不勾：只是提一下，不打扰。');
-    head.createEl('span', { cls: 'ilc-at-hint', text: '↑↓ 选择 · ⏎ 确认' });
+    notifyLabel.createEl('span', { text: t('通知对方') });
+    notifyLabel.setAttribute('title', t('勾选：对方会收到这条评论并把回复写回这里。不勾：只是提一下，不打扰。'));
+    head.createEl('span', { cls: 'ilc-at-hint', text: t('↑↓ 选择 · ⏎ 确认') });
 
     listEl = dropdown.createEl('div', { cls: 'ilc-at-list' });
     activeIndex = 0;
@@ -384,7 +386,7 @@ export function attachAtSelector(
 
     // Foot: new session + manage members
     const foot = dropdown.createEl('div', { cls: 'ilc-at-foot' });
-    const newItem = foot.createEl('button', { cls: 'ilc-at-new', text: '＋ 新会话…' });
+    const newItem = foot.createEl('button', { cls: 'ilc-at-new', text: t('＋ 新会话…') });
     newItem.addEventListener('mousedown', (e) => e.preventDefault());
     newItem.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -394,7 +396,7 @@ export function attachAtSelector(
       dismiss();
       new NewSessionModal(app, (entry) => insertMention(entry, atPos, notifyOn), initial).open();
     });
-    const manageItem = foot.createEl('button', { cls: 'ilc-at-manage', text: '管理成员…' });
+    const manageItem = foot.createEl('button', { cls: 'ilc-at-manage', text: t('管理成员…') });
     manageItem.addEventListener('mousedown', (e) => e.preventDefault());
     manageItem.addEventListener('click', (e) => {
       e.stopPropagation();
