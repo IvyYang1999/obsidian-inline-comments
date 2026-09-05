@@ -15,7 +15,7 @@ export const WORK = process.env.ILC_E2E_DIR || path.join(os.tmpdir(), 'ilc-e2e')
 export const REAL_VAULT = process.env.ILC_REAL_VAULT || path.join(os.homedir(), 'Vaults', 'main');
 export const PORT = Number(process.env.ILC_CDP_PORT || 9444);
 export const OBSIDIAN_BIN = '/Applications/Obsidian.app/Contents/MacOS/Obsidian';
-export const PLUGIN_ID = 'obsidian-inline-comments';
+export const PLUGIN_ID = 'inline-comments';
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -112,7 +112,7 @@ export async function waitForPlugin(page) {
 export async function openSampleWithPanel(page) {
   await page.evaluate(() => app.workspace.openLinkText('sample', '', false));
   await page.waitForSelector('.cm-editor', { timeout: 15000 });
-  await page.evaluate(() => app.commands.executeCommandById('obsidian-inline-comments:open-comments-panel'));
+  await page.evaluate(() => app.commands.executeCommandById('inline-comments:open-comments-panel'));
   await page.waitForSelector('.ilc-panel .ilc-card', { timeout: 15000 });
   await sleep(600);
 }

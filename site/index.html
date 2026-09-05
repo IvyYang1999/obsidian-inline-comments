@@ -218,10 +218,10 @@ footer .col a:hover{color:var(--ink)}
   <h1 class="h1">在笔记里<mark>划线留言</mark>，<br><span class="at">@</span> 一个 AI 会话来回复。</h1>
   <p class="lead">飞书评论的手感，搬进 Obsidian。选中一段、写下想法，评论跟着原文走；@ 一个名字，留言会送到那个 Claude Code 会话，回复直接写回文档。</p>
   <div class="cta">
-    <a class="btn primary" href="obsidian://show-plugin?id=obsidian-inline-comments"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.6 2.3 18 6.1l1.5 6.2-2.7 8.4-4.6 1.1-6.3-3.5L4.5 9.9l5.2-6.3z"/></svg>安装到 Obsidian</a>
+    <a class="btn primary" href="obsidian://show-plugin?id=inline-comments"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.6 2.3 18 6.1l1.5 6.2-2.7 8.4-4.6 1.1-6.3-3.5L4.5 9.9l5.2-6.3z"/></svg>安装到 Obsidian</a>
     <a class="btn" href="#install">用 BRAT 抢先装</a>
   </div>
-  <p class="hint">免费 · 不联网 · 桌面端体验完整</p>
+  <p class="hint">免费 · 不联网 · 桌面端</p>
 
   <div class="demo" id="demo" aria-label="插件效果演示">
     <div class="bar"><i></i><i></i><i></i><span>周报 · 8 月.md</span><button class="replay" id="replay" title="重放">↻ 重放</button></div>
@@ -314,7 +314,7 @@ footer .col a:hover{color:var(--ink)}
     <details><summary>不用 AI，只当普通评论工具行吗？</summary><p>完全可以。划线、留言、回复、已读未读，这些都不需要任何会话或联网。@ 只是一个可选项，不用就不会出现在面板里。</p></details>
     <details><summary>@ 的到底是什么？</summary><p>是你电脑上一个真实的 Claude Code（或 Codex）会话：有自己的 session id、终端窗口和记忆。插件把留言投给它、它把回复写回文档。你随时可以走到终端里接着聊，或者在评论里再 @ 它。</p></details>
     <details><summary>会把我的笔记发到哪儿去吗？</summary><p>插件本身不联网。投信是往本地一个文件夹里写文件，会话是在你自己的终端里跑；笔记出不出机器，取决于你自己配的 AI 工具，和这个插件无关。</p></details>
-    <details><summary>手机上能用吗？</summary><p>划线评论、回复、已读在手机上都能用。@ 启动终端会话这件事只在桌面端（macOS / Windows）发生——手机上 @ 的留言会等你回到桌面时再送出。</p></details>
+    <details><summary>手机上能用吗？</summary><p>目前只支持桌面端（macOS / Windows / Linux）。评论本身是纯文本，手机上打开笔记也能看到原文和评论内容，只是没有面板；移动端面板在计划里。</p></details>
     <details><summary>和我的主题合得来吗？</summary><p>面板所有颜色都是从当前主题的文字色和背景色推出来的，明暗主题、半透明主题都试过。面板底色还可以在设置里单独改。</p></details>
   </div>
 </section>

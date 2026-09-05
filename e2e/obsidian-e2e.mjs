@@ -38,7 +38,7 @@ async function run() {
     await waitForPlugin(page);
     await page.evaluate(() => app.workspace.openLinkText('sample', '', false));
     await page.waitForSelector('.cm-editor', { timeout: 15000 });
-    await page.evaluate(() => app.commands.executeCommandById('obsidian-inline-comments:open-comments-panel'));
+    await page.evaluate(() => app.commands.executeCommandById('inline-comments:open-comments-panel'));
     await page.waitForSelector('.ilc-panel .ilc-card', { timeout: 15000 });
     await sleep(600); // let layout settle
 
@@ -140,7 +140,7 @@ async function run() {
     await shot(page, '01-panel', '.workspace-leaf-content[data-type="ilc-comments-panel"]');
 
     // ── In-plugin mention delivery (replaces the cron scanner)
-    await page.evaluate(() => app.plugins.plugins['obsidian-inline-comments'].mentionDelivery.sweep(false));
+    await page.evaluate(() => app.plugins.plugins['inline-comments'].mentionDelivery.sweep(false));
     await sleep(500);
     const delivery = await page.evaluate(async () => {
       const a = app.vault.adapter;
@@ -155,7 +155,7 @@ async function run() {
     check('yyt 在回复里 @审计员 也投递', delivery.shenji === 1, `shenji=${delivery.shenji}`);
     check('Agent 的 reply 里 @费宝 不投（防自触发）', delivery.feibao === 1 && delivery.processed === 2, `processed=${delivery.processed}`);
     check('信的 frontmatter 契约', /^---\nfrom: comment-scanner\nto: 44444444-0000-1111\nto_name: 费宝\nurgency: 普通\nwake: true\nstatus: 未读\ncreated: /.test(delivery.letter), delivery.letter.split('\n').slice(0, 7).join(' | '));
-    await page.evaluate(() => app.plugins.plugins['obsidian-inline-comments'].mentionDelivery.sweep(false));
+    await page.evaluate(() => app.plugins.plugins['inline-comments'].mentionDelivery.sweep(false));
     await sleep(300);
     const again = await page.evaluate(async () => (await app.vault.adapter.list('Agent协作空间/信箱/44444444')).files.length);
     check('重扫不重复投信', again === 1, `letters=${again}`);
@@ -242,7 +242,7 @@ async function run() {
 
     // ── Mailbox hook: install into (isolated) ~/.claude/settings.json, then drive the script
     const hook = await page.evaluate(async () => {
-      const p = app.plugins.plugins['obsidian-inline-comments'];
+      const p = app.plugins.plugins['inline-comments'];
       const res = await p.installHooks();
       const st = await p.hookStatus();
       return { ...res, ...st };
@@ -252,7 +252,7 @@ async function run() {
     check('hook 写入隔离 HOME 的 settings.json（三事件各一条）', ours('UserPromptSubmit') === 1 && ours('Stop') === 1 && ours('SessionStart') === 1, JSON.stringify(Object.keys(settingsJson.hooks ?? {})));
     check('保留原有其它 hook 与设置', settingsJson.theme === 'dark' && (settingsJson.hooks.Stop ?? []).some((e) => e.hooks?.[0]?.command === 'echo other-tool'));
     check('安装前备份了原文件', !!hook.backup && fs.existsSync(hook.backup), hook.backup ?? '');
-    await page.evaluate(async () => app.plugins.plugins['obsidian-inline-comments'].installHooks());
+    await page.evaluate(async () => app.plugins.plugins['inline-comments'].installHooks());
     const againSettings = JSON.parse(fs.readFileSync(hook.settingsPath, 'utf8'));
     check('重复安装幂等（不重复追加）', (againSettings.hooks.Stop ?? []).filter((e) => e.hooks?.some((h) => h.command.includes('ilc-mailbox-hook.sh'))).length === 1);
     check('hook 脚本已写出且可执行', hook.scriptExists && (fs.statSync(hook.scriptPath).mode & 0o111) !== 0, hook.scriptPath);

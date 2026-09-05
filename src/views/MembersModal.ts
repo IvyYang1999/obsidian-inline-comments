@@ -79,7 +79,7 @@ export class MembersModal extends Modal {
   }
 
   private get plugin(): any {
-    return (this.app as any).plugins?.plugins?.['obsidian-inline-comments'];
+    return (this.app as any).plugins?.plugins?.['inline-comments'];
   }
 
   /** "投递 … · 唤醒 hook …" line with an install button when needed */

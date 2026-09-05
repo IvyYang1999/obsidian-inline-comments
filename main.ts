@@ -103,7 +103,6 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     this.addCommand({
       id: 'add-inline-comment',
       name: '添加划线评论',
-      hotkeys: [{ modifiers: ['Mod', 'Shift'], key: 'k' }],
       editorCallback: (editor) => this.addCommentFromSelection(editor),
     });
 
@@ -176,7 +175,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     // Unread reply tracker
     this.unreadTracker = new UnreadTracker(
       this.app,
-      this.manifest.dir ?? '.obsidian/plugins/obsidian-inline-comments',
+      this.manifest.dir ?? '.obsidian/plugins/inline-comments',
       () => this.settings.enableUnreadSignal,
       () => this.settings.authorName,
     );
@@ -218,7 +217,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
 
   hookScriptPath(): string | null {
     const base = this.vaultBasePath();
-    const dir = this.manifest.dir ?? '.obsidian/plugins/obsidian-inline-comments';
+    const dir = this.manifest.dir ?? '.obsidian/plugins/inline-comments';
     return base ? join(base, dir, 'hooks', HOOK_SCRIPT_NAME) : null;
   }
 

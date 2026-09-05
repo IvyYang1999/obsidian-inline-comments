@@ -105,7 +105,7 @@ export class AgentSuggest extends EditorSuggest<RosterEntry> {
   selectSuggestion(entry: RosterEntry, _evt: MouseEvent | KeyboardEvent): void {
     if (entry.isAction) {
       (this.app as any).setting.open();
-      (this.app as any).setting.openTabById('obsidian-inline-comments');
+      (this.app as any).setting.openTabById('inline-comments');
       return;
     }
 
