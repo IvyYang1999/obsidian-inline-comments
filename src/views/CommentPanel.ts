@@ -1,5 +1,5 @@
 import { t } from '../i18n.ts';
-import { ItemView, MarkdownRenderer, MarkdownView, Menu, TFile, WorkspaceLeaf } from 'obsidian';
+import { ItemView, MarkdownRenderer, MarkdownView, Menu, Platform, TFile, WorkspaceLeaf } from 'obsidian';
 import { EditorView } from '@codemirror/view';
 import type { Annotation, CommentEntry } from '../types.ts';
 import { COMMENT_TYPE_META, UNREAD_TYPES } from '../types.ts';
@@ -24,6 +24,7 @@ import { parseAtMention } from '../agentReply.ts';
 import type InlineCommentsPlugin from '../../main.ts';
 import { attachAtSelector } from '../atSelector.ts';
 import { computeReadKey } from '../unreadTracker.ts';
+import { SUGGESTED_HOTKEY, boundHotkeys, formatHotkey } from '../hotkeys.ts';
 
 export const VIEW_TYPE_COMMENTS = 'ilc-comments-panel';
 
@@ -291,12 +292,7 @@ export class CommentPanel extends ItemView {
     const content = await this.app.vault.read(file);
     this.annotations = parseAnnotations(content);
 
-    if (this.annotations.length === 0 && !this.draft) {
-      this.cardsZone.createEl('div', {
-        cls: 'ilc-empty',
-        text: t('暂无评论。选中文字后按 ⌘⇧K 添加。'),
-      });
-    }
+    if (this.annotations.length === 0 && !this.draft) this.renderEmptyHint();
 
     this.updateHeader(file);
 
@@ -768,6 +764,24 @@ export class CommentPanel extends ItemView {
     this.draftEl = null;
     this.draftInputEl = null;
     this.draft = null;
+  }
+
+  /** Empty state: the hotkey the user actually bound, or a way to bind one (plugins may not ship a default) */
+  private renderEmptyHint(): void {
+    const el = this.cardsZone.createEl('div', { cls: 'ilc-empty' });
+    const keys = boundHotkeys(this.app);
+    if (keys.length > 0) {
+      el.setText(t('暂无评论。选中文字后按 {0} 添加。', [formatHotkey(keys[0], Platform.isMacOS)]));
+      return;
+    }
+    el.createEl('div', { text: t('暂无评论。选中文字后右键「添加划线评论」。') });
+    const actions = el.createEl('div', { cls: 'ilc-empty-actions' });
+    actions
+      .createEl('button', { cls: 'ilc-empty-link ilc-hotkey-bind', text: t('设为 {0}', [formatHotkey(SUGGESTED_HOTKEY, Platform.isMacOS)]) })
+      .addEventListener('click', () => this.plugin.bindAddCommentHotkey());
+    actions
+      .createEl('button', { cls: 'ilc-empty-link ilc-hotkey-custom', text: t('自定义快捷键…') })
+      .addEventListener('click', () => this.plugin.openAddCommentHotkeySettings());
   }
 
   // ── Annotation cards ──────────────────────────────────────────────────────────

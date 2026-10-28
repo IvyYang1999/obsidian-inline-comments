@@ -142,6 +142,18 @@ function avatarColor(name: string): string {
   return `hsl(${h % 360} 42% 52%)`;
 }
 
+/**
+ * Lowest on-screen y the dropdown may use inside the panel. Obsidian's status bar
+ * floats over the bottom of the right sidebar: anything under it shows through
+ * but cannot be clicked, so the panel's own bottom edge is not enough.
+ */
+function visibleBottom(panelRect: DOMRect): number {
+  let bottom = Math.min(panelRect.bottom, window.innerHeight);
+  const bar = document.querySelector('.status-bar')?.getBoundingClientRect();
+  if (bar && bar.height > 0 && bar.left < panelRect.right && bar.right > panelRect.left && bar.top < bottom) bottom = bar.top;
+  return bottom;
+}
+
 /** Pseudo-entry shown first in the list: pick it to answer with a brand-new session */
 const newSessionAction = (): RosterEntry => ({
   name: t('用新会话回答'),
@@ -358,7 +370,7 @@ export function attachAtSelector(
       const panel = wrapper.closest('.ilc-panel') as HTMLElement | null;
       const panelRect = panel?.getBoundingClientRect();
       const taRect = textarea.getBoundingClientRect();
-      const spaceBelow = panelRect ? panelRect.bottom - taRect.bottom - 12 : Infinity;
+      const spaceBelow = panelRect ? visibleBottom(panelRect) - taRect.bottom - 12 : Infinity;
       const spaceAbove = panelRect ? taRect.top - panelRect.top - 12 : 0;
       const WANT = 280;
       if (spaceBelow < 220 && spaceAbove > spaceBelow) {

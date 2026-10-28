@@ -16,6 +16,8 @@ export const REAL_VAULT = process.env.ILC_REAL_VAULT || path.join(os.homedir(), 
 export const PORT = Number(process.env.ILC_CDP_PORT || 9444);
 export const OBSIDIAN_BIN = '/Applications/Obsidian.app/Contents/MacOS/Obsidian';
 export const PLUGIN_ID = 'inline-comments';
+/** What the native folder picker "returns" under e2e (ILC_PICK_FOLDER) */
+export const PICKED_DIR = path.join(WORK, 'picked-dir');
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -72,7 +74,7 @@ export async function launch(userdata) {
   const proc = spawn(OBSIDIAN_BIN, [`--user-data-dir=${userdata}`, `--remote-debugging-port=${PORT}`], {
     stdio: 'ignore',
     detached: false,
-    env: { ...process.env, ILC_HOME: home, ILC_LAUNCH_LOG: path.join(WORK, 'launch.log') },
+    env: { ...process.env, ILC_HOME: home, ILC_LAUNCH_LOG: path.join(WORK, 'launch.log'), ILC_PICK_FOLDER: PICKED_DIR },
   });
   const deadline = Date.now() + 40000;
   while (Date.now() < deadline) {

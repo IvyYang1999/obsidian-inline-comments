@@ -1,7 +1,21 @@
 import { t } from '../i18n.ts';
-import { App, Modal, Notice, Setting } from 'obsidian';
+import { App, Modal, Notice, Platform, Setting, type TextComponent } from 'obsidian';
 import { upsertAgent, validateName } from '../registry.ts';
 import type { RosterEntry } from '../atSelector.ts';
+import { electronRemote } from '../node.ts';
+
+/** Native folder picker; null when cancelled or unavailable. `ILC_PICK_FOLDER` answers for it in e2e. */
+async function pickFolder(title: string, start: string): Promise<string | null> {
+  if (process.env.ILC_PICK_FOLDER) return process.env.ILC_PICK_FOLDER;
+  const remote = electronRemote();
+  if (!remote?.dialog) return null;
+  const res = await remote.dialog.showOpenDialog(remote.getCurrentWindow?.(), {
+    title,
+    defaultPath: start || undefined,
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  return res.canceled ? null : res.filePaths[0] ?? null;
+}
 
 /** Register a brand-new (not yet started) Claude Code session as a member */
 export async function createSessionMember(app: App, name: string, cwd: string): Promise<RosterEntry | null> {
@@ -60,10 +74,23 @@ export class NewSessionModal extends Modal {
         txt.setPlaceholder(t('例如：日记助理')).setValue(this.name).onChange((v) => { this.name = v; });
         txt.inputEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); void this.submit(); } });
       });
-    new Setting(contentEl)
+    let cwdText: TextComponent | null = null;
+    const cwdSetting = new Setting(contentEl)
       .setName(t('工作目录'))
       .setDesc(t('会话在哪个目录启动；默认 vault 根目录，这样它能直接读写文档'))
-      .addText((txt) => txt.setValue(this.cwd).onChange((v) => { this.cwd = v.trim() || defaultSessionCwd(this.app); }));
+      .addText((txt) => {
+        cwdText = txt;
+        txt.inputEl.addClass('ilc-newsession-cwd');
+        txt.setValue(this.cwd).onChange((v) => { this.cwd = v.trim() || defaultSessionCwd(this.app); });
+      });
+    if (Platform.isDesktopApp) {
+      cwdSetting.addButton((b) => b.setButtonText(t('选择…')).onClick(async () => {
+        const dir = await pickFolder(t('选择会话的工作目录'), this.cwd);
+        if (!dir) return;
+        this.cwd = dir;
+        cwdText?.setValue(dir);
+      }));
+    }
 
     new Setting(contentEl)
       .addButton((b) => b.setButtonText(t('取消')).onClick(() => this.close()))

@@ -140,6 +140,29 @@ body {
   line-height: 1.7;
 }
 
+.ilc-empty-actions {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 6px;
+}
+
+/* Text links, not buttons: beat Obsidian's button{height;background;shadow} */
+.ilc-panel .ilc-empty-link {
+  height: auto !important;
+  padding: 0 !important;
+  background: none !important;
+  box-shadow: none !important;
+  border: none !important;
+  color: var(--text-accent);
+  font-size: inherit;
+  cursor: pointer;
+}
+
+.ilc-panel .ilc-empty-link:hover {
+  text-decoration: underline;
+}
+
 /* ─── Card ───────────────────────────────────────────────────────────────────── */
 .ilc-card {
   --ilc-accent: var(--text-muted);

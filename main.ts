@@ -23,6 +23,7 @@ import { HOOK_SCRIPT_NAME } from './src/hookScript.ts';
 import { buildLaunchPlan, buildLaunchPrompt, launchInTerminal, runningClaudeIds, sessionFileExists, writePromptFile } from './src/sessionLauncher.ts';
 import type { Candidate } from './src/mentionDelivery.ts';
 import { renderAgentRegistrySection } from './src/settings/agentRegistrySection.ts';
+import { SUGGESTED_HOTKEY, bindSuggestedHotkey, boundHotkeys, formatHotkey, openHotkeySettings, sameHotkey } from './src/hotkeys.ts';
 import {
   GLOBAL_THREAD_END_MARKER,
   GLOBAL_THREAD_START_MARKER,
@@ -282,6 +283,23 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     const plan = buildLaunchPlan({ sessionId, cwd: cwd || this.vaultBasePath() || process.cwd(), exists });
     const r = await launchInTerminal(plan);
     if (r === 'unsupported') new Notice(t('仅 macOS 支持在终端启动会话'));
+  }
+
+  /** One click: bind ⌘⇧K to 添加划线评论 as the user's own hotkey (refused if another command holds it) */
+  bindAddCommentHotkey(): void {
+    const key = formatHotkey(SUGGESTED_HOTKEY, Platform.isMacOS);
+    const res = bindSuggestedHotkey(this.app);
+    if (res.ok) new Notice(t('已设置：按 {0} 添加划线评论', [key]));
+    else {
+      new Notice(res.conflict ? t('{0} 已被「{1}」占用，请换一个', [key, res.conflict]) : t('没能自动设置，请自己选一个快捷键'));
+      this.openAddCommentHotkeySettings();
+    }
+    void this.getPanel()?.refresh();
+  }
+
+  /** Settings → Hotkeys, filtered to 添加划线评论 */
+  openAddCommentHotkeySettings(): void {
+    if (!openHotkeySettings(this.app, t('添加划线评论'))) new Notice(t('请在 设置 → 快捷键 里搜「添加划线评论」'));
   }
 
   /**
@@ -922,6 +940,22 @@ class ILCSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           }),
       );
+
+    // ── Hotkey (Obsidian does not let plugins ship a default one) ──
+    const keys = boundHotkeys(this.app);
+    const suggested = formatHotkey(SUGGESTED_HOTKEY, Platform.isMacOS);
+    const hotkeySetting = new Setting(containerEl)
+      .setName(t('添加评论快捷键'))
+      .setDesc(keys.length > 0
+        ? t('当前：{0}', [keys.map((k) => formatHotkey(k, Platform.isMacOS)).join(' / ')])
+        : t('还没设置。Obsidian 不允许插件自带默认快捷键，点「设为 {0}」由你自己绑定，或自定义一个。', [suggested]));
+    if (!keys.some((k) => sameHotkey(k, SUGGESTED_HOTKEY))) {
+      hotkeySetting.addButton((b) => b.setButtonText(t('设为 {0}', [suggested])).onClick(() => {
+        this.plugin.bindAddCommentHotkey();
+        this.display();
+      }));
+    }
+    hotkeySetting.addButton((b) => b.setButtonText(t('自定义快捷键…')).onClick(() => this.plugin.openAddCommentHotkeySettings()));
 
     // ── Comment types ──
     new Setting(containerEl).setName(t('评论类型')).setHeading();

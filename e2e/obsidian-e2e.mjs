@@ -19,7 +19,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { OUT, PLUGIN_ID, WORK, sleep, setupVault, launch, waitForPlugin, shot } from './lib.mjs';
+import { OUT, PICKED_DIR, PLUGIN_ID, WORK, sleep, setupVault, launch, waitForPlugin, shot } from './lib.mjs';
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 
@@ -292,7 +292,9 @@ async function run() {
     // ── Badge click → focus card, editor stays untouched (no raw markup reveal)
     const badgeCountBefore = await page.locator('.cm-editor .ilc-badge').count();
     const thirdId = await page.locator('.ilc-card').nth(2).getAttribute('data-annotation-id');
-    await page.locator(`.cm-editor .ilc-badge[data-annotation-id="${thirdId}"]`).click();
+    // A missing badge is a failed check, not a crash that hides every later check
+    const badgeClicked = await page.locator(`.cm-editor .ilc-badge[data-annotation-id="${thirdId}"]`).click({ timeout: 5000 }).then(() => true, () => false);
+    check('第三张卡片的角标在编辑器里', badgeClicked, `want ${thirdId}, have ${(await page.locator('.cm-editor .ilc-badge').evaluateAll((els) => els.map((e) => e.dataset.annotationId))).join(',')}`);
     await sleep(500);
     const badgeState = await page.evaluate((id) => {
       const active = document.querySelector('.ilc-card-active');
@@ -612,6 +614,111 @@ async function run() {
     } catch (e) {
       await shot(page, '04-context-menu-CRASH').catch(() => {});
       check('右键菜单流程', false, String(e.message).split('\n')[0]);
+    }
+
+    // ── Short window: every @ dropdown entry must be clickable. Obsidian's status bar floats
+    //    over the bottom of the right sidebar and used to swallow clicks on 「＋ 新会话…」.
+    {
+      const cdp = await page.context().newCDPSession(page);
+      const width = await page.evaluate(() => window.innerWidth);
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 520, deviceScaleFactor: 0, mobile: false });
+      await sleep(600);
+      const openAt = async (i) => {
+        await page.locator('.ilc-card').nth(i).click();
+        await sleep(250);
+        const box = page.locator('.ilc-card-active .ilc-reply-input');
+        if (!(await box.count())) return null;
+        await box.fill('');
+        await box.click();
+        await page.keyboard.type('@');
+        await page.waitForSelector('.ilc-at-new', { timeout: 5000 });
+        await sleep(150);
+        return box;
+      };
+      const covered = [];
+      let worst = { i: 0, bottom: -1 };
+      const n = await page.locator('.ilc-card').count();
+      for (let i = 0; i < n; i++) {
+        const box = await openAt(i);
+        if (!box) continue;
+        const hits = await page.evaluate(() => ['.ilc-at-newsession', '.ilc-at-new', '.ilc-at-manage'].map((s) => {
+          const b = document.querySelector(s);
+          const r = b.getBoundingClientRect();
+          const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          return { s, ok: !!el && b.contains(el), hit: el ? String(el.className) : 'null', bottom: r.bottom };
+        }));
+        for (const h of hits) if (!h.ok) covered.push(`card${i} ${h.s}→${h.hit}`);
+        if (hits[1].bottom > worst.bottom) worst = { i, bottom: hits[1].bottom };
+        await box.fill('');
+        await page.keyboard.press('Escape');
+        await sleep(100);
+      }
+      check('窗口矮时 @ 下拉各项都点得到（不被状态栏盖住）', covered.length === 0, covered.join('; '));
+
+      // Real mouse click on the lowest 「＋ 新会话…」 → dialog; 「选择…」 fills the directory; the member gets it
+      const box = await openAt(worst.i);
+      const fb = await page.locator('.ilc-at-new').boundingBox();
+      await page.mouse.click(fb.x + fb.width / 2, fb.y + fb.height / 2);
+      const opened = await page.waitForSelector('.ilc-newsession-modal', { timeout: 3000 }).then(() => true, () => false);
+      check('鼠标点「＋ 新会话…」打开新会话弹窗', opened, `card${worst.i} bottom=${Math.round(worst.bottom)}`);
+      if (opened) {
+        await page.locator('.ilc-newsession-modal button', { hasText: '选择…' }).click();
+        await sleep(300);
+        const cwd = await page.locator('.ilc-newsession-cwd').inputValue();
+        check('「选择…」把选中的文件夹填进工作目录', cwd === PICKED_DIR, cwd);
+        await page.locator('.ilc-newsession-modal input').first().fill('选目录助理');
+        await page.locator('.ilc-newsession-modal button.mod-cta').click();
+        await sleep(500);
+        const reg = JSON.parse(fs.readFileSync(path.join(WORK, 'vault', '_os', 'comment-agents.json'), 'utf8'));
+        const member = reg.agents.find((a) => a.name === '选目录助理');
+        check('新会话按选中的目录登记', member?.cwd === PICKED_DIR, JSON.stringify(member));
+      }
+      await box?.fill('').catch(() => {});
+      await cdp.send('Emulation.clearDeviceMetricsOverride');
+      await cdp.detach();
+      await sleep(400);
+    }
+
+    // ── Hotkey: none by default (store rule); the empty panel offers a one-click ⌘⇧K that really works
+    {
+      const CMD = 'inline-comments:add-inline-comment';
+      await page.evaluate(async () => {
+        const f = app.vault.getAbstractFileByPath('empty.md') ?? await app.vault.create('empty.md', '这是一篇还没有评论的笔记。\n');
+        await app.workspace.getLeavesOfType('markdown')[0].openFile(f);
+      });
+      await page.waitForSelector('.ilc-hotkey-bind', { timeout: 5000 }).catch(() => {});
+      const before = await page.evaluate((id) => ({
+        hint: document.querySelector('.ilc-empty')?.textContent ?? '',
+        bound: app.hotkeyManager.getHotkeys(id) ?? app.hotkeyManager.getDefaultHotkeys(id) ?? [],
+      }), CMD);
+      check('默认不带快捷键，空面板不再写死 ⌘⇧K', before.bound.length === 0 && !before.hint.includes('按 ⌘⇧K') && before.hint.includes('右键'), before.hint);
+      await page.locator('.ilc-hotkey-bind').click();
+      await sleep(500);
+      const after = await page.evaluate((id) => ({ hint: document.querySelector('.ilc-empty')?.textContent ?? '', keys: app.hotkeyManager.getHotkeys(id) ?? [] }), CMD);
+      check('点「设为 ⌘⇧K」后成为用户自己的快捷键，提示显示实际按键', after.keys.length === 1 && after.keys[0].key === 'K' && after.hint.includes('按 ⌘⇧K'), `${JSON.stringify(after.keys)} ${after.hint}`);
+      await page.evaluate(() => {
+        const leaf = app.workspace.getLeavesOfType('markdown')[0];
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        leaf.view.editor.focus();
+        leaf.view.editor.setSelection({ line: 0, ch: 0 }, { line: 0, ch: 4 });
+      });
+      await page.keyboard.press('Meta+Shift+K');
+      const drafted = await page.waitForSelector('.ilc-card-draft', { timeout: 3000 }).then(() => true, () => false);
+      check('按 ⌘⇧K 真的能添加评论（草稿卡片出现）', drafted);
+      if (drafted) { await page.keyboard.press('Escape'); await sleep(200); }
+      const hkFile = path.join(WORK, 'vault', '.obsidian', 'hotkeys.json');
+      const saved = fs.existsSync(hkFile) ? JSON.parse(fs.readFileSync(hkFile, 'utf8'))[CMD] : null;
+      check('快捷键写进 vault 的 hotkeys.json（重启后还在）', Array.isArray(saved) && saved.length === 1, JSON.stringify(saved));
+      const settingDesc = await page.evaluate(() => {
+        app.setting.open();
+        // read the tab's own container: newer Obsidian may not render settings inside this document
+        const tab = app.setting.openTabById('inline-comments');
+        const item = [...(tab?.containerEl.querySelectorAll('.setting-item') ?? [])].find((el) => el.querySelector('.setting-item-name')?.textContent === '添加评论快捷键');
+        const desc = item?.querySelector('.setting-item-description')?.textContent ?? '';
+        app.setting.close();
+        return desc;
+      });
+      check('设置页显示当前快捷键', settingDesc.includes('⌘⇧K'), settingDesc);
     }
 
     await shot(page, '06-full-window');
