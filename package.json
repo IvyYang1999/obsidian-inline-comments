@@ -1,6 +1,6 @@
 {
   "name": "obsidian-inline-comments",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Agent Comments: comments alongside your Obsidian notes; @ an AI coding agent to reply",
   "main": "main.js",
   "scripts": {
@@ -22,5 +22,8 @@
     "tslib": "2.6.3",
     "typescript": "5.5.3",
     "vitest": "^2.1.9"
+  },
+  "dependencies": {
+    "@lezer/markdown": "^1.7.2"
   }
 }

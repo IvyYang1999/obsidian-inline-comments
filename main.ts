@@ -18,6 +18,7 @@ import { UnreadTracker } from './src/unreadTracker.ts';
 import { ExplorerBadge } from './src/explorerBadge.ts';
 import { DEFAULT_MAILBOX_ROOT } from './src/mentionDelivery.ts';
 import { MentionDelivery } from './src/mentionDeliveryService.ts';
+import { CodexReplyService } from './src/codexReplyService.ts';
 import { getHookStatus, installClaudeHooks, uninstallClaudeHooks, type HookStatus } from './src/hookInstaller.ts';
 import { HOOK_SCRIPT_NAME } from './src/hookScript.ts';
 import { buildLaunchPlan, buildLaunchPrompt, launchInTerminal, runningClaudeIds, sessionFileExists, writePromptFile } from './src/sessionLauncher.ts';
@@ -64,6 +65,9 @@ interface ILCSettings {
   panelBackgroundColor: string;
   /** Deliver `[@名字](agent:id?notify)` mentions as mailbox letters (in-plugin scanner) */
   enableMentionDelivery: boolean;
+  enableCodexAutoReply: boolean;
+  enableCodexVaultResearch: boolean;
+  codexExecutable: string;
   /** Vault-relative mailbox root; letters go to <root>/<短id>/ */
   mailboxRoot: string;
   /** Show resolved threads in the panel (collapsed) or hide them */
@@ -83,6 +87,9 @@ const DEFAULT_SETTINGS: ILCSettings = {
   panelBackground: 'sidebar',
   panelBackgroundColor: '#f4f4f2',
   enableMentionDelivery: true,
+  enableCodexAutoReply: false,
+  enableCodexVaultResearch: false,
+  codexExecutable: 'codex',
   mailboxRoot: DEFAULT_MAILBOX_ROOT,
   showResolved: true,
   language: 'auto',
@@ -97,6 +104,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
   unreadTracker!: UnreadTracker;
   explorerBadge!: ExplorerBadge;
   mentionDelivery!: MentionDelivery;
+  codexReplies!: CodexReplyService;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -201,17 +209,33 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     this.app.workspace.onLayoutReady(() => this.explorerBadge.attach());
     this.registerEvent(this.app.workspace.on('layout-change', () => this.explorerBadge.attach()));
 
+    this.codexReplies = new CodexReplyService(this.app, this.pluginDir(), () => this.settings);
+    this.addCommand({ id: 'codex-auto-reply-status', name: t('Codex 自动回复状态'), callback: () => this.codexReplies.showStatus() });
+    if (Platform.isDesktop) this.registerInterval(window.setInterval(() => void this.codexReplies.poll(), 2000));
+
     // @ mention → mailbox letter (replaces the external cron scanner)
     this.mentionDelivery = new MentionDelivery(
       this.app,
       () => ({ enabled: this.settings.enableMentionDelivery, mailboxRoot: this.settings.mailboxRoot }),
       (msg) => new Notice(msg),
-      (c, relPath, letterPath) => {
+      async (c, relPath, letterPath, context) => {
+        if (c.harness === 'codex' && this.settings.enableCodexAutoReply && Platform.isDesktop) {
+          const known = new Set((await this.codexReplies.engine.snapshot()).map(job => job.id));
+          const predecessors = context.predecessors?.filter(id => known.has(id) || this.mentionDelivery.hasPending(id));
+          await this.codexReplies.enqueue({ id: context.key, sessionId: c.sessionId, agentName: c.name,
+            notePath: relPath, letterPath, highlight: context.highlight, comment: context.comment, context: context.snapshot, predecessors });
+          return;
+        }
         this.notifyDesktop(t('评论区有新留言给 {0}', [c.name]), t('{0} · 它下一次说话/收尾时会看到', [relPath.split('/').pop()]));
         void this.maybeAutoStart(c, letterPath);
       },
     );
     this.mentionDelivery.init();
+    this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
+      if (file instanceof TFile && file.extension === 'md') {
+        void Promise.all([this.codexReplies.engine.renameNote(oldPath, file.path), this.mentionDelivery.renameNote(oldPath, file.path)]).catch(error => new Notice(String(error)));
+      }
+    }));
 
     this.registerEvent(
       this.app.vault.on('modify', (file) => {
@@ -358,6 +382,8 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
   }
 
   onunload(): void {
+    this.codexReplies?.stop();
+    this.mentionDelivery?.dispose();
     this.explorerBadge?.detach();
     // Deliberately no detachLeavesOfType: Obsidian restores the leaf itself, and
     // detaching here would reset a panel the user moved to another sidebar.
@@ -1082,6 +1108,34 @@ class ILCSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }),
       );
+    new Setting(containerEl)
+      .setName(t('Codex 自动回复'))
+      .setDesc(t('仅桌面端。将新投递的 Codex 通知发送到成员绑定的任务，使用该任务的模型与额度，再写回原评论。需本机已登录且支持 codex queue；发送选中原文、本次评论、附近正文和本线程此前的讨论，超长内容会截断并标注。关闭时暂停发送和写回。'))
+      .addToggle(toggle => toggle.setDisabled(!Platform.isDesktop).setValue(this.plugin.settings.enableCodexAutoReply).onChange(async value => {
+        this.plugin.settings.enableCodexAutoReply = value;
+        await this.plugin.saveSettings();
+      }));
+    new Setting(containerEl).setName(t('Codex 跨笔记查找'))
+      .setDesc(t('允许新评论请求按需读取当前 Vault 的 Markdown、追踪链接和搜索来源；回答附来源与摘录。读取的内容会进入当前 Codex 任务及其模型服务。使用任务现有权限，范围由提示词约束，并非独立沙箱。关闭后阻止尚未发送的查找请求，已排队请求仍可能继续。'))
+      .addToggle(toggle => toggle.setValue(this.plugin.settings.enableCodexVaultResearch).onChange(async value => {
+        this.plugin.settings.enableCodexVaultResearch = value;
+        await this.plugin.saveSettings();
+      }));
+    new Setting(containerEl).setName(t('Codex CLI 路径'))
+      .setDesc(t('可填 codex 或可执行文件的完整路径。不会更改目标任务的模型、权限或安装 hook。'))
+      .addText(input => input.setPlaceholder('codex').setValue(this.plugin.settings.codexExecutable).onChange(async value => {
+        this.plugin.settings.codexExecutable = value.trim() || 'codex';
+        await this.plugin.saveSettings();
+      }));
+    new Setting(containerEl).setName(t('检查 Codex CLI'))
+      .setDesc(t('检查本机命令是否支持自动回复，不发送评论。'))
+      .addButton(button => button.setButtonText(t('检查')).onClick(async () => {
+        try { await this.plugin.codexReplies.checkSetup(); new Notice(t('Codex CLI 检查通过')); }
+        catch (error) { new Notice(String((error as Error).message ?? error)); }
+      }));
+    new Setting(containerEl).setName(t('Codex 自动回复状态'))
+      .addButton(button => button.setButtonText(t('查看')).onClick(() => this.plugin.codexReplies.showStatus()));
+
     const hookSetting = new Setting(containerEl)
       .setName(t('唤醒 hook（Claude Code）'))
       .setDesc(t('装进 ~/.claude/settings.json 的三条 hook：会话说话前 / 收尾时 / 恢复时自动把新留言递给它并附回复方法。只添加自己的条目，安装前自动备份原文件。'));
