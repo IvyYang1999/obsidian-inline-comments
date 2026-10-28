@@ -25,6 +25,7 @@ import type { Candidate } from './src/mentionDelivery.ts';
 import { renderAgentRegistrySection } from './src/settings/agentRegistrySection.ts';
 import { type HarnessDef, detectHarnesses, harnessDef, headlessArgs, looksUnauthenticated, resumeShell, runHeadless } from './src/harnesses.ts';
 import { readRegistry, setAgentThread } from './src/registry.ts';
+import { findClaudeInbox, sendToClaudeInbox } from './src/claudeInbox.ts';
 import { SUGGESTED_HOTKEY, bindSuggestedHotkey, boundHotkeys, formatHotkey, openHotkeySettings, sameHotkey } from './src/hotkeys.ts';
 import {
   GLOBAL_THREAD_END_MARKER,
@@ -210,13 +211,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       this.app,
       () => ({ enabled: this.settings.enableMentionDelivery, mailboxRoot: this.settings.mailboxRoot }),
       (msg) => new Notice(msg),
-      (c, relPath, letterPath) => {
-        // headless members answer right away and say so themselves
-        if (!(c.autoStart && harnessDef(c.harness)?.mode === 'headless')) {
-          this.notifyDesktop(t('评论区有新留言给 {0}', [c.name]), t('{0} · 它下一次说话/收尾时会看到', [relPath.split('/').pop()]));
-        }
-        void this.maybeAutoStart(c, letterPath);
-      },
+      (c, relPath, letterPath) => void this.onLetter(c, relPath, letterPath),
     );
     this.mentionDelivery.init();
 
@@ -310,6 +305,43 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
   /** Settings → Hotkeys, filtered to 添加划线评论 */
   openAddCommentHotkeySettings(): void {
     if (!openHotkeySettings(this.app, t('添加划线评论'))) new Notice(t('请在 设置 → 快捷键 里搜「添加划线评论」'));
+  }
+
+  /**
+   * A letter was written for member `c`. A Claude Code session that is running
+   * (in the Claude app or a terminal) gets it right away through its inbox;
+   * otherwise the user is notified and auto-start members are started or answered.
+   */
+  private async onLetter(c: Candidate, relPath: string, letterPath: string): Promise<void> {
+    const harness = harnessDef(c.harness);
+    if (harness?.id === 'claude' && await this.handToClaudeInbox(c, letterPath)) return;
+    // headless members answer right away and say so themselves
+    if (!(c.autoStart && harness?.mode === 'headless')) {
+      this.notifyDesktop(t('评论区有新留言给 {0}', [c.name]), t('{0} · 它下一次说话/收尾时会看到', [relPath.split('/').pop()]));
+    }
+    await this.maybeAutoStart(c, letterPath);
+  }
+
+  /** Put the letter into the member's running Claude Code session; false when the session is not running */
+  private async handToClaudeInbox(c: Candidate, letterPath: string): Promise<boolean> {
+    if (!Platform.isDesktop) return false;
+    const inbox = await findClaudeInbox(c.sessionId);
+    if (!inbox) return false;
+    const adapter = this.app.vault.adapter;
+    let raw: string;
+    try { raw = await adapter.read(letterPath); } catch { return true; }
+    if (!raw.includes('status: 未读')) return true; // the hook already handed it over
+    const handed = 'status: 已读（已送进会话）';
+    await adapter.write(letterPath, raw.replace('status: 未读', handed));
+    const body = raw.split('\n---\n').slice(1).join('\n---\n');
+    const cwd = inbox.cwd || c.cwd || this.vaultBasePath() || process.cwd();
+    const prompt = buildLaunchPrompt(c.name, body, todayIsoDate(), getLocale(), this.vaultDirFor(cwd));
+    if (await sendToClaudeInbox(inbox, prompt) === 'unreachable') {
+      await this.restoreUnread(letterPath, handed);
+      return false;
+    }
+    new Notice(t('留言已送进「{0}」的会话（{1}）', [c.name, inbox.desktop ? t('Claude 客户端') : t('终端')]));
+    return true;
   }
 
   /**

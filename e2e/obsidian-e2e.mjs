@@ -21,7 +21,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { HARNESS_LOG, OUT, PICKED_DIR, PLUGIN_ID, WORK, sleep, setupVault, launch, waitForPlugin, shot } from './lib.mjs';
 import { spawnSync } from 'node:child_process';
-import crypto from 'node:crypto';
+import crypto, { createHash } from 'node:crypto';
+import net from 'node:net';
 
 const results = [];
 function check(name, ok, detail = '') {
@@ -52,10 +53,11 @@ async function run() {
       const card = document.querySelector('.ilc-card');
       const body = document.querySelector('.ilc-entry-body');
       const cs = getComputedStyle(panel);
-      return { panel: panel.getBoundingClientRect().width, card: card.getBoundingClientRect().width, body: body.getBoundingClientRect().width, padL: cs.paddingLeft, padR: cs.paddingRight };
+      // clientWidth leaves out a classic scrollbar (macOS shows one while a mouse is connected)
+      return { panel: panel.clientWidth, scrollbar: panel.offsetWidth - panel.clientWidth, card: card.getBoundingClientRect().width, body: body.getBoundingClientRect().width, padL: cs.paddingLeft, padR: cs.paddingRight };
     });
     check('面板无多余内边距', widths.padL === '0px' && widths.padR === '0px', `${widths.padL}/${widths.padR}`);
-    check('卡片占满面板宽度（≥ 面板 − 20）', widths.card >= widths.panel - 20, `panel=${widths.panel} card=${widths.card} body=${widths.body}`);
+    check('卡片占满面板宽度（≥ 面板 − 20）', widths.card >= widths.panel - 20, `panel=${widths.panel} scrollbar=${widths.scrollbar} card=${widths.card} body=${widths.body}`);
 
     const previews = await page.locator('.ilc-card-preview-text').allTextContents();
     check('预览条无原始 markdown', previews.every((t) => !t.includes('**')), previews.join(' | '));
@@ -785,6 +787,54 @@ async function run() {
       }, { id: coder?.sessionId, tid: threadId });
       const lastLaunch = fs.readFileSync(path.join(WORK, 'launch.log'), 'utf8').trim().split('\n').pop();
       check('「终端」用 codex resume 打开同一个会话', term && lastLaunch.includes(`codex resume '${threadId}'`), lastLaunch.slice(0, 160));
+
+      // ── A Claude member whose session is open (here: a fake Claude app chat) gets the
+      // letter through the session's own inbox; once the session is gone it falls back to Terminal
+      const SID = '7e57c1a0-de5c-4000-8000-00000000c1a0';
+      const sessions = path.join(WORK, 'home', '.claude', 'sessions');
+      const sock = path.join(WORK, 'home', 'cc.sock');
+      const token = 'e2e0'.repeat(8);
+      fs.mkdirSync(sessions, { recursive: true });
+      fs.writeFileSync(path.join(sessions, `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: SID, cwd: path.join(WORK, 'vault'), kind: 'interactive', entrypoint: 'claude-desktop', messagingSocketPath: sock }));
+      fs.writeFileSync(path.join(sessions, `${process.pid}.${createHash('sha256').update(sock).digest('hex')}.key`), JSON.stringify({ peerToken: token }));
+      let inboxLines = [];
+      const inbox = net.createServer((c) => {
+        let buf = '';
+        c.on('data', (d) => { buf += d; });
+        c.on('end', () => { inboxLines.push(...buf.trim().split('\n').map((l) => JSON.parse(l))); c.end(); });
+      });
+      await new Promise((r) => inbox.listen(sock, r));
+      await page.evaluate(async (sid) => {
+        const reg = JSON.parse(await app.vault.adapter.read('_os/comment-agents.json'));
+        reg.agents.push({ name: '桌面助理', sessionId: sid, harness: 'claude', joinedAt: new Date().toISOString(), autoStart: true });
+        await app.vault.adapter.write('_os/comment-agents.json', JSON.stringify(reg, null, 2));
+      }, SID);
+      const atDesk = async (text) => {
+        await page.locator('.ilc-card').first().click();
+        await page.waitForSelector('.ilc-card-active .ilc-reply-input', { state: 'visible', timeout: 5000 });
+        await page.locator('.ilc-card-active .ilc-reply-input').fill(`[@桌面助理](agent:${SID.slice(0, 8)}?notify) ${text}`);
+        await page.locator('.ilc-card-active .ilc-reply-submit').click();
+      };
+      const deskLetter = () => {
+        const dir = path.join(WORK, 'vault', 'Agent协作空间', '信箱', SID.slice(0, 8));
+        return fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.md')).sort().map((f) => fs.readFileSync(path.join(dir, f), 'utf8')) : [];
+      };
+      await atDesk('客户端里的你看得到吗');
+      check('@ 开着的 Claude 会话：留言经它的收信口送进去', await waitFor(() => inboxLines.length >= 2));
+      const [auth, msg] = inboxLines;
+      check('先出示会话的口令，再以排队消息送信', auth?.type === 'auth' && auth.token === token
+        && msg?.type === 'user' && msg.session_id === SID && msg.priority === 'next' && msg.from === 'Agent Comments', JSON.stringify(inboxLines).slice(0, 300));
+      check('送进去的是完整的信：留言内容 + 回复格式', msg?.message?.content?.includes('客户端里的你看得到吗') && msg.message.content.includes('{>>桌面助理|'), String(msg?.message?.content).slice(0, 200));
+      check('信标为 已读（已送进会话）', deskLetter()[0]?.includes('status: 已读（已送进会话）'));
+      const deskLaunched = () => (fs.existsSync(path.join(WORK, 'launch.log')) ? fs.readFileSync(path.join(WORK, 'launch.log'), 'utf8') : '').includes(SID);
+      check('会话开着时不弹终端', !deskLaunched());
+
+      await new Promise((r) => inbox.close(r));
+      fs.rmSync(path.join(sessions, `${process.pid}.json`));
+      inboxLines = [];
+      await atDesk('现在关掉了');
+      check('会话关了：退回到在终端里恢复它（autoStart）', await waitFor(() => deskLaunched()));
+      check('退回时不再往收信口写', inboxLines.length === 0);
     }
 
     await shot(page, '06-full-window');

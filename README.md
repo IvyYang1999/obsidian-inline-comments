@@ -30,7 +30,7 @@
 
 **Highlight → comment.** Select text, right-click *Add inline comment*. A card appears in the right sidebar, level with the passage, and follows it as you scroll. The note itself only gets a soft highlight and a small counter.
 
-**@ a real session.** Type `@` in a comment to pick a running Claude Code / Codex session on your machine — or choose *Answer with a new session* and the plugin starts one with whichever agent CLI you have installed: Claude Code opens in Terminal (macOS), Codex and Gemini CLI answer in the background, each comment resuming the same session. The letter is dropped into that session's mailbox; a small hook (installed on request) injects it into the session's context; the session reads the note and writes its reply back into the file.
+**@ a real session.** Type `@` in a comment to pick a running Claude Code / Codex session on your machine — or choose *Answer with a new session* and the plugin starts one with whichever agent CLI you have installed: Claude Code opens in Terminal (macOS), Codex and Gemini CLI answer in the background, each comment resuming the same session. If the Claude Code session is open right now — in the Claude app's Code tab or in a terminal — the letter goes straight into it, queued after whatever it is doing; otherwise it waits in the session's mailbox and a small hook (installed on request) hands it over the next time the session speaks. The session reads the note and writes its reply back into the file.
 
 **Suggested edits.** A reply can carry a replacement for the highlighted passage — from a person or from the AI session. The card shows old → new with *Accept* / *Decline*; nothing in the note changes until you accept.
 
@@ -70,9 +70,9 @@ Obsidian 1.8+, desktop and mobile. Session discovery, the hook, and *Answer with
 
 1. **Manage members** (from the `@` dropdown or the settings tab) lists the Claude Code / Codex sessions running on this machine. Give one a name to make it mentionable — or just `@` a name that doesn't exist yet and the plugin creates the session for you.
 2. **Install hook**, once. It adds three entries (`UserPromptSubmit`, `Stop`, `SessionStart`) to `~/.claude/settings.json`, backs the file up first, touches nothing else, and *Uninstall* removes exactly those entries.
-3. Write `@Name` in a comment and send. The letter lands in `<vault>/<mailbox root>/<session-id-prefix>/`; the session sees it the next time it speaks or finishes, reads the note, and appends a reply.
+3. Write `@Name` in a comment and send. The letter lands in `<vault>/<mailbox root>/<session-id-prefix>/`. A Claude Code session that is open gets it right away; one that skips permission prompts may hold it until you allow it in that session. Otherwise the session sees it the next time it speaks or finishes. Either way it reads the note and appends a reply.
 
-The plugin never talks to the network. Letters and replies are local files in your vault; what your AI tool does with them is up to that tool.
+The plugin never talks to the network. Letters and replies are local files in your vault; handing a letter to an open Claude Code session goes through that session's local inbox socket, the one Claude Code sessions use to message each other. What your AI tool does with the letter is up to that tool.
 
 The UI follows Obsidian's language (English or 中文); you can pin either in settings.
 
@@ -105,7 +105,7 @@ Design notes live in [`DESIGN.md`](DESIGN.md). Releases are built by CI from a v
 **Agent Comments**——在 Obsidian 笔记的原文旁边留言（划线评论），@ 一个 Agent 来回复。评论以纯文本形式紧挨着原文存在 `.md` 里，不联网、不建库。
 
 - **划线，即评论。** 选中文字右键「添加划线评论」，卡片挂在右侧栏、与原文水平对齐、跟着滚动。
-- **@ 一个正在跑的会话。** 打 `@` 点名本机的 Claude Code / Codex 会话，或「用新会话回答」让插件用本机装了的 Agent 替你开一个（Claude Code 在终端里打开；Codex、Gemini CLI 在后台回复，每条留言接着同一个会话）；留言以文件送到它手里，它读完文档把回复写回原位。
+- **@ 一个正在跑的会话。** 打 `@` 点名本机的 Claude Code / Codex 会话，或「用新会话回答」让插件用本机装了的 Agent 替你开一个（Claude Code 在终端里打开；Codex、Gemini CLI 在后台回复，每条留言接着同一个会话）。Claude Code 会话此刻开着（Claude 客户端的 Code 页或终端里）时，留言直接送进去，排在它手头的事后面；没开着就留在信箱，等它下次说话时由 hook 递过去。它读完文档把回复写回原位。
 - **修改建议。** 回复可以附带对划线原文的替换文本（人或 AI 都能提），卡片上显示 原文 → 改法，点「采纳」原文才会变。
 - **未读一眼看清。** 别人或 AI 的回复带红点，面板顶部常驻「N 条评论 · M 未读」，文件目录里对应文档也挂红色角标；看完点「标为已读」，聊完点「解决」，也可以加个 emoji 反应。设置里「未读通知」一键关掉。
 - **编辑与阅读视图、桌面与手机。** 阅读视图里同款高亮 + 角标，原始标记隐藏；超长线程折叠成预览。
@@ -114,6 +114,6 @@ Design notes live in [`DESIGN.md`](DESIGN.md). Releases are built by CI from a v
 
 官网中文版：https://agent-comments.yytyyf.com
 
-**关于隐私**：插件本身不联网。@ 只是往你电脑上的一个文件夹写一个文件，会话在你自己的终端里跑；首次 @ 需要在「管理成员」里点一次「安装 hook」——它只往 `~/.claude/settings.json` 加三条，可一键卸载。
+**关于隐私**：插件本身不联网。@ 只是往你电脑上的一个文件夹写一个文件，会话在你自己的电脑上跑；送进开着的 Claude Code 会话，走的是那个会话的本机收信口（Claude Code 会话之间互发消息用的同一个）；首次 @ 需要在「管理成员」里点一次「安装 hook」——它只往 `~/.claude/settings.json` 加三条，可一键卸载。
 
 作者 [yytyyf](https://yytyyf.com) · MIT

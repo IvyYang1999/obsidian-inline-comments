@@ -287,6 +287,8 @@ const EN: Record<string, string> = {
   "已投递 {0} 封 @ 留言": "Delivered {0} @ letter(s)",
   "没有待投递的 @ 留言": "No pending @ letters",
   "已投信给 @{0}": "Letter delivered to @{0}",
+  "留言已送进「{0}」的会话（{1}）": "Comment handed to “{0}” in its session ({1})",
+  "Claude 客户端": "Claude app",
   "已投信 {0} 封（{1}）": "Delivered {0} letter(s) ({1})",
   "[ilc] 投信失败": "[ilc] delivery failed",
   "投信失败：{0}（{1}）": "Delivery failed: {0} ({1})",
