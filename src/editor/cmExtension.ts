@@ -240,10 +240,15 @@ class CommentViewPlugin implements PluginValue {
           );
         }
 
-        // 3. Replace `==}{>>...<<}` with badge widget
-        if (hlEnd < markupEnd) {
+        // 3. Hide the closing `==` on its own, then replace `}{>>...<<}` with the
+        // badge. Live preview hides that `==` too; a badge range overlapping it got
+        // clipped by CM and then dropped on the next incremental redraw (Obsidian
+        // 1.13: every badge after the edited line vanished after a reply).
+        const badgeStart = hlEnd + 2;
+        builder.add(hlEnd, badgeStart, Decoration.replace({}));
+        if (badgeStart < markupEnd) {
           builder.add(
-            hlEnd,
+            badgeStart,
             markupEnd,
             Decoration.replace({
               widget: new CommentBadgeWidget(ann.comments.filter((c) => c.type !== 'resolve' && c.type !== 'react').length, ann.id, onBadgeClick),
