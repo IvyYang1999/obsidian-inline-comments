@@ -1,5 +1,5 @@
 import { getLocale, setLocale, t } from './src/i18n.ts';
-import { nodeCp, nodeFsp, nodePath } from './src/node.ts';
+import { nodeCp, nodeFsp, nodeOs, nodePath } from './src/node.ts';
 import { MarkdownView, Platform, Plugin, PluginSettingTab, App, Setting, Notice, TFile } from 'obsidian';
 import type { EditorView } from '@codemirror/view';
 import type { Editor } from 'obsidian';
@@ -23,6 +23,8 @@ import { HOOK_SCRIPT_NAME } from './src/hookScript.ts';
 import { buildLaunchPlan, buildLaunchPrompt, launchInTerminal, runningClaudeIds, sessionFileExists, writePromptFile } from './src/sessionLauncher.ts';
 import type { Candidate } from './src/mentionDelivery.ts';
 import { renderAgentRegistrySection } from './src/settings/agentRegistrySection.ts';
+import { type HarnessDef, detectHarnesses, harnessDef, headlessArgs, looksUnauthenticated, resumeShell, runHeadless } from './src/harnesses.ts';
+import { readRegistry, setAgentThread } from './src/registry.ts';
 import { SUGGESTED_HOTKEY, bindSuggestedHotkey, boundHotkeys, formatHotkey, openHotkeySettings, sameHotkey } from './src/hotkeys.ts';
 import {
   GLOBAL_THREAD_END_MARKER,
@@ -93,6 +95,8 @@ const DEFAULT_SETTINGS: ILCSettings = {
 export default class InlineCommentsPlugin extends Plugin implements ICommentHost {
   settings: ILCSettings = DEFAULT_SETTINGS;
   private runningGlobalThreads = new Set<string>();
+  /** Per-member chain of headless runs (Codex / Gemini), keyed by sessionId */
+  private headlessRuns = new Map<string, Promise<void>>();
   private runningAgentReplies = new Set<string>();
   unreadTracker!: UnreadTracker;
   explorerBadge!: ExplorerBadge;
@@ -207,7 +211,10 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       () => ({ enabled: this.settings.enableMentionDelivery, mailboxRoot: this.settings.mailboxRoot }),
       (msg) => new Notice(msg),
       (c, relPath, letterPath) => {
-        this.notifyDesktop(t('评论区有新留言给 {0}', [c.name]), t('{0} · 它下一次说话/收尾时会看到', [relPath.split('/').pop()]));
+        // headless members answer right away and say so themselves
+        if (!(c.autoStart && harnessDef(c.harness)?.mode === 'headless')) {
+          this.notifyDesktop(t('评论区有新留言给 {0}', [c.name]), t('{0} · 它下一次说话/收尾时会看到', [relPath.split('/').pop()]));
+        }
         void this.maybeAutoStart(c, letterPath);
       },
     );
@@ -277,10 +284,13 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
   }
 
   /** Open a terminal that resumes (or starts) the given session in its directory (macOS) */
-  async resumeInTerminal(sessionId: string, cwd?: string): Promise<void> {
+  async resumeInTerminal(sessionId: string, cwd?: string, harness?: string, threadId?: string): Promise<void> {
     if (!Platform.isDesktop) { new Notice(t('在终端恢复会话只支持桌面端')); return; }
-    const exists = await sessionFileExists(sessionId);
-    const plan = buildLaunchPlan({ sessionId, cwd: cwd || this.vaultBasePath() || process.cwd(), exists });
+    const dir = cwd || this.vaultBasePath() || process.cwd();
+    const h = harnessDef(harness);
+    const plan = h && h.mode === 'headless'
+      ? { mode: 'resume' as const, sessionId, cwd: dir, shell: resumeShell(h.id, dir, threadId ?? sessionId) }
+      : buildLaunchPlan({ sessionId, cwd: dir, exists: await sessionFileExists(sessionId) });
     const r = await launchInTerminal(plan);
     if (r === 'unsupported') new Notice(t('仅 macOS 支持在终端启动会话'));
   }
@@ -310,7 +320,15 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
    */
   async maybeAutoStart(c: Candidate, letterPath: string): Promise<void> {
     if (!Platform.isDesktop) return; // letters are still written; a desktop session picks them up
-    if (!c.autoStart || (c.harness ?? 'claude') !== 'claude') return;
+    const harness = harnessDef(c.harness);
+    if (!c.autoStart || !harness) return;
+    if (harness.mode === 'headless') {
+      // One run at a time per member: the next letter resumes the session the previous run created
+      const next = (this.headlessRuns.get(c.sessionId) ?? Promise.resolve()).then(() => this.answerHeadless(c, harness, letterPath));
+      this.headlessRuns.set(c.sessionId, next);
+      void next.finally(() => { if (this.headlessRuns.get(c.sessionId) === next) this.headlessRuns.delete(c.sessionId); });
+      return;
+    }
     try {
       const running = await runningClaudeIds();
       if (running.has(c.sessionId.toLowerCase())) return;
@@ -319,10 +337,11 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       if (!raw.includes('status: 未读')) return; // already handed over by the hook
       await adapter.write(letterPath, raw.replace('status: 未读', 'status: 已读（启动代标）'));
       const body = raw.split('\n---\n').slice(1).join('\n---\n');
-      const prompt = buildLaunchPrompt(c.name, body, todayIsoDate(), getLocale());
+      const cwd = c.cwd || this.vaultBasePath() || process.cwd();
+      const prompt = buildLaunchPrompt(c.name, body, todayIsoDate(), getLocale(), this.vaultDirFor(cwd));
       const promptFile = await writePromptFile(c.sessionId, prompt);
       const exists = await sessionFileExists(c.sessionId);
-      const plan = buildLaunchPlan({ sessionId: c.sessionId, cwd: c.cwd || this.vaultBasePath() || process.cwd(), promptFile, exists });
+      const plan = buildLaunchPlan({ sessionId: c.sessionId, cwd, promptFile, exists });
       const r = await launchInTerminal(plan);
       if (r === 'launched') new Notice(t('已在终端{0}会话「{1}」，留言已交给它', [plan.mode === 'new' ? '启动' : '恢复', c.name]));
       else if (r === 'unsupported') new Notice(t('「{0}」未在运行，且当前平台不支持自动启动', [c.name]));
@@ -330,6 +349,67 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       console.error('[ilc] auto-start failed', err);
       new Notice(t('自动启动「{0}」失败：{1}', [c.name, String((err as Error)?.message ?? err)]));
     }
+  }
+
+  /** The vault folder, when a session working in `cwd` cannot reach notes by their vault-relative path */
+  private vaultDirFor(cwd: string): string | undefined {
+    const vault = this.vaultBasePath();
+    return vault && nodePath().resolve(cwd) !== nodePath().resolve(vault) ? vault : undefined;
+  }
+
+  /**
+   * Codex / Gemini: answer one letter with a headless run that resumes the
+   * member's session (or starts it). The reply lands in the note like any other;
+   * failures are reported and the letter goes back to unread.
+   */
+  private async answerHeadless(c: Candidate, harness: HarnessDef, letterPath: string): Promise<void> {
+    const adapter = this.app.vault.adapter;
+    let raw: string;
+    try { raw = await adapter.read(letterPath); } catch { return; }
+    if (!raw.includes('status: 未读')) return;
+    const handed = `status: 已读（已交给 ${harness.label}）`;
+    try {
+      const { bins, path } = await detectHarnesses();
+      const bin = bins[harness.id];
+      if (!bin) { new Notice(t('本机没找到 {0}，「{1}」没法回复', [harness.label, c.name])); return; }
+      await adapter.write(letterPath, raw.replace('status: 未读', handed));
+
+      // Read the thread id now, not from the candidate: the previous run may have just stored it
+      const threadId = (await readRegistry(this.app)).agents.find((a) => a.sessionId === c.sessionId)?.threadId;
+      const vault = this.vaultBasePath();
+      const cwd = c.cwd || vault || process.cwd();
+      const rel = vault ? nodePath().relative(cwd, vault) : '';
+      const extraDir = vault && (rel.startsWith('..') || nodePath().isAbsolute(rel)) ? vault : undefined;
+      const body = raw.split('\n---\n').slice(1).join('\n---\n');
+      const prompt = buildLaunchPrompt(c.name, body, todayIsoDate(), getLocale(), this.vaultDirFor(cwd));
+      const logFile = nodePath().join(nodeOs().tmpdir(), 'ilc-runs', `${c.shortId}.log`);
+
+      new Notice(t('「{0}」（{1}）正在回复…', [c.name, harness.label]));
+      const res = await runHeadless(harness.id, {
+        bin, path, cwd, logFile, sessionId: c.sessionId,
+        args: headlessArgs(harness.id, { sessionId: c.sessionId, threadId, extraDir }, prompt),
+        stdin: harness.id === 'codex' ? prompt : undefined,
+      });
+      if (res.threadId && res.threadId !== threadId) await setAgentThread(this.app, c.sessionId, res.threadId);
+      if (res.ok) return; // the reply shows up in the panel when the note changes
+
+      console.error('[ilc] headless run failed', harness.id, res.error, logFile);
+      await this.restoreUnread(letterPath, handed);
+      new Notice(looksUnauthenticated(res.error)
+        ? t('「{0}」没回复：{1} 还没登录。先在终端运行 {2} 登录一次。', [c.name, harness.label, harness.bin])
+        : t('「{0}」没回复：{1}（日志在 {2}）', [c.name, res.error ?? '', logFile]), 12000);
+    } catch (err) {
+      console.error('[ilc] headless run failed', err);
+      await this.restoreUnread(letterPath, handed);
+      new Notice(t('「{0}」没回复：{1}', [c.name, String((err as Error)?.message ?? err)]));
+    }
+  }
+
+  private async restoreUnread(letterPath: string, handed: string): Promise<void> {
+    try {
+      const raw = await this.app.vault.adapter.read(letterPath);
+      if (raw.includes(handed)) await this.app.vault.adapter.write(letterPath, raw.replace(handed, 'status: 未读'));
+    } catch { /* letter gone */ }
   }
 
   /** Open the draft card for the current editor selection */

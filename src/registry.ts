@@ -15,6 +15,8 @@ export interface RegistryAgent {
   cwd?: string;
   /** Start the session in a terminal automatically when a letter arrives and it is not running */
   autoStart?: boolean;
+  /** The harness's own session id when it differs from `sessionId` (Codex assigns one on the first run) */
+  threadId?: string;
 }
 
 export interface RegistryFile {
@@ -93,6 +95,15 @@ export async function upsertAgent(
 
   await writeRegistry(app, data);
   return { ok: true };
+}
+
+/** Remember the harness's session id for a member, so its next letter resumes that session */
+export async function setAgentThread(app: App, sessionId: string, threadId: string): Promise<void> {
+  const data = await readRegistry(app);
+  const agent = data.agents.find((a) => a.sessionId === sessionId);
+  if (!agent || agent.threadId === threadId) return;
+  agent.threadId = threadId;
+  await writeRegistry(app, data);
 }
 
 /** Remove a member by name; the entry is archived under `left` for easy re-join */

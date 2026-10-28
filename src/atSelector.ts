@@ -1,8 +1,8 @@
 import { t } from './i18n.ts';
-import type { App } from 'obsidian';
+import { type App, Notice } from 'obsidian';
 import { REGISTRY_PATH, readRegistry } from './registry.ts';
 import { MembersModal } from './views/MembersModal.ts';
-import { NewSessionModal, createSessionMember, defaultSessionCwd } from './views/NewSessionModal.ts';
+import { NewSessionModal, createSessionMember, defaultHarness, defaultSessionCwd } from './views/NewSessionModal.ts';
 import { validateName, nextAutoSessionName } from './registry.ts';
 
 export { REGISTRY_PATH };
@@ -26,6 +26,8 @@ export interface RosterEntry {
   cwd?: string;
   /** Plugin-created session: start it in a terminal when a letter arrives */
   autoStart?: boolean;
+  /** Harness session id to resume, when it differs from sessionId */
+  threadId?: string;
 }
 
 const ROSTER_PATH = '_os/花名册.md';
@@ -79,6 +81,7 @@ async function loadRegistry(app: App): Promise<RosterEntry[]> {
     mailbox: a.mailbox,
     cwd: a.cwd,
     autoStart: a.autoStart,
+    threadId: a.threadId,
     role: '',
     status: '闲置' as AgentStatus,
     source: 'registry' as const,
@@ -158,7 +161,7 @@ function visibleBottom(panelRect: DOMRect): number {
 const newSessionAction = (): RosterEntry => ({
   name: t('用新会话回答'),
   shortId: '',
-  role: t('自动起名并启动一个新的 Claude Code 会话来回复'),
+  role: t('自动起名并开一个新会话来回复'),
   status: '在线',
   source: 'registry',
   isAction: true,
@@ -305,7 +308,9 @@ export function attachAtSelector(
   const createAndMention = async (name: string) => {
     const atPos = activeAtPos;
     const notifyOn = notifyCb?.checked ?? true;
-    const entry = await createSessionMember(app, name, defaultSessionCwd(app));
+    const harness = await defaultHarness(app);
+    if (!harness) { new Notice(t('本机没找到 Claude Code、Codex 或 Gemini CLI。装好其中一个再来。')); return; }
+    const entry = await createSessionMember(app, name, defaultSessionCwd(app), harness);
     if (!entry) return;
     dismiss();
     insertMention(entry, atPos, notifyOn);

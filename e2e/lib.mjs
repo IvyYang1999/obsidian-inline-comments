@@ -18,6 +18,9 @@ export const OBSIDIAN_BIN = '/Applications/Obsidian.app/Contents/MacOS/Obsidian'
 export const PLUGIN_ID = 'inline-comments';
 /** What the native folder picker "returns" under e2e (ILC_PICK_FOLDER) */
 export const PICKED_DIR = path.join(WORK, 'picked-dir');
+/** Fake agent CLIs the plugin "finds" (ILC_HARNESS_PATH): Claude Code and Codex, no Gemini */
+export const HARNESS_BIN = path.join(WORK, 'bin');
+export const HARNESS_LOG = path.join(WORK, 'harness.log');
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -58,6 +61,12 @@ export function setupVault() {
 
   fs.cpSync(path.join(ROOT, 'e2e', 'fixtures'), vault, { recursive: true });
 
+  fs.mkdirSync(HARNESS_BIN, { recursive: true });
+  const fakes = { claude: 'exit 0', codex: `exec "${process.execPath}" "${path.join(ROOT, 'e2e', 'fake-codex.mjs')}" "$@"` };
+  for (const [bin, body] of Object.entries(fakes)) {
+    fs.writeFileSync(path.join(HARNESS_BIN, bin), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  }
+
   fs.writeFileSync(
     path.join(userdata, 'obsidian.json'),
     JSON.stringify({ vaults: { e2e: { path: vault, ts: Date.now(), open: true } } }),
@@ -74,7 +83,7 @@ export async function launch(userdata) {
   const proc = spawn(OBSIDIAN_BIN, [`--user-data-dir=${userdata}`, `--remote-debugging-port=${PORT}`], {
     stdio: 'ignore',
     detached: false,
-    env: { ...process.env, ILC_HOME: home, ILC_LAUNCH_LOG: path.join(WORK, 'launch.log'), ILC_PICK_FOLDER: PICKED_DIR },
+    env: { ...process.env, ILC_HOME: home, ILC_LAUNCH_LOG: path.join(WORK, 'launch.log'), ILC_PICK_FOLDER: PICKED_DIR, ILC_HARNESS_PATH: HARNESS_BIN, ILC_FAKE_HARNESS_LOG: HARNESS_LOG },
   });
   const deadline = Date.now() + 40000;
   while (Date.now() < deadline) {

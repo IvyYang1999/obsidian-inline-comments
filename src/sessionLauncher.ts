@@ -50,12 +50,12 @@ export function runningClaudeIds(): Promise<Set<string>> {
   });
 }
 
-/** The message a freshly started session receives: the letter + how to answer */
-export function buildLaunchPrompt(name: string, letterBody: string, today: string, lang: 'zh' | 'en' = 'zh'): string {
+/** The message a freshly started session receives: the letter + how to answer (+ where the vault is, when the session works elsewhere) */
+export function buildLaunchPrompt(name: string, letterBody: string, today: string, lang: 'zh' | 'en' = 'zh', vaultDir?: string): string {
   if (lang === 'en') {
     return `📬 You have 1 new comment from Obsidian (your name in the comments: ${name}).
 ${letterBody.trim()}
-
+${vaultDir ? `(Note paths are relative to the vault folder: ${vaultDir})\n` : ''}
 How to reply: open the note named in the letter, find the comment block for the quoted passage (it looks like {==passage==}{>>author|date|type: text<<}), and append one entry right after that block's last <<}:
 {>>${name}|${today}|reply: your reply<<}
 To change the highlighted passage itself, append a suggestion (body = the replacement text only; put any explanation in a separate reply):
@@ -65,7 +65,7 @@ Rules: do not delete or alter existing comments or the {==passage==}; avoid cons
   }
   return `📬 Obsidian 评论区有 1 封新留言给你（你在评论区的名字：${name}）。
 ${letterBody.trim()}
-
+${vaultDir ? `（「文档」路径相对于 vault 文件夹：${vaultDir}）\n` : ''}
 如何回复：打开留言里的「文档」，找到「划线原文」对应的评论块（形如 {==原文==}{>>作者|日期|类型: 内容<<}），在该块的最后一个 <<} 之后紧接着追加一条：
 {>>${name}|${today}|reply: 你的回复<<}
 要修改划线原文时，另外追加一条建议（正文只放替换后的原文，不要解释，解释写在 reply 里）：

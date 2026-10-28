@@ -19,7 +19,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { OUT, PICKED_DIR, PLUGIN_ID, WORK, sleep, setupVault, launch, waitForPlugin, shot } from './lib.mjs';
+import { HARNESS_LOG, OUT, PICKED_DIR, PLUGIN_ID, WORK, sleep, setupVault, launch, waitForPlugin, shot } from './lib.mjs';
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 
@@ -719,6 +719,72 @@ async function run() {
         return desc;
       });
       check('设置页显示当前快捷键', settingDesc.includes('⌘⇧K'), settingDesc);
+    }
+
+    // ── Any harness: the dialog lists only installed CLIs; a Codex member answers every @
+    // in the background, the second time resuming the thread its first run created
+    {
+      const waitFor = async (fn, ms = 8000) => {
+        for (const end = Date.now() + ms; Date.now() < end; await sleep(250)) if (await fn()) return true;
+        return false;
+      };
+      const docHas = (text) => page.evaluate(async (text) => (await app.vault.adapter.read('harness.md')).includes(text), text);
+      const calls = () => (fs.existsSync(HARNESS_LOG) ? fs.readFileSync(HARNESS_LOG, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
+      const registry = () => JSON.parse(fs.readFileSync(path.join(WORK, 'vault', '_os', 'comment-agents.json'), 'utf8'));
+      await page.evaluate(async () => {
+        const f = app.vault.getAbstractFileByPath('harness.md')
+          ?? await app.vault.create('harness.md', '第一段 {==这段写得清楚吗==}{>>yyt|2026-10-28|question: 请帮我看看<<}\n');
+        await app.workspace.getLeavesOfType('markdown')[0].openFile(f);
+      });
+      await page.waitForSelector('.ilc-card', { timeout: 5000 });
+      await page.locator('.ilc-card').first().click();
+      await page.waitForSelector('.ilc-card-active .ilc-reply-input', { state: 'visible', timeout: 5000 });
+      const box = page.locator('.ilc-card-active .ilc-reply-input');
+      await box.fill('');
+      await box.click();
+      await page.keyboard.type('@');
+      await page.waitForSelector('.ilc-at-new', { timeout: 5000 });
+      await page.locator('.ilc-at-new').click();
+      await page.waitForSelector('.ilc-newsession-harness select:not(.is-measuring)', { timeout: 5000 });
+      const options = await page.locator('.ilc-newsession-harness select:not(.is-measuring) option').evaluateAll((os) => os.map((o) => o.value));
+      check('Harness 下拉只列本机装了的（Claude Code、Codex，没有 Gemini）', JSON.stringify(options) === '["claude","codex"]', JSON.stringify(options));
+      await page.locator('.ilc-newsession-harness select:not(.is-measuring)').selectOption('codex');
+      await page.locator('.ilc-newsession-modal input').first().fill('码农甲');
+      await page.locator('.ilc-newsession-modal button.mod-cta').click();
+      await sleep(400);
+      const coder = registry().agents.find((a) => a.name === '码农甲');
+      check('选 Codex 创建的成员登记为 codex', coder?.harness === 'codex' && coder?.autoStart === true, JSON.stringify(coder));
+      const short = coder?.sessionId.slice(0, 8) ?? '';
+
+      await box.fill(`[@码农甲](agent:${short}?notify) 帮我看看这段`);
+      await page.locator('.ilc-card-active .ilc-reply-submit').click();
+      check('@ Codex 成员后它在后台回复，回复写回文档', await waitFor(() => docHas('假 Codex 第一次回复')));
+      const first = calls()[0];
+      check('第一次是 codex exec（可写工作区），信从 stdin 交给它', calls().length === 1 && first.args[0] === 'exec' && first.args[1] !== 'resume'
+        && first.args.includes('sandbox_mode="workspace-write"') && first.prompt.includes('帮我看看这段') && first.prompt.includes('{>>码农甲|'), JSON.stringify(calls().map((c) => c.args)));
+      const threadId = registry().agents.find((a) => a.name === '码农甲')?.threadId;
+      check('注册表记下 Codex 自己的 thread id', threadId === '0199e2e0-c0de-7000-8000-00000000c0de', String(threadId));
+      const launches = fs.existsSync(path.join(WORK, 'launch.log')) ? fs.readFileSync(path.join(WORK, 'launch.log'), 'utf8') : '';
+      check('Codex 成员不弹终端', !launches.includes(coder?.sessionId ?? '-'));
+      const boxDir = path.join(WORK, 'vault', 'Agent协作空间', '信箱', short);
+      const letter = fs.existsSync(boxDir) ? fs.readdirSync(boxDir).find((f) => f.endsWith('.md')) : null;
+      check('信标为 已读（已交给 Codex）', !!letter && fs.readFileSync(path.join(boxDir, letter), 'utf8').includes('status: 已读（已交给 Codex）'));
+      check('面板里看到它的回复', await waitFor(async () => ((await page.locator('.ilc-card').first().textContent()) ?? '').includes('假 Codex 第一次回复'), 4000));
+
+      await page.locator('.ilc-card').first().click();
+      await page.waitForSelector('.ilc-card-active .ilc-reply-input', { state: 'visible', timeout: 5000 });
+      await page.locator('.ilc-card-active .ilc-reply-input').fill(`[@码农甲](agent:${short}?notify) 再看一眼`);
+      await page.locator('.ilc-card-active .ilc-reply-submit').click();
+      check('第二次 @ 也收到回复', await waitFor(() => docHas('假 Codex 第二次回复')));
+      const second = calls()[1];
+      check('第二次接着同一个 thread（codex exec resume <id>）', second?.args[1] === 'resume' && second.args.at(-2) === threadId, JSON.stringify(second?.args));
+
+      const term = await page.evaluate(async ({ id, tid }) => {
+        await app.plugins.plugins['inline-comments'].resumeInTerminal(id, undefined, 'codex', tid);
+        return true;
+      }, { id: coder?.sessionId, tid: threadId });
+      const lastLaunch = fs.readFileSync(path.join(WORK, 'launch.log'), 'utf8').trim().split('\n').pop();
+      check('「终端」用 codex resume 打开同一个会话', term && lastLaunch.includes(`codex resume '${threadId}'`), lastLaunch.slice(0, 160));
     }
 
     await shot(page, '06-full-window');

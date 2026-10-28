@@ -35,6 +35,7 @@ export interface Candidate {
   harness?: string;
   cwd?: string;
   autoStart?: boolean;
+  threadId?: string;
 }
 
 /** Same key as the python scanner: sha1(relative_path + highlight + content + short_id) */
