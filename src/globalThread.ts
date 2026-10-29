@@ -1,3 +1,5 @@
+import { localIsoDate } from './localDate.ts';
+
 export type GlobalThreadEngine = 'claude' | 'glm';
 
 export interface GlobalThreadEntry {
@@ -177,12 +179,4 @@ function cleanEntryText(value: string): string {
       '&lt;!-- ilc-global-thread --&gt;',
     )
     .trim();
-}
-
-function localIsoDate(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
 }

@@ -25,6 +25,7 @@ import type InlineCommentsPlugin from '../../main.ts';
 import { attachAtSelector } from '../atSelector.ts';
 import { computeReadKey } from '../unreadTracker.ts';
 import { SUGGESTED_HOTKEY, boundHotkeys, formatHotkey } from '../hotkeys.ts';
+import { localIsoDate } from '../localDate.ts';
 
 export const VIEW_TYPE_COMMENTS = 'ilc-comments-panel';
 
@@ -718,7 +719,7 @@ export class CommentPanel extends ItemView {
   private submitDraft(inputValue: string): void {
     if (!this.draft) return;
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = localIsoDate();
     const entries: CommentEntry[] = [
       {
         author: this.plugin.settings.authorName,
@@ -817,7 +818,7 @@ export class CommentPanel extends ItemView {
     const setResolved = async (on: boolean) => {
       const content = await this.app.vault.read(file);
       if (on) {
-        const today = new Date().toISOString().split('T')[0];
+        const today = localIsoDate();
         await this.app.vault.modify(file, appendReply(content, ann.from, { author: this.plugin.settings.authorName, date: today, type: 'resolve', text: '' }));
       } else {
         await this.app.vault.modify(file, deleteCommentEntry(content, ann.from, ann.comments.length - 1));
@@ -905,7 +906,7 @@ export class CommentPanel extends ItemView {
       e.stopPropagation();
       const text = input.value.trim();
       if (!text) return;
-      const today = new Date().toISOString().split('T')[0];
+      const today = localIsoDate();
       const reply: CommentEntry = { author: this.plugin.settings.authorName, date: today, type: suggestBox.checked ? 'suggest' : 'reply', text };
       const currentContent = await this.app.vault.read(file);
       await this.app.vault.modify(file, appendReply(currentContent, ann.from, reply));
@@ -1030,7 +1031,7 @@ export class CommentPanel extends ItemView {
     // Reactions: chips for this entry + a small picker (hover)
     {
       const me = this.plugin.settings.authorName;
-      const today = () => new Date().toISOString().split('T')[0];
+      const today = () => localIsoDate();
       const tally = new Map<string, string[]>();
       ann.comments.forEach((c) => {
         if (c.type !== 'react') return;

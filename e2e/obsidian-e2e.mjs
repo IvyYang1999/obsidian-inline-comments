@@ -797,11 +797,23 @@ async function run() {
       fs.mkdirSync(sessions, { recursive: true });
       fs.writeFileSync(path.join(sessions, `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: SID, cwd: path.join(WORK, 'vault'), kind: 'interactive', entrypoint: 'claude-desktop', messagingSocketPath: sock }));
       fs.writeFileSync(path.join(sessions, `${process.pid}.${createHash('sha256').update(sock).digest('hex')}.key`), JSON.stringify({ peerToken: token }));
+      // Its transcript: each turn records the permission mode; a queued letter shows up at once
+      const transcript = path.join(WORK, 'home', '.claude', 'projects', '-e2e', `${SID}.jsonl`);
+      fs.mkdirSync(path.dirname(transcript), { recursive: true });
+      const turn = (mode) => fs.appendFileSync(transcript, `${JSON.stringify({ type: 'user', permissionMode: mode, timestamp: new Date().toISOString() })}\n`);
+      turn('acceptEdits');
       let inboxLines = [];
+      let queues = true;
       const inbox = net.createServer((c) => {
         let buf = '';
         c.on('data', (d) => { buf += d; });
-        c.on('end', () => { inboxLines.push(...buf.trim().split('\n').map((l) => JSON.parse(l))); c.end(); });
+        c.on('end', () => {
+          const lines = buf.trim().split('\n').map((l) => JSON.parse(l));
+          inboxLines.push(...lines);
+          const letter = lines.find((l) => l.type === 'user');
+          if (letter && queues) fs.appendFileSync(transcript, `${JSON.stringify({ type: 'queue-operation', operation: 'enqueue', timestamp: new Date().toISOString(), sessionId: SID, content: letter.message.content })}\n`);
+          c.end();
+        });
       });
       await new Promise((r) => inbox.listen(sock, r));
       await page.evaluate(async (sid) => {
@@ -828,6 +840,23 @@ async function run() {
       check('信标为 已读（已送进会话）', deskLetter()[0]?.includes('status: 已读（已送进会话）'));
       const deskLaunched = () => (fs.existsSync(path.join(WORK, 'launch.log')) ? fs.readFileSync(path.join(WORK, 'launch.log'), 'utf8') : '').includes(SID);
       check('会话开着时不弹终端', !deskLaunched());
+
+      // Bypass-permissions session: Claude Code would hold the letter and drop it after 5 min — keep it in the mailbox
+      turn('bypassPermissions');
+      inboxLines = [];
+      await atDesk('跳过权限确认的会话');
+      await sleep(2500);
+      check('会话跳过权限确认：不往收信口送', inboxLines.length === 0, `lines=${inboxLines.length}`);
+      check('……信留在信箱里等 hook（未读）', deskLetter().find((l) => l.includes('跳过权限确认的会话'))?.includes('status: 未读'));
+      check('……也不弹终端', !deskLaunched());
+
+      // The session takes the frames but never queues the letter: back to unread
+      turn('default');
+      queues = false;
+      inboxLines = [];
+      await atDesk('没排上队');
+      check('送出但没进队列：信改回未读', await waitFor(() => inboxLines.length >= 2 && deskLetter().find((l) => l.includes('没排上队'))?.includes('status: 未读'), 16000));
+      queues = true;
 
       await new Promise((r) => inbox.close(r));
       fs.rmSync(path.join(sessions, `${process.pid}.json`));

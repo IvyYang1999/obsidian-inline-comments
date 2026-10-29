@@ -1,5 +1,5 @@
 import { getLocale, setLocale, t } from './src/i18n.ts';
-import { nodeCp, nodeFsp, nodeOs, nodePath } from './src/node.ts';
+import { nodeCp, nodeCrypto, nodeFsp, nodeOs, nodePath } from './src/node.ts';
 import { MarkdownView, Platform, Plugin, PluginSettingTab, App, Setting, Notice, TFile } from 'obsidian';
 import type { EditorView } from '@codemirror/view';
 import type { Editor } from 'obsidian';
@@ -25,8 +25,9 @@ import type { Candidate } from './src/mentionDelivery.ts';
 import { renderAgentRegistrySection } from './src/settings/agentRegistrySection.ts';
 import { type HarnessDef, detectHarnesses, harnessDef, headlessArgs, looksUnauthenticated, resumeShell, runHeadless } from './src/harnesses.ts';
 import { readRegistry, setAgentThread } from './src/registry.ts';
-import { findClaudeInbox, sendToClaudeInbox } from './src/claudeInbox.ts';
+import { claudeInboxHolds, claudeInboxQueued, findClaudeInbox, sendToClaudeInbox } from './src/claudeInbox.ts';
 import { SUGGESTED_HOTKEY, bindSuggestedHotkey, boundHotkeys, formatHotkey, openHotkeySettings, sameHotkey } from './src/hotkeys.ts';
+import { localIsoDate } from './src/localDate.ts';
 import {
   GLOBAL_THREAD_END_MARKER,
   GLOBAL_THREAD_START_MARKER,
@@ -314,34 +315,50 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
    */
   private async onLetter(c: Candidate, relPath: string, letterPath: string): Promise<void> {
     const harness = harnessDef(c.harness);
-    if (harness?.id === 'claude' && await this.handToClaudeInbox(c, letterPath)) return;
+    const inbox = harness?.id === 'claude' ? await this.handToClaudeInbox(c, letterPath) : 'closed';
+    if (inbox === 'handed') return;
+    const file = relPath.split('/').pop();
+    if (inbox === 'held') {
+      this.notifyDesktop(t('评论区有新留言给 {0}', [c.name]), t('{0} · Claude Code 没让留言直接送进它的会话（跳过权限确认的会话不收）；它下一次说话/收尾时会看到', [file]));
+      return; // running already: nothing to start
+    }
     // headless members answer right away and say so themselves
     if (!(c.autoStart && harness?.mode === 'headless')) {
-      this.notifyDesktop(t('评论区有新留言给 {0}', [c.name]), t('{0} · 它下一次说话/收尾时会看到', [relPath.split('/').pop()]));
+      this.notifyDesktop(t('评论区有新留言给 {0}', [c.name]), t('{0} · 它下一次说话/收尾时会看到', [file]));
     }
     await this.maybeAutoStart(c, letterPath);
   }
 
-  /** Put the letter into the member's running Claude Code session; false when the session is not running */
-  private async handToClaudeInbox(c: Candidate, letterPath: string): Promise<boolean> {
-    if (!Platform.isDesktop) return false;
+  /**
+   * Put the letter into the member's running Claude Code session. 'held': the
+   * session runs but would not take it (bypass permissions), or did not queue it,
+   * so the letter stays unread in the mailbox. 'closed': no running session.
+   */
+  private async handToClaudeInbox(c: Candidate, letterPath: string): Promise<'handed' | 'held' | 'closed'> {
+    if (!Platform.isDesktop) return 'closed';
     const inbox = await findClaudeInbox(c.sessionId);
-    if (!inbox) return false;
+    if (!inbox) return 'closed';
+    if (await claudeInboxHolds(inbox)) return 'held';
     const adapter = this.app.vault.adapter;
     let raw: string;
-    try { raw = await adapter.read(letterPath); } catch { return true; }
-    if (!raw.includes('status: 未读')) return true; // the hook already handed it over
+    try { raw = await adapter.read(letterPath); } catch { return 'handed'; }
+    if (!raw.includes('status: 未读')) return 'handed'; // the hook already handed it over
     const handed = 'status: 已读（已送进会话）';
     await adapter.write(letterPath, raw.replace('status: 未读', handed));
     const body = raw.split('\n---\n').slice(1).join('\n---\n');
     const cwd = inbox.cwd || c.cwd || this.vaultBasePath() || process.cwd();
-    const prompt = buildLaunchPrompt(c.name, body, todayIsoDate(), getLocale(), this.vaultDirFor(cwd));
-    if (await sendToClaudeInbox(inbox, prompt) === 'unreachable') {
+    const prompt = buildLaunchPrompt(c.name, body, localIsoDate(), getLocale(), this.vaultDirFor(cwd));
+    const msgId = nodeCrypto().randomUUID();
+    if (await sendToClaudeInbox(inbox, prompt, msgId) === 'unreachable') {
       await this.restoreUnread(letterPath, handed);
-      return false;
+      return 'closed';
+    }
+    if (!await claudeInboxQueued(inbox.sessionId, prompt, msgId)) {
+      await this.restoreUnread(letterPath, handed);
+      return 'held';
     }
     new Notice(t('留言已送进「{0}」的会话（{1}）', [c.name, inbox.desktop ? t('Claude 客户端') : t('终端')]));
-    return true;
+    return 'handed';
   }
 
   /**
@@ -370,7 +387,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       await adapter.write(letterPath, raw.replace('status: 未读', 'status: 已读（启动代标）'));
       const body = raw.split('\n---\n').slice(1).join('\n---\n');
       const cwd = c.cwd || this.vaultBasePath() || process.cwd();
-      const prompt = buildLaunchPrompt(c.name, body, todayIsoDate(), getLocale(), this.vaultDirFor(cwd));
+      const prompt = buildLaunchPrompt(c.name, body, localIsoDate(), getLocale(), this.vaultDirFor(cwd));
       const promptFile = await writePromptFile(c.sessionId, prompt);
       const exists = await sessionFileExists(c.sessionId);
       const plan = buildLaunchPlan({ sessionId: c.sessionId, cwd, promptFile, exists });
@@ -413,7 +430,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       const rel = vault ? nodePath().relative(cwd, vault) : '';
       const extraDir = vault && (rel.startsWith('..') || nodePath().isAbsolute(rel)) ? vault : undefined;
       const body = raw.split('\n---\n').slice(1).join('\n---\n');
-      const prompt = buildLaunchPrompt(c.name, body, todayIsoDate(), getLocale(), this.vaultDirFor(cwd));
+      const prompt = buildLaunchPrompt(c.name, body, localIsoDate(), getLocale(), this.vaultDirFor(cwd));
       const logFile = nodePath().join(nodeOs().tmpdir(), 'ilc-runs', `${c.shortId}.log`);
 
       new Notice(t('「{0}」（{1}）正在回复…', [c.name, harness.label]));
@@ -610,7 +627,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
 
     this.runningGlobalThreads.add(file.path);
 
-    const date = todayIsoDate();
+    const date = localIsoDate();
     const engine = this.settings.globalThreadEngine;
     const aiName = this.getGlobalThreadAgentName(engine);
     let contentWithUserMessage = '';
@@ -693,7 +710,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     this.runningAgentReplies.add(lockKey);
 
     const cwd = getParentDir(absolutePath);
-    const date = todayIsoDate();
+    const date = localIsoDate();
     let before = '';
 
     try {
@@ -904,14 +921,6 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
   }
-}
-
-function todayIsoDate(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
 }
 
 function localMinuteTimestamp(): string {

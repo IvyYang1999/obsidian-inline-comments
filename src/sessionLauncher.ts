@@ -21,18 +21,24 @@ export interface LaunchPlan {
 
 const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
-/** Does a transcript for this session id already exist on this machine? */
-export async function sessionFileExists(sessionId: string, home = process.env.ILC_HOME || nodeOs().homedir()): Promise<boolean> {
+/** This session's transcript (~/.claude/projects/<slug>/<id>.jsonl), or null when there is none on this machine */
+export async function findClaudeTranscript(sessionId: string, home = process.env.ILC_HOME || nodeOs().homedir()): Promise<string | null> {
   const root = nodePath().join(home, '.claude', 'projects');
   let dirs: string[] = [];
-  try { dirs = await nodeFsp().readdir(root); } catch { return false; }
+  try { dirs = await nodeFsp().readdir(root); } catch { return null; }
   for (const d of dirs) {
+    const file = nodePath().join(root, d, `${sessionId}.jsonl`);
     try {
-      await nodeFsp().access(nodePath().join(root, d, `${sessionId}.jsonl`));
-      return true;
+      await nodeFsp().access(file);
+      return file;
     } catch { /* keep looking */ }
   }
-  return false;
+  return null;
+}
+
+/** Does a transcript for this session id already exist on this machine? */
+export async function sessionFileExists(sessionId: string, home = process.env.ILC_HOME || nodeOs().homedir()): Promise<boolean> {
+  return (await findClaudeTranscript(sessionId, home)) !== null;
 }
 
 /** Ids of claude processes currently running (from their command lines) */

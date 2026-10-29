@@ -48,6 +48,7 @@ const EN: Record<string, string> = {
   "评论面板": "Comments",
   "评论区有新留言给 {0}": "New comment for {0}",
   "{0} · 它下一次说话/收尾时会看到": "{0} · it will see it the next time it speaks or finishes",
+  "{0} · Claude Code 没让留言直接送进它的会话（跳过权限确认的会话不收）；它下一次说话/收尾时会看到": "{0} · Claude Code didn’t let the comment into its session (sessions that skip permission prompts don’t take it); it will see it the next time it speaks or finishes",
   "唤醒 hook 只能在桌面端安装": "The wake hook can only be installed on desktop",
   "仅桌面端支持安装唤醒 hook": "Installing the wake hook is desktop only",
   "唤醒 hook 已安装到 {0}{1}": "Wake hook installed into {0}{1}",

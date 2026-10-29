@@ -2,6 +2,7 @@ import { t } from '../i18n.ts';
 import { App, Modal, Setting } from 'obsidian';
 import type { CommentEntry, CommentType } from '../types.ts';
 import { COMMENT_TYPE_META } from '../types.ts';
+import { localIsoDate } from '../localDate.ts';
 
 type OnSubmit = (entry: CommentEntry) => void;
 
@@ -101,7 +102,7 @@ export class AddCommentModal extends Modal {
 
   private doSubmit(): void {
     if (!this.commentText.trim()) return;
-    const today = new Date().toISOString().split('T')[0];
+    const today = localIsoDate();
     this.onSubmit({
       author: this.authorName.trim() || 'user',
       date: today,

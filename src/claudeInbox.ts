@@ -7,12 +7,15 @@
  * presents first. Dark Console uses the same channel.
  *
  * The letter queues behind the session's current turn (priority "next"), so it
- * never interrupts one. A session in bypass-permissions mode holds messages from
- * other programs until the user approves them in that session.
+ * never interrupts one. A session in bypass-permissions mode holds it instead,
+ * waiting for an approval the Claude app has no place for, and drops it after
+ * five minutes — so such sessions get their letters from the mailbox, and a
+ * letter only counts as handed over once the session's transcript shows it queued.
  *
  * Desktop only (Node net/fs). `ILC_HOME` overrides the home directory (e2e).
  */
 import { nodeCrypto, nodeFsp, nodeNet, nodeOs, nodePath } from './node.ts';
+import { findClaudeTranscript } from './sessionLauncher.ts';
 
 export interface ClaudeInbox {
   sessionId: string;
@@ -28,10 +31,10 @@ export interface ClaudeInbox {
 const SENDER = 'Agent Comments';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-async function readJson(file: string): Promise<Record<string, unknown> | null> {
+async function readJson(file: string, maxBytes = 64 * 1024): Promise<Record<string, unknown> | null> {
   try {
     const st = await nodeFsp().stat(file);
-    if (!st.isFile() || st.size > 64 * 1024) return null;
+    if (!st.isFile() || st.size > maxBytes) return null;
     const v: unknown = JSON.parse(await nodeFsp().readFile(file, 'utf8'));
     return v && typeof v === 'object' ? v as Record<string, unknown> : null;
   } catch {
@@ -115,4 +118,74 @@ export function sendToClaudeInbox(inbox: ClaudeInbox, text: string, msgId = node
     sock.once('close', finish);
     sock.resume(); // the session sends nothing back on success; drain whatever it might
   });
+}
+
+/** The end of a file, whole lines only */
+async function readTail(file: string, bytes: number): Promise<string> {
+  const fh = await nodeFsp().open(file, 'r');
+  try {
+    const { size } = await fh.stat();
+    const start = Math.max(0, size - bytes);
+    const buf = Buffer.alloc(size - start);
+    const { bytesRead } = await fh.read(buf, 0, buf.length, start);
+    const text = buf.subarray(0, bytesRead).toString('utf8');
+    return start > 0 ? text.slice(text.indexOf('\n') + 1) : text;
+  } finally {
+    await fh.close().catch(() => {});
+  }
+}
+
+/** The permission mode of the session's latest turn, as its transcript records it */
+export async function claudeSessionMode(sessionId: string, home = process.env.ILC_HOME || nodeOs().homedir()): Promise<string | undefined> {
+  const file = await findClaudeTranscript(sessionId, home);
+  if (!file) return undefined;
+  let mode: string | undefined;
+  try {
+    for (const m of (await readTail(file, 4 * 1024 * 1024)).matchAll(/"permissionMode":"([A-Za-z]+)"/g)) mode = m[1];
+  } catch { /* unreadable: unknown */ }
+  return mode;
+}
+
+/**
+ * Would the session hold a letter from us rather than queue it? Claude Code
+ * holds messages whose sender states no permission mode while the session runs
+ * in bypassPermissions, unless the user's `crossSessionInbound` setting says
+ * otherwise. An unknown mode counts as holding: the mailbox never loses a letter.
+ */
+export async function claudeInboxHolds(inbox: Pick<ClaudeInbox, 'sessionId'>, home = process.env.ILC_HOME || nodeOs().homedir()): Promise<boolean> {
+  const setting = (await readJson(nodePath().join(home, '.claude', 'settings.json'), 1024 * 1024))?.crossSessionInbound;
+  if (setting === 'accept') return false;
+  if (setting === 'hold' || setting === 'refuse') return true;
+  const mode = await claudeSessionMode(inbox.sessionId, home);
+  return mode === undefined || mode === 'bypassPermissions';
+}
+
+const squash = (s: string) => s.replace(/\s+/g, ' ').trim();
+
+/**
+ * Did the session queue the letter? It writes the queue entry to its transcript
+ * right away, even in the middle of a turn; a held or refused letter leaves no trace.
+ */
+export async function claudeInboxQueued(sessionId: string, text: string, msgId: string, home = process.env.ILC_HOME || nodeOs().homedir(), timeoutMs = 10000): Promise<boolean> {
+  const want = squash(text);
+  const since = Date.now() - 5000; // an identical letter queued earlier is not this one
+  const deadline = Date.now() + timeoutMs;
+  let file: string | null = null;
+  for (;;) {
+    file ??= await findClaudeTranscript(sessionId, home);
+    if (file) {
+      const tail = await readTail(file, 1024 * 1024).catch(() => '');
+      for (const line of tail.split('\n')) {
+        if (!line.includes(msgId) && !line.includes('"enqueue"')) continue;
+        try {
+          const r = JSON.parse(line) as { uuid?: unknown; origin?: { msg_id?: unknown }; type?: unknown; operation?: unknown; content?: unknown; timestamp?: unknown };
+          if (r.uuid === msgId || r.origin?.msg_id === msgId) return true;
+          if (r.type === 'queue-operation' && r.operation === 'enqueue' && typeof r.content === 'string' && squash(r.content) === want
+            && Date.parse(String(r.timestamp)) >= since) return true;
+        } catch { /* a line still being written */ }
+      }
+    }
+    if (Date.now() >= deadline) return false;
+    await new Promise((r) => setTimeout(r, 500));
+  }
 }
