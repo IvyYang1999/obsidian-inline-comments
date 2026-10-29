@@ -1,6 +1,7 @@
 import type { App, TFile } from 'obsidian';
 import { parseAnnotations } from './parser.ts';
 import { UNREAD_TYPES } from './types.ts';
+import { countUnreadRuns } from './threadGroups.ts';
 
 interface ReadState {
   read: string[];
@@ -118,12 +119,12 @@ export class UnreadTracker {
   }
 
   /**
-   * Mark a reply as read. The in-memory set is updated synchronously so any
+   * Mark replies as read. The in-memory set is updated synchronously so any
    * re-render that follows is immediately consistent; persistence and the
    * per-file recount run in the background.
    */
-  markAsRead(readKey: string, file?: TFile): Promise<void> {
-    this.readSet.add(readKey);
+  markAsRead(readKeys: string | string[], file?: TFile): Promise<void> {
+    for (const k of typeof readKeys === 'string' ? [readKeys] : readKeys) this.readSet.add(k);
     return (async () => {
       await this.saveReadState();
       if (file) await this.recomputeFile(file);
@@ -154,16 +155,15 @@ export class UnreadTracker {
     return this.recomputeAll();
   }
 
-  /** Count unread replies in one document's content */
+  /** Count unread replies in one document's content (consecutive replies by one author count once) */
   countUnread(path: string, content: string): number {
     let unread = 0;
     for (const ann of parseAnnotations(content)) {
-      for (const comment of ann.comments) {
-        if (!UNREAD_TYPES.has(comment.type)) continue;
-        if (!this.isTrackable(comment.author)) continue;
-        const key = computeReadKey(path, ann.highlightText, comment.author, comment.date, comment.text);
-        if (!this.readSet.has(key)) unread++;
-      }
+      unread += countUnreadRuns(ann.comments, (i) => {
+        const comment = ann.comments[i];
+        if (!UNREAD_TYPES.has(comment.type) || !this.isTrackable(comment.author)) return false;
+        return !this.readSet.has(computeReadKey(path, ann.highlightText, comment.author, comment.date, comment.text));
+      });
     }
     return unread;
   }

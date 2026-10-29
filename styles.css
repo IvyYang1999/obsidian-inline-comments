@@ -238,6 +238,16 @@ body {
 .ilc-entry-has-prev::before { top: 0; height: 6px; }
 .ilc-entry-has-next::after  { top: calc(6px + var(--ilc-avatar)); bottom: 0; }
 
+/* A reply continuing the same author's message: no avatar / name / date of its own */
+.ilc-entry-cont { padding-top: 0; }
+.ilc-entry-cont.ilc-entry-has-prev::before { height: 100%; }
+.ilc-entry-cont.ilc-entry-has-next::after { top: 0; }
+.ilc-entry-cont .ilc-entry-header { position: absolute; top: 0; right: var(--ilc-gutter); min-height: 0; gap: 0; }
+.ilc-entry-cont .ilc-entry-avatar,
+.ilc-entry-cont .ilc-entry-author,
+.ilc-entry-cont .ilc-entry-date { display: none; }
+.ilc-entry-cont .ilc-entry-body { margin-top: 0; }
+
 .ilc-entry-header {
   display: flex;
   align-items: center;
@@ -440,6 +450,8 @@ body {
 .ilc-card-preview:hover .ilc-more-btn,
 .ilc-entry-header:hover .ilc-entry-more-btn,
 .ilc-entry-header:hover .ilc-react-add,
+.ilc-entry-cont:hover .ilc-entry-more-btn,
+.ilc-entry-cont:hover .ilc-react-add,
 .ilc-pending-row:hover .ilc-entry-more-btn { opacity: 1; width: auto; padding: 0 2px; margin-left: 6px; }
 .ilc-more-btn:hover { opacity: 1 !important; color: var(--text-normal); }
 
@@ -1021,18 +1033,22 @@ body {
 .ilc-at-dot-idle   { background: #f0b429; }
 .ilc-at-dot-offline{ background: var(--text-faint); }
 
+/* Two lines: the name, then how this member gets the letter */
 .ilc-at-main {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
 }
 .ilc-at-name {
   font-size: var(--ilc-font-body);
   font-weight: 600;
   color: var(--text-normal);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   flex-shrink: 0;
 }
 .ilc-at-role {
@@ -1060,6 +1076,22 @@ body {
 }
 .ilc-at-item.ilc-at-status-offline .ilc-at-name { color: var(--text-muted); font-weight: 500; }
 .ilc-at-item.ilc-at-status-offline .ilc-at-avatar { opacity: 0.55; }
+
+/* How the member gets the letter is the point of the row: wrap to two lines rather than cut it */
+.ilc-at-item .ilc-at-role {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.35;
+}
+.ilc-at-item.is-disabled { opacity: 0.55; }
+.ilc-at-fix { flex: none; padding: 2px 6px; }
+.ilc-at-tip {
+  padding: 6px 10px 4px;
+  font-size: var(--ilc-font-small);
+  color: var(--text-muted);
+}
 
 .ilc-at-empty {
   padding: 14px 10px;
@@ -1103,7 +1135,9 @@ body {
 }
 
 /* ─── Mark-as-read action ────────────────────────────────────────────────── */
-.ilc-read-btn {
+.ilc-read-btn,
+.ilc-delivery-action,
+.ilc-at-fix {
   height: auto !important;
   min-height: 0 !important;
   line-height: 1.4;
@@ -1119,7 +1153,37 @@ body {
   cursor: pointer;
   transition: background var(--ilc-trans-fast);
 }
-.ilc-read-btn:hover { background: var(--background-modifier-hover) !important; }
+.ilc-read-btn:hover,
+.ilc-delivery-action:hover,
+.ilc-at-fix:hover { background: var(--background-modifier-hover) !important; }
+.ilc-delivery-action:disabled { opacity: 0.5; cursor: default; }
+
+/* ─── Delivery line under an @（已送进… / 没送到…） ─────────────────────────────── */
+.ilc-delivery {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 4px 0 0 var(--ilc-indent);
+  font-size: var(--ilc-font-small);
+  line-height: 1.45;
+  color: var(--text-faint);
+}
+.ilc-delivery-dot {
+  flex: 0 0 6px;
+  height: 6px;
+  margin-top: 0.5em;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.ilc-delivery-text { flex: 1; min-width: 0; }
+.ilc-delivery .ilc-delivery-action { flex: none; padding: 0 6px; margin-top: -1px; }
+.ilc-delivery-busy .ilc-delivery-dot { background: var(--interactive-accent); animation: ilc-pulse 1.4s ease-in-out infinite; }
+.ilc-delivery-warn { color: var(--text-muted); }
+.ilc-delivery-warn .ilc-delivery-dot { background: #f0b429; }
+.ilc-delivery-error { color: var(--text-error, #e5484d); }
+.ilc-delivery-error .ilc-delivery-dot { background: var(--text-error, #e5484d); }
+@keyframes ilc-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .ilc-delivery-busy .ilc-delivery-dot { animation: none; } }
 
 /* ─── Members modal（评论 @ 成员） ─────────────────────────────────────────── */
 .ilc-members-modal-shell { width: min(640px, 92vw); }

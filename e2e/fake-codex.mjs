@@ -13,6 +13,14 @@ process.stdin.on('end', () => {
   console.log(JSON.stringify({ type: 'thread.started', thread_id: thread }));
   console.log(JSON.stringify({ type: 'turn.started' }));
 
+  // 「失败一次」: the first run fails, the retry goes through
+  const failedOnce = path.join(path.dirname(process.env.ILC_FAKE_HARNESS_LOG), 'codex-failed-once');
+  if (prompt.includes('失败一次') && !fs.existsSync(failedOnce)) {
+    fs.writeFileSync(failedOnce, '');
+    console.log(JSON.stringify({ type: 'turn.failed', error: { message: 'stream disconnected' } }));
+    process.exit(1);
+  }
+
   const rel = prompt.match(/- 文档：(.+)/)?.[1].trim();
   const passage = prompt.match(/- 划线原文：(.+)/)?.[1].trim();
   const name = prompt.match(/你在评论区的名字：([^）]+)/)?.[1].trim();

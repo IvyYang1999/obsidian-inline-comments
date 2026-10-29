@@ -24,6 +24,10 @@ import { parseAtMention } from '../agentReply.ts';
 import type InlineCommentsPlugin from '../../main.ts';
 import { attachAtSelector } from '../atSelector.ts';
 import { computeReadKey } from '../unreadTracker.ts';
+import { MENTION_RE } from '../mentionDelivery.ts';
+import { deliveryLine, deliverySlot, type DeliveryRecord } from '../deliveryStatus.ts';
+import { harnessDef } from '../harnesses.ts';
+import { countUnreadRuns, runHeads } from '../threadGroups.ts';
 import { SUGGESTED_HOTKEY, boundHotkeys, formatHotkey } from '../hotkeys.ts';
 import { localIsoDate } from '../localDate.ts';
 
@@ -37,6 +41,14 @@ interface LayoutItem {
   el: HTMLElement;
   height: number;
   actualTop: number;
+}
+
+/** A run of consecutive replies by one author (see threadGroups.ts) */
+interface ThreadRun {
+  head: number;
+  last: number;
+  /** Read keys of its unread entries */
+  unreadKeys: string[];
 }
 
 interface DraftState {
@@ -103,6 +115,8 @@ export class CommentPanel extends ItemView {
   private clickAwayHandler: ((e: MouseEvent) => void) | null = null;
 
   private currentFilePath: string | null = null;
+  /** Delivery line redraws, by deliverySlot — updated in place so a half-typed reply survives */
+  private deliverySlots = new Map<string, () => void>();
 
   /** Latest positions received from CM6 */
   private lastPositions: AnnotationPosition[] = [];
@@ -163,6 +177,8 @@ export class CommentPanel extends ItemView {
         if (active && file.path === active.path) this.refresh();
       }),
     );
+    // A handed letter with no reply turns into 「还没回复」 after a while
+    this.registerInterval(window.setInterval(() => this.updateDelivery(), 30000));
     // Layout changes (sidebar opened/resized) re-wrap the editor and move every anchor
     this.registerEvent(this.app.workspace.on('resize', () => this.layoutCards()));
   }
@@ -272,6 +288,7 @@ export class CommentPanel extends ItemView {
 
     this.cardsZone.empty();
     this.cardEls.clear();
+    this.deliverySlots.clear();
 
     const file = this.app.workspace.getActiveFile();
     const newPath = file?.path ?? null;
@@ -357,11 +374,11 @@ export class CommentPanel extends ItemView {
     const tracker = this.plugin.settings.enableUnreadSignal ? this.plugin.unreadTracker : undefined;
     let unread = 0;
     for (const ann of this.annotations) {
-      for (const c of ann.comments) {
-        if (!UNREAD_TYPES.has(c.type) || !tracker?.isTrackable(c.author)) continue;
-        const key = computeReadKey(file.path, ann.highlightText, c.author, c.date, c.text);
-        if (!tracker.isRead(key)) unread++;
-      }
+      unread += countUnreadRuns(ann.comments, (i) => {
+        const c = ann.comments[i];
+        if (!UNREAD_TYPES.has(c.type) || !tracker?.isTrackable(c.author)) return false;
+        return !tracker.isRead(computeReadKey(file.path, ann.highlightText, c.author, c.date, c.text));
+      });
     }
 
     const count = this.headerEl.createEl('span', { cls: 'ilc-panel-count' });
@@ -866,9 +883,23 @@ export class CommentPanel extends ItemView {
     // Thread (wrapped so long ones can be clipped)
     const threadWrap = card.createEl('div', { cls: 'ilc-thread-wrap' });
     const thread = threadWrap.createEl('div', { cls: 'ilc-thread' });
+    // Consecutive replies by one author share a header and count as one unread
+    const heads = runHeads(ann.comments);
+    const tracker = this.plugin.settings.enableUnreadSignal ? this.plugin.unreadTracker : undefined;
+    const runs = new Map<number, ThreadRun>();
+    ann.comments.forEach((c, i) => {
+      if (c.type === 'resolve' || c.type === 'react') return;
+      const run = runs.get(heads[i]) ?? { head: heads[i], last: i, unreadKeys: [] };
+      run.last = i;
+      if (tracker && UNREAD_TYPES.has(c.type) && tracker.isTrackable(c.author)) {
+        const key = computeReadKey(file.path, ann.highlightText, c.author, c.date, c.text);
+        if (!tracker.isRead(key)) run.unreadKeys.push(key);
+      }
+      runs.set(heads[i], run);
+    });
     ann.comments.forEach((comment, i) => {
       if (comment.type === 'resolve' || comment.type === 'react') return; // markers, not entries
-      this.renderCommentEntry(thread, comment, ann, i, file);
+      this.renderCommentEntry(thread, comment, ann, i, file, runs.get(heads[i])!);
     });
     window.requestAnimationFrame(() => this.applyClamp(card, threadWrap, ann.id));
 
@@ -912,7 +943,7 @@ export class CommentPanel extends ItemView {
       await this.app.vault.modify(file, appendReply(currentContent, ann.from, reply));
     });
 
-    attachAtSelector(input, inputRow, this.app);
+    attachAtSelector(input, inputRow, this.app, { participants: ann.comments.map((c) => c.author) });
 
     this.resizeObserver?.observe(card);
 
@@ -925,6 +956,7 @@ export class CommentPanel extends ItemView {
     ann: Annotation,
     entryIndex: number,
     file: TFile,
+    run: ThreadRun,
   ): void {
     const typeConfig  = this.plugin.settings.commentTypes.find((t) => t.id === comment.type);
     const builtinMeta = COMMENT_TYPE_META[comment.type];
@@ -933,6 +965,9 @@ export class CommentPanel extends ItemView {
     const entry = container.createEl('div', { cls: `ilc-entry ilc-entry-${comment.type}` });
     if (entryIndex > 0) entry.addClass('ilc-entry-has-prev');
     if (entryIndex < ann.comments.length - 1) entry.addClass('ilc-entry-has-next');
+    const runId = `${ann.id}:${run.head}`;
+    entry.dataset.run = runId;
+    if (run.head !== entryIndex) entry.addClass('ilc-entry-cont');
 
     // pending: special rendering
     if (comment.type === 'pending') {
@@ -1001,6 +1036,7 @@ export class CommentPanel extends ItemView {
       const body = entry.createEl('div', { cls: 'ilc-entry-body' });
       this.renderCommentText(body, comment.text, file.path);
     }
+    this.renderDeliveryLines(entry, comment, ann, entryIndex, file);
 
     // @Agent reply button: detect @mention of a registered (has sessionId) agent
     const registeredNames = this.plugin.settings.aiAgents
@@ -1062,24 +1098,65 @@ export class CommentPanel extends ItemView {
       add.addEventListener('click', (e) => { e.stopPropagation(); picker.toggleClass('is-open', !picker.hasClass('is-open')); });
     }
 
-    // Unread state for replies from others: dot on avatar + "标为已读" action.
+    // Unread replies from others: red dot on the run's avatar + "标为已读" under its last entry.
     // Click updates the DOM optimistically; persistence + recount run in background.
     const tracker = this.plugin.settings.enableUnreadSignal ? this.plugin.unreadTracker : undefined;
-    if (UNREAD_TYPES.has(comment.type) && tracker?.isTrackable(comment.author)) {
-      const readKey = computeReadKey(file.path, ann.highlightText, comment.author, comment.date, comment.text);
-      if (!tracker.isRead(readKey)) {
-        entry.addClass('ilc-entry-unread');
+    if (tracker && run.unreadKeys.length > 0) {
+      if (run.head === entryIndex) entry.addClass('ilc-entry-unread');
+      if (run.last === entryIndex) {
         const footer = entry.createEl('div', { cls: 'ilc-entry-footer' });
         const readBtn = footer.createEl('button', { cls: 'ilc-read-btn', text: t('标为已读') });
         readBtn.addEventListener('click', (e) => {
           e.stopPropagation();
-          entry.removeClass('ilc-entry-unread');
+          container.querySelectorAll(`[data-run="${CSS.escape(runId)}"]`).forEach((el) => el.removeClass('ilc-entry-unread'));
           footer.remove();
-          void tracker.markAsRead(readKey, file);
+          void tracker.markAsRead(run.unreadKeys, file);
           this.updateHeader(file);
         });
       }
     }
+  }
+
+  // ── Delivery line under an @ ─────────────────────────────────────────────────
+
+  /** One line per notified @ in this comment; empty until the letter is on record */
+  private renderDeliveryLines(entry: HTMLElement, comment: CommentEntry, ann: Annotation, entryIndex: number, file: TFile): void {
+    if (!comment.text.includes('](agent:')) return;
+    for (const m of comment.text.matchAll(MENTION_RE)) {
+      if (!m[3]) continue; // a mention without ?notify sends nothing
+      const slot = deliverySlot(file.path, ann.highlightText, comment.text, m[2]);
+      const el = entry.createEl('div', { cls: 'ilc-delivery ilc-hidden' });
+      const render = () => this.renderDeliveryLine(el, slot, ann, entryIndex);
+      this.deliverySlots.set(slot, render);
+      render();
+    }
+  }
+
+  private renderDeliveryLine(el: HTMLElement, slot: string, ann: Annotation, entryIndex: number): void {
+    el.empty();
+    el.className = 'ilc-delivery';
+    const rec = this.plugin.deliveryLog?.find(slot);
+    const replied = !!rec && ann.comments.slice(entryIndex + 1).some((c) => c.author.toLowerCase() === rec.name.toLowerCase());
+    const line = rec && deliveryLine(rec, { replied, now: Date.now(), hookInstalled: this.plugin.hookInstalled, label: harnessDef(rec.harness)?.label ?? 'Claude Code' });
+    if (!rec || !line) { el.addClass('ilc-hidden'); return; }
+    el.addClass(`ilc-delivery-${line.tone}`);
+    el.createEl('span', { cls: 'ilc-delivery-dot' });
+    el.createEl('span', { cls: 'ilc-delivery-text', text: line.text });
+    const action = line.action;
+    if (!action) return;
+    const labels = { retry: t('重试'), hook: t('安装 hook'), login: t('去登录'), open: t('打开它的会话') };
+    const btn = el.createEl('button', { cls: 'ilc-delivery-action', text: labels[action] });
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      btn.disabled = true;
+      void this.plugin.deliveryAction(rec.key, action).finally(() => { btn.disabled = false; });
+    });
+  }
+
+  /** A letter moved on (or the hook was installed): redraw its line — or all — in place, never the whole panel */
+  updateDelivery(rec?: DeliveryRecord): void {
+    if (!rec) { for (const render of this.deliverySlots.values()) render(); return; }
+    this.deliverySlots.get(deliverySlot(rec.doc, rec.highlight, rec.text, rec.shortId))?.();
   }
 
   // ── Rich text rendering for comment body ──────────────────────────────────────

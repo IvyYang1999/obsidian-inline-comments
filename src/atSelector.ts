@@ -1,9 +1,12 @@
 import { t } from './i18n.ts';
-import { type App, Notice } from 'obsidian';
+import { type App, Notice, Platform } from 'obsidian';
 import { REGISTRY_PATH, readRegistry } from './registry.ts';
 import { MembersModal } from './views/MembersModal.ts';
 import { NewSessionModal, createSessionMember, defaultHarness, defaultSessionCwd } from './views/NewSessionModal.ts';
 import { validateName, nextAutoSessionName } from './registry.ts';
+import { HARNESSES, detectHarnesses, harnessDef, type HarnessId } from './harnesses.ts';
+import { claudeInboxHolds, findClaudeInbox } from './claudeInbox.ts';
+import { REACH_ORDER, decideReach, harnessLoggedIn, legacyReach, type Reach } from './reach.ts';
 
 export { REGISTRY_PATH };
 
@@ -134,6 +137,65 @@ export function parseRosterContent(content: string): RosterEntry[] {
   return entries;
 }
 
+// ─── How each member gets a letter ───────────────────────────────────────────
+
+/* eslint-disable @typescript-eslint/no-explicit-any -- the plugin instance is looked up through Obsidian's untyped registry */
+const pluginOf = (app: App): any => (app as any).plugins?.plugins?.['inline-comments'];
+/* eslint-enable @typescript-eslint/no-explicit-any -- end of the plugin lookup */
+
+/** How each member would get a letter right now, by name (desktop only: empty on mobile) */
+export async function memberReach(app: App, entries: RosterEntry[]): Promise<Map<string, Reach>> {
+  const out = new Map<string, Reach>();
+  if (!Platform.isDesktopApp) return out;
+  const plugin = pluginOf(app);
+  const [hookInstalled, { bins }] = await Promise.all([
+    (plugin?.refreshHookState?.() as Promise<boolean> | undefined)?.catch(() => false) ?? false,
+    detectHarnesses(),
+  ]);
+  await Promise.all(entries.map(async (e) => {
+    if (e.isAction) return;
+    if (e.source === 'roster') { out.set(e.name, legacyReach(e.status)); return; }
+    const h = harnessDef(e.harness);
+    if (!h) return;
+    let open = false, holds = false, desktop = false;
+    if (h.id === 'claude' && e.sessionId) {
+      const inbox = await findClaudeInbox(e.sessionId);
+      if (inbox) { open = true; desktop = inbox.desktop; holds = await claudeInboxHolds(inbox); }
+    }
+    out.set(e.name, decideReach({
+      harness: h.id, label: h.label, headless: h.mode === 'headless', autoStart: !!e.autoStart,
+      open, holds, desktop, hookInstalled: !!hookInstalled, cliInstalled: !!bins[h.id],
+      loggedIn: h.mode === 'headless' ? await harnessLoggedIn(h.id) : true,
+      canOpenTerminal: process.platform === 'darwin',
+    }));
+  }));
+  return out;
+}
+
+const LEGACY_LEVEL: Record<AgentStatus, Reach['level']> = { '在线': 'now', '闲置': 'later', '离线': 'none' };
+
+/** Who can answer soonest first; then whoever already spoke in this thread; then whoever was @-ed last */
+function pickerOrder(entries: RosterEntry[], reach: Map<string, Reach>, participants: Set<string>, lastAt: (e: RosterEntry) => number): RosterEntry[] {
+  const level = (e: RosterEntry) => REACH_ORDER[reach.get(e.name)?.level ?? LEGACY_LEVEL[e.status]];
+  const here = (e: RosterEntry) => (participants.has(e.name.toLowerCase()) ? 0 : 1);
+  return entries
+    .map((e, i) => ({ e, i, at: lastAt(e) }))
+    .sort((a, b) => level(a.e) - level(b.e) || here(a.e) - here(b.e) || b.at - a.at || a.i - b.i)
+    .map((x) => x.e);
+}
+
+/** What answering with a new session does, in one line */
+function newSessionHint(name: string, harness: HarnessId | null, signedIn = true): string {
+  const h = harness ? HARNESSES.find((x) => x.id === harness) : undefined;
+  if (!h) return t('本机没找到 Claude Code、Codex 或 Gemini CLI');
+  if (!signedIn) return t('会用 {0} 开「{1}」，但 {0} 好像还没登录', [h.label, name]);
+  return h.mode === 'terminal'
+    ? t('用 {0} 在终端里开「{1}」，之后 @{1} 都接着它聊', [h.label, name])
+    : t('用 {0} 在后台开「{1}」回复，之后 @{1} 都接着它聊', [h.label, name]);
+}
+
+const LEVEL_CLS: Record<Reach['level'], string> = { now: 'online', later: 'idle', none: 'offline' };
+
 // ─── Dropdown UI ─────────────────────────────────────────────────────────────
 
 const STATUS_CLS: Record<AgentStatus, string> = { '在线': 'online', '闲置': 'idle', '离线': 'offline' };
@@ -158,11 +220,11 @@ function visibleBottom(panelRect: DOMRect): number {
 }
 
 /** Pseudo-entry shown first in the list: pick it to answer with a brand-new session */
-const newSessionAction = (): RosterEntry => ({
+const newSessionAction = (next: string, harness: HarnessId | null, ready: boolean): RosterEntry => ({
   name: t('用新会话回答'),
   shortId: '',
-  role: t('自动起名并开一个新会话来回复'),
-  status: '在线',
+  role: newSessionHint(next, harness, ready),
+  status: harness && ready ? '在线' : '离线',
   source: 'registry',
   isAction: true,
 });
@@ -182,7 +244,13 @@ export function attachAtSelector(
   textarea: HTMLTextAreaElement,
   wrapper: HTMLElement,
   app: App,
+  ctx: { participants?: string[] } = {},
 ): void {
+  const participants = new Set((ctx.participants ?? []).map((n) => n.toLowerCase()));
+  let reach = new Map<string, Reach>();
+  /** Harness a quick new session would use (null: none installed), and whether it seems signed in */
+  let newHarness: HarnessId | null = null;
+  let newHarnessReady = true;
   let dropdown: HTMLElement | null = null;
   let listEl: HTMLElement | null = null;
   let notifyCb: HTMLInputElement | null = null;
@@ -242,8 +310,11 @@ export function attachAtSelector(
       ? allEntries.filter((e) => e.name.toLowerCase().includes(q) || cleanRole(e.role).toLowerCase().includes(q))
       : allEntries;
     // "用新会话回答" leads the list whenever nothing specific is typed (or the label itself matches)
-    const action = newSessionAction();
+    const action = newSessionAction(nextAutoSessionName(allEntries.map((e) => e.name)), newHarness, newHarnessReady);
     visible = !q || action.name.includes(query.trim()) ? [action, ...matches] : matches;
+    if (!q && reach.size > 0 && allEntries.length > 0 && ![...reach.values()].some((r) => r.level === 'now')) {
+      listEl.createEl('div', { cls: 'ilc-at-tip', text: t('现在没有能马上回复的会话，可以用新会话回答') });
+    }
     activeIndex = Math.min(activeIndex, Math.max(0, visible.length - 1));
 
     createCandidate = q && !validateName(query.trim()) ? query.trim() : null;
@@ -253,7 +324,7 @@ export function attachAtSelector(
         item.createEl('span', { cls: 'ilc-at-avatar ilc-at-avatar-new', text: '＋' });
         const main = item.createEl('span', { cls: 'ilc-at-main' });
         main.createEl('span', { cls: 'ilc-at-name', text: t('创建新会话「{0}」并 @ 它', [createCandidate]) });
-        main.createEl('span', { cls: 'ilc-at-role', text: t('发送后在终端里启动一个真正的 Claude Code 会话来回复') });
+        main.createEl('span', { cls: 'ilc-at-role', text: newSessionHint(createCandidate, newHarness, newHarnessReady) });
         item.addEventListener('mousedown', (e) => e.preventDefault());
         item.addEventListener('click', (e) => { e.stopPropagation(); void createAndMention(createCandidate!); });
       } else {
@@ -266,20 +337,39 @@ export function attachAtSelector(
     }
 
     visible.forEach((entry, i) => {
+      const r = entry.isAction ? undefined : reach.get(entry.name);
+      const statusCls = r ? LEVEL_CLS[r.level] : STATUS_CLS[entry.status];
       const item = listEl!.createEl('div', {
-        cls: `ilc-at-item ilc-at-status-${STATUS_CLS[entry.status]}${i === activeIndex ? ' is-active' : ''}${entry.isAction ? ' ilc-at-newsession' : ''}`,
+        cls: `ilc-at-item ilc-at-status-${statusCls}${i === activeIndex ? ' is-active' : ''}${entry.isAction ? ' ilc-at-newsession' : ''}${entry.isAction && !(newHarness && newHarnessReady) ? ' is-disabled' : ''}`,
       });
 
       const avatar = item.createEl('span', { cls: `ilc-at-avatar${entry.isAction ? ' ilc-at-avatar-new' : ''}`, text: entry.isAction ? '＋' : entry.name.charAt(0) });
       if (!entry.isAction) {
         avatar.setCssStyles({ background: avatarColor(entry.name) });
-        avatar.createEl('span', { cls: `ilc-at-dot ilc-at-dot-${STATUS_CLS[entry.status]}` });
+        avatar.createEl('span', { cls: `ilc-at-dot ilc-at-dot-${statusCls}` });
       }
 
       const main = item.createEl('span', { cls: 'ilc-at-main' });
       main.createEl('span', { cls: 'ilc-at-name', text: entry.name });
-      const role = cleanRole(entry.role);
-      if (role) main.createEl('span', { cls: 'ilc-at-role', text: role });
+      const role = [cleanRole(entry.role), r && r.text !== entry.status ? r.text : ''].filter(Boolean).join(' · ');
+      if (role) main.createEl('span', { cls: 'ilc-at-role', text: role, attr: { title: role } });
+
+      if (r?.fix) {
+        const fix = r.fix;
+        const btn = item.createEl('button', { cls: 'ilc-at-fix', text: fix === 'hook' ? t('安装 hook') : t('去登录') });
+        btn.addEventListener('mousedown', (e) => e.preventDefault());
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const plugin = pluginOf(app);
+          if (fix === 'hook') await plugin?.installHooks?.();
+          else await plugin?.openHarnessLogin?.(entry.harness);
+          reach = await memberReach(app, allEntries);
+          renderList(currentQuery());
+        });
+      }
+      if (!entry.isAction && participants.has(entry.name.toLowerCase())) {
+        item.createEl('span', { cls: 'ilc-at-source ilc-at-source-muted', text: t('这条里回复过') });
+      }
 
       if (entry.isAction) {
         // no source pill
@@ -359,11 +449,17 @@ export function attachAtSelector(
     activeAtPos = atPos;
     const loadToken = ++loadSeq;
 
-    const entries = await loadRoster(app);
+    const [entries, harness] = await Promise.all([loadRoster(app), defaultHarness(app)]);
+    const reachNow = await memberReach(app, entries);
+    const ready = !harness || !Platform.isDesktopApp || await harnessLoggedIn(harness);
     // Superseded (user moved on / another load finished first)? Just refresh the query.
     if (activeAtPos !== atPos || loadToken !== loadSeq) { if (dropdown) renderList(currentQuery()); return; }
     if (dropdown) { renderList(currentQuery()); return; }
-    allEntries = entries;
+    reach = reachNow;
+    newHarness = harness;
+    newHarnessReady = ready;
+    const log = pluginOf(app)?.deliveryLog;
+    allEntries = pickerOrder(entries, reach, participants, (e) => (e.sessionId ? log?.lastAt?.(e.sessionId) ?? 0 : 0));
 
     const card = wrapper.closest('.ilc-card');
     card?.classList.add('ilc-at-active');

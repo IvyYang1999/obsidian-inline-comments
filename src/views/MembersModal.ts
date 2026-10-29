@@ -1,12 +1,14 @@
 import { statusLabel, t } from '../i18n.ts';
 import { App, Modal, Notice, Platform } from 'obsidian';
-import { loadRoster, type RosterEntry } from '../atSelector.ts';
+import { loadRoster, memberReach, type RosterEntry } from '../atSelector.ts';
+import type { Reach } from '../reach.ts';
 import { readRegistry, removeAgent, upsertAgent, validateName } from '../registry.ts';
 import { discoverLocalSessions, shortCwd, timeAgo, type LocalSession } from '../sessionDiscovery.ts';
 import { DEFAULT_MAILBOX_ROOT } from '../mentionDelivery.ts';
 import { harnessDef } from '../harnesses.ts';
 
 const STATUS_CLS: Record<string, string> = { '在线': 'online', '闲置': 'idle', '离线': 'offline' };
+const LEVEL_CLS: Record<Reach['level'], string> = { now: 'online', later: 'idle', none: 'offline' };
 
 function avatarColor(name: string): string {
   let h = 0;
@@ -127,15 +129,17 @@ export class MembersModal extends Modal {
       el.createEl('div', { cls: 'ilc-members-empty', text: t('还没有成员。从下面的会话里加一个，或让会话自己运行 /comment-join。') });
       return;
     }
-    for (const e of entries) this.renderMemberRow(el, e);
+    const reach = await memberReach(this.app, entries);
+    for (const e of entries) this.renderMemberRow(el, e, reach.get(e.name));
   }
 
-  private renderMemberRow(container: HTMLElement, e: RosterEntry): void {
-    const row = container.createEl('div', { cls: `ilc-members-row ilc-at-status-${STATUS_CLS[e.status]}` });
+  private renderMemberRow(container: HTMLElement, e: RosterEntry, reach?: Reach): void {
+    const statusCls = reach ? LEVEL_CLS[reach.level] : STATUS_CLS[e.status];
+    const row = container.createEl('div', { cls: `ilc-members-row ilc-at-status-${statusCls}` });
 
     const avatar = row.createEl('span', { cls: 'ilc-at-avatar', text: e.name.charAt(0) });
     avatar.setCssStyles({ background: avatarColor(e.name) });
-    avatar.createEl('span', { cls: `ilc-at-dot ilc-at-dot-${STATUS_CLS[e.status]}` });
+    avatar.createEl('span', { cls: `ilc-at-dot ilc-at-dot-${statusCls}` });
 
     const main = row.createEl('div', { cls: 'ilc-members-main' });
     const line1 = main.createEl('div', { cls: 'ilc-members-line' });
@@ -148,12 +152,21 @@ export class MembersModal extends Modal {
         ? t('有留言时，插件在后台接着这个会话回复')
         : t('有留言且它没在运行时，插件会在终端里启动/恢复这个会话并把留言交给它'));
     }
-    line1.createEl('span', { cls: 'ilc-members-status', text: statusLabel(e.status) });
+    line1.createEl('span', { cls: 'ilc-members-status', text: reach?.text ?? statusLabel(e.status) });
     const line2 = main.createEl('div', { cls: 'ilc-members-sub' });
     line2.appendText(e.source === 'registry' ? t('自己加入的会话') : t('花名册在编'));
     if (e.role) line2.appendText(` · ${e.role.replace(/^@/, '')}`);
     line2.appendText(` · ${e.shortId}`);
 
+    if (reach?.fix) {
+      const fix = reach.fix;
+      const btn = row.createEl('button', { cls: 'ilc-members-resume', text: fix === 'hook' ? t('安装 hook') : t('去登录') });
+      btn.addEventListener('click', async () => {
+        if (fix === 'hook') await this.plugin?.installHooks?.();
+        else await this.plugin?.openHarnessLogin?.(e.harness);
+        await this.renderMembers();
+      });
+    }
     if (headless && e.threadId) {
       const term = row.createEl('button', { cls: 'ilc-members-resume', text: t('终端') });
       term.setAttribute('title', t('在终端里打开这个会话，接着跟它聊'));

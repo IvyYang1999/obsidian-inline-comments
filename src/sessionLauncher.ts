@@ -67,7 +67,7 @@ How to reply: open the note named in the letter, find the comment block for the 
 To change the highlighted passage itself, append a suggestion (body = the replacement text only; put any explanation in a separate reply):
 {>>${name}|${today}|suggest: replacement text<<}
 The passage only changes when the user clicks Accept — never edit {==passage==} yourself.
-Rules: do not delete or alter existing comments or the {==passage==}; avoid consecutive << or >> in your text; read the note first if you need context. Once written, the user sees your reply in the comments panel, and may @ you again — new letters arrive here automatically.`;
+Rules: do not delete or alter other people's comments or the {==passage==}; to add to or correct your reply, edit your own entry instead of appending another one; avoid consecutive << or >> in your text; read the note first if you need context. Once written, the user sees your reply in the comments panel, and may @ you again — new letters arrive here automatically.`;
   }
   return `📬 Obsidian 评论区有 1 封新留言给你（你在评论区的名字：${name}）。
 ${letterBody.trim()}
@@ -77,7 +77,7 @@ ${vaultDir ? `（「文档」路径相对于 vault 文件夹：${vaultDir}）\n`
 要修改划线原文时，另外追加一条建议（正文只放替换后的原文，不要解释，解释写在 reply 里）：
 {>>${name}|${today}|suggest: 替换后的原文<<}
 用户在面板里点「采纳」原文才会变，你自己不要直接改 {==原文==}。
-规则：不要删改已有评论和 {==原文==}；回复正文里不要出现连续的 << 或 >>；需要上下文就先读文档。回复写进文档后，用户会在评论面板里看到。之后用户还可能继续在评论里 @ 你，留言会自动送到这里。`;
+规则：不要删改别人的评论和 {==原文==}；要补充或更正，直接改你自己的那条回复，不要再追加一条；回复正文里不要出现连续的 << 或 >>；需要上下文就先读文档。回复写进文档后，用户会在评论面板里看到。之后用户还可能继续在评论里 @ 你，留言会自动送到这里。`;
 }
 
 export function buildLaunchPlan(opts: { sessionId: string; cwd: string; promptFile?: string; exists: boolean }): LaunchPlan {
@@ -112,4 +112,16 @@ export async function launchInTerminal(plan: LaunchPlan): Promise<'launched' | '
 end tell`;
   await new Promise<void>((resolve) => nodeCp().execFile('osascript', ['-e', script], () => resolve()));
   return 'launched';
+}
+
+/** Open a URL with the system (a claude:// link opens the chat in the Claude app); logged when ILC_LAUNCH_LOG is set */
+export async function openExternalUrl(url: string): Promise<'opened' | 'logged'> {
+  const log = process.env.ILC_LAUNCH_LOG;
+  if (log) {
+    await nodeFsp().appendFile(log, JSON.stringify({ url, at: new Date().toISOString() }) + '\n', 'utf8');
+    return 'logged';
+  }
+  if (process.platform === 'darwin') nodeCp().execFile('open', [url], () => {});
+  else window.open(url);
+  return 'opened';
 }

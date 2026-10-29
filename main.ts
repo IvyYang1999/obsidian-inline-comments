@@ -20,12 +20,14 @@ import { DEFAULT_MAILBOX_ROOT } from './src/mentionDelivery.ts';
 import { MentionDelivery } from './src/mentionDeliveryService.ts';
 import { getHookStatus, installClaudeHooks, uninstallClaudeHooks, type HookStatus } from './src/hookInstaller.ts';
 import { HOOK_SCRIPT_NAME } from './src/hookScript.ts';
-import { buildLaunchPlan, buildLaunchPrompt, launchInTerminal, runningClaudeIds, sessionFileExists, writePromptFile } from './src/sessionLauncher.ts';
+import { buildLaunchPlan, buildLaunchPrompt, launchInTerminal, openExternalUrl, runningClaudeIds, sessionFileExists, writePromptFile } from './src/sessionLauncher.ts';
 import type { Candidate } from './src/mentionDelivery.ts';
 import { renderAgentRegistrySection } from './src/settings/agentRegistrySection.ts';
 import { type HarnessDef, detectHarnesses, harnessDef, headlessArgs, looksUnauthenticated, resumeShell, runHeadless } from './src/harnesses.ts';
 import { readRegistry, setAgentThread } from './src/registry.ts';
 import { claudeInboxHolds, claudeInboxQueued, findClaudeInbox, sendToClaudeInbox } from './src/claudeInbox.ts';
+import { DeliveryLog, type DeliveryLine } from './src/deliveryStatus.ts';
+import type { DeliveredMention } from './src/mentionDeliveryService.ts';
 import { SUGGESTED_HOTKEY, bindSuggestedHotkey, boundHotkeys, formatHotkey, openHotkeySettings, sameHotkey } from './src/hotkeys.ts';
 import { localIsoDate } from './src/localDate.ts';
 import {
@@ -103,6 +105,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
   unreadTracker!: UnreadTracker;
   explorerBadge!: ExplorerBadge;
   mentionDelivery!: MentionDelivery;
+  deliveryLog!: DeliveryLog;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -207,12 +210,18 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     this.app.workspace.onLayoutReady(() => this.explorerBadge.attach());
     this.registerEvent(this.app.workspace.on('layout-change', () => this.explorerBadge.attach()));
 
+    // Where each @ letter is, for the line under the comment
+    this.deliveryLog = new DeliveryLog(this.app, `${this.pluginDir()}/delivery-status.json`);
+    await this.deliveryLog.load();
+    this.deliveryLog.onChange((r) => this.getPanel()?.updateDelivery(r));
+    if (Platform.isDesktop) this.app.workspace.onLayoutReady(() => void this.refreshHookState().then(() => this.getPanel()?.updateDelivery()));
+
     // @ mention → mailbox letter (replaces the external cron scanner)
     this.mentionDelivery = new MentionDelivery(
       this.app,
       () => ({ enabled: this.settings.enableMentionDelivery, mailboxRoot: this.settings.mailboxRoot }),
       (msg) => new Notice(msg),
-      (c, relPath, letterPath) => void this.onLetter(c, relPath, letterPath),
+      (c, relPath, letterPath, mention) => void this.onLetter(c, relPath, letterPath, mention),
     );
     this.mentionDelivery.init();
 
@@ -221,6 +230,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
         if (!(file instanceof TFile) || file.extension !== 'md') return;
         this.unreadTracker.scheduleRecompute(file);
         this.mentionDelivery.schedule(file);
+        void this.onLetterChanged(file);
       }),
     );
   }
@@ -260,6 +270,8 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     if (!script || !root) { new Notice(t('仅桌面端支持安装唤醒 hook')); return null; }
     const res = await installClaudeHooks(script, root, getLocale());
     new Notice(t('唤醒 hook 已安装到 {0}{1}', [res.settingsPath, res.backup ? '（原文件已备份）' : '']));
+    await this.refreshHookState();
+    this.getPanel()?.updateDelivery();
     return res;
   }
 
@@ -267,6 +279,8 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     if (!Platform.isDesktop) return;
     await uninstallClaudeHooks();
     new Notice(t('唤醒 hook 已移除'));
+    await this.refreshHookState();
+    this.getPanel()?.updateDelivery();
   }
 
   /** macOS notification (best-effort, desktop only) */
@@ -312,21 +326,95 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
    * A letter was written for member `c`. A Claude Code session that is running
    * (in the Claude app or a terminal) gets it right away through its inbox;
    * otherwise the user is notified and auto-start members are started or answered.
+   * Each step is recorded, so the card under the comment can say where the letter is.
    */
-  private async onLetter(c: Candidate, relPath: string, letterPath: string): Promise<void> {
+  private async onLetter(c: Candidate, relPath: string, letterPath: string, mention?: DeliveredMention): Promise<void> {
     const harness = harnessDef(c.harness);
+    const key = mention?.key;
+    if (mention) {
+      this.deliveryLog.record({
+        key: mention.key, doc: relPath, highlight: mention.highlight, text: mention.text, shortId: c.shortId,
+        name: c.name, sessionId: c.sessionId, harness: c.harness, letter: letterPath, state: 'sending',
+      });
+    }
     const inbox = harness?.id === 'claude' ? await this.handToClaudeInbox(c, letterPath) : 'closed';
-    if (inbox === 'handed') return;
+    if (inbox === 'handed') { this.logDelivery(key, { state: 'handed', route: 'inbox' }); return; }
     const file = relPath.split('/').pop();
     if (inbox === 'held') {
+      this.logDelivery(key, { state: 'mailbox', reason: 'held' });
       this.notifyDesktop(t('评论区有新留言给 {0}', [c.name]), t('{0} · Claude Code 没让留言直接送进它的会话（跳过权限确认的会话不收）；它下一次说话/收尾时会看到', [file]));
       return; // running already: nothing to start
     }
+    if (harness?.mode === 'headless' && !c.autoStart) this.logDelivery(key, { state: 'mailbox', reason: 'not-autostart' });
     // headless members answer right away and say so themselves
     if (!(c.autoStart && harness?.mode === 'headless')) {
       this.notifyDesktop(t('评论区有新留言给 {0}', [c.name]), t('{0} · 它下一次说话/收尾时会看到', [file]));
     }
-    await this.maybeAutoStart(c, letterPath);
+    await this.maybeAutoStart(c, letterPath, key);
+    // nothing took it: it waits in the mailbox
+    if (key && this.deliveryLog.byKey(key)?.state === 'sending') this.logDelivery(key, { state: 'mailbox' });
+  }
+
+  private logDelivery(key: string | undefined, patch: Parameters<DeliveryLog['update']>[1]): void {
+    if (key) this.deliveryLog.update(key, patch);
+  }
+
+  /** Whether the wake hook is installed for this vault (cached for the cards) */
+  hookInstalled = false;
+
+  async refreshHookState(): Promise<boolean> {
+    const st = await this.hookStatus();
+    this.hookInstalled = !!st?.installed && !st.stale;
+    return this.hookInstalled;
+  }
+
+  /** The card's button under an @: retry the letter, install the hook, sign the CLI in, or open the session */
+  async deliveryAction(key: string, action: DeliveryLine['action']): Promise<void> {
+    const rec = this.deliveryLog.byKey(key);
+    if (!rec || !action) return;
+    if (action === 'hook') { await this.installHooks(); return; }
+    if (action === 'login') { await this.openHarnessLogin(rec.harness); return; }
+    const c = await this.mentionDelivery.candidate(rec.shortId);
+    if (!c) { new Notice(t('找不到成员「{0}」了', [rec.name])); return; }
+    if (action === 'open') { await this.openMemberSession(c); return; }
+    try {
+      const raw = await this.app.vault.adapter.read(rec.letter);
+      await this.app.vault.adapter.write(rec.letter, raw.replace(/^status: .*$/m, 'status: 未读'));
+    } catch {
+      new Notice(t('这封信已经不在信箱里了'));
+      return;
+    }
+    await this.onLetter(c, rec.doc, rec.letter, { key: rec.key, highlight: rec.highlight, text: rec.text });
+  }
+
+  /** Show the member's session: its chat in the Claude app, else a terminal that resumes it */
+  async openMemberSession(c: Pick<Candidate, 'name' | 'sessionId' | 'harness' | 'cwd' | 'threadId'>): Promise<void> {
+    if (harnessDef(c.harness)?.id === 'claude') {
+      const inbox = Platform.isDesktop ? await findClaudeInbox(c.sessionId) : null;
+      if (inbox?.hostSessionId) { await openExternalUrl(`claude://code/continue?session=${inbox.hostSessionId}`); return; }
+      if (inbox) { new Notice(t('「{0}」开在终端里，去那个窗口看看', [c.name])); return; }
+    }
+    await this.resumeInTerminal(c.sessionId, c.cwd, c.harness, c.threadId);
+  }
+
+  /** Open a terminal where the user signs the Codex / Gemini CLI in */
+  async openHarnessLogin(harness: string | undefined): Promise<void> {
+    const h = harnessDef(harness);
+    if (!h || h.mode !== 'headless' || !Platform.isDesktop) return;
+    const bin = (await detectHarnesses()).bins[h.id] ?? h.bin;
+    const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+    const shell = h.id === 'codex' ? `${q(bin)} login` : q(bin);
+    const r = await launchInTerminal({ mode: 'new', sessionId: '', cwd: this.vaultBasePath() || process.cwd(), shell });
+    if (r === 'unsupported') new Notice(t('请在终端里运行 {0} 登录', [h.id === 'codex' ? 'codex login' : 'gemini']));
+  }
+
+  /** The wake hook marks a letter it handed over: tell the card */
+  private async onLetterChanged(file: TFile): Promise<void> {
+    const rec = this.deliveryLog.byLetter(file.path);
+    if (!rec || rec.state === 'handed') return;
+    try {
+      if ((await this.app.vault.adapter.read(file.path)).includes('status: 已读（hook代标）')) this.deliveryLog.update(rec.key, { state: 'handed', route: 'hook' });
+    } catch { /* letter gone */ }
   }
 
   /**
@@ -367,24 +455,26 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
    * the letter as the first message. The letter is marked as handed over so the
    * hook does not inject it a second time.
    */
-  async maybeAutoStart(c: Candidate, letterPath: string): Promise<void> {
+  async maybeAutoStart(c: Candidate, letterPath: string, key?: string): Promise<void> {
     if (!Platform.isDesktop) return; // letters are still written; a desktop session picks them up
     const harness = harnessDef(c.harness);
     if (!c.autoStart || !harness) return;
     if (harness.mode === 'headless') {
       // One run at a time per member: the next letter resumes the session the previous run created
-      const next = (this.headlessRuns.get(c.sessionId) ?? Promise.resolve()).then(() => this.answerHeadless(c, harness, letterPath));
+      this.logDelivery(key, { state: 'handed', route: 'background' });
+      const next = (this.headlessRuns.get(c.sessionId) ?? Promise.resolve()).then(() => this.answerHeadless(c, harness, letterPath, key));
       this.headlessRuns.set(c.sessionId, next);
       void next.finally(() => { if (this.headlessRuns.get(c.sessionId) === next) this.headlessRuns.delete(c.sessionId); });
       return;
     }
+    const started = 'status: 已读（启动代标）';
     try {
       const running = await runningClaudeIds();
       if (running.has(c.sessionId.toLowerCase())) return;
       const adapter = this.app.vault.adapter;
       const raw = await adapter.read(letterPath);
       if (!raw.includes('status: 未读')) return; // already handed over by the hook
-      await adapter.write(letterPath, raw.replace('status: 未读', 'status: 已读（启动代标）'));
+      await adapter.write(letterPath, raw.replace('status: 未读', started));
       const body = raw.split('\n---\n').slice(1).join('\n---\n');
       const cwd = c.cwd || this.vaultBasePath() || process.cwd();
       const prompt = buildLaunchPrompt(c.name, body, localIsoDate(), getLocale(), this.vaultDirFor(cwd));
@@ -392,10 +482,18 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       const exists = await sessionFileExists(c.sessionId);
       const plan = buildLaunchPlan({ sessionId: c.sessionId, cwd, promptFile, exists });
       const r = await launchInTerminal(plan);
+      if (r === 'unsupported') {
+        // nothing was started: the letter waits in the mailbox
+        await this.restoreUnread(letterPath, started);
+        new Notice(t('「{0}」未在运行，且当前平台不支持自动启动', [c.name]));
+        return;
+      }
+      this.logDelivery(key, { state: 'handed', route: 'terminal' });
       if (r === 'launched') new Notice(t('已在终端{0}会话「{1}」，留言已交给它', [plan.mode === 'new' ? '启动' : '恢复', c.name]));
-      else if (r === 'unsupported') new Notice(t('「{0}」未在运行，且当前平台不支持自动启动', [c.name]));
     } catch (err) {
       console.error('[ilc] auto-start failed', err);
+      await this.restoreUnread(letterPath, started);
+      this.logDelivery(key, { state: 'failed', reason: 'error', detail: shortError(err) });
       new Notice(t('自动启动「{0}」失败：{1}', [c.name, String((err as Error)?.message ?? err)]));
     }
   }
@@ -411,7 +509,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
    * member's session (or starts it). The reply lands in the note like any other;
    * failures are reported and the letter goes back to unread.
    */
-  private async answerHeadless(c: Candidate, harness: HarnessDef, letterPath: string): Promise<void> {
+  private async answerHeadless(c: Candidate, harness: HarnessDef, letterPath: string, key?: string): Promise<void> {
     const adapter = this.app.vault.adapter;
     let raw: string;
     try { raw = await adapter.read(letterPath); } catch { return; }
@@ -420,8 +518,13 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     try {
       const { bins, path } = await detectHarnesses();
       const bin = bins[harness.id];
-      if (!bin) { new Notice(t('本机没找到 {0}，「{1}」没法回复', [harness.label, c.name])); return; }
+      if (!bin) {
+        this.logDelivery(key, { state: 'failed', reason: 'missing-cli' });
+        new Notice(t('本机没找到 {0}，「{1}」没法回复', [harness.label, c.name]));
+        return;
+      }
       await adapter.write(letterPath, raw.replace('status: 未读', handed));
+      this.logDelivery(key, { state: 'handed', route: 'background' });
 
       // Read the thread id now, not from the candidate: the previous run may have just stored it
       const threadId = (await readRegistry(this.app)).agents.find((a) => a.sessionId === c.sessionId)?.threadId;
@@ -444,12 +547,15 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
 
       console.error('[ilc] headless run failed', harness.id, res.error, logFile);
       await this.restoreUnread(letterPath, handed);
-      new Notice(looksUnauthenticated(res.error)
+      const unauthenticated = looksUnauthenticated(res.error);
+      this.logDelivery(key, unauthenticated ? { state: 'failed', reason: 'not-logged-in' } : { state: 'failed', reason: 'error', detail: shortError(res.error) });
+      new Notice(unauthenticated
         ? t('「{0}」没回复：{1} 还没登录。先在终端运行 {2} 登录一次。', [c.name, harness.label, harness.bin])
         : t('「{0}」没回复：{1}（日志在 {2}）', [c.name, res.error ?? '', logFile]), 12000);
     } catch (err) {
       console.error('[ilc] headless run failed', err);
       await this.restoreUnread(letterPath, handed);
+      this.logDelivery(key, { state: 'failed', reason: 'error', detail: shortError(err) });
       new Notice(t('「{0}」没回复：{1}', [c.name, String((err as Error)?.message ?? err)]));
     }
   }
@@ -921,6 +1027,12 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
   }
+}
+
+/** First line of an error, short enough for the card */
+function shortError(err: unknown): string {
+  const msg = String((err as Error)?.message ?? err ?? '').split('\n').find((l) => l.trim()) ?? '';
+  return msg.length > 80 ? `${msg.slice(0, 80)}…` : msg;
 }
 
 function localMinuteTimestamp(): string {

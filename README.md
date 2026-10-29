@@ -32,6 +32,8 @@
 
 **@ a real session.** Type `@` in a comment to pick a running Claude Code / Codex session on your machine — or choose *Answer with a new session* and the plugin starts one with whichever agent CLI you have installed: Claude Code opens in Terminal (macOS), Codex and Gemini CLI answer in the background, each comment resuming the same session. If the Claude Code session is open right now — in the Claude app's Code tab or in a terminal — the letter goes straight into it, queued after whatever it is doing; otherwise (or when the session skips permission prompts, which makes Claude Code refuse messages from other programs) it waits in the session's mailbox and a small hook (installed on request) hands it over the next time the session speaks. The session reads the note and writes its reply back into the file.
 
+**Know where a comment stands.** The `@` list says how each member gets a comment right now — straight away, the next time it speaks, or not at all, with a one-click fix (install the hook, sign the CLI in). Under each `@` the card shows where the comment is: in the mailbox, handed to the session and being worked on, or not delivered and why, with *Retry*. The line goes away when the reply arrives.
+
 **Suggested edits.** A reply can carry a replacement for the highlighted passage — from a person or from the AI session. The card shows old → new with *Accept* / *Decline*; nothing in the note changes until you accept.
 
 **Unread, at a glance.** Replies from other people or AI get a red dot, the panel header shows *N comments · M unread*, and the file explorer shows a red count on the document. Mark as read with one click, resolve a thread when it's done, react with an emoji. One switch turns the unread signals off.
@@ -106,6 +108,7 @@ Design notes live in [`DESIGN.md`](DESIGN.md). Releases are built by CI from a v
 
 - **划线，即评论。** 选中文字右键「添加划线评论」，卡片挂在右侧栏、与原文水平对齐、跟着滚动。
 - **@ 一个正在跑的会话。** 打 `@` 点名本机的 Claude Code / Codex 会话，或「用新会话回答」让插件用本机装了的 Agent 替你开一个（Claude Code 在终端里打开；Codex、Gemini CLI 在后台回复，每条留言接着同一个会话）。Claude Code 会话此刻开着（Claude 客户端的 Code 页或终端里）时，留言直接送进去，排在它手头的事后面；没开着、或它跳过了权限确认（这时 Claude Code 不收其他程序发来的消息），就留在信箱，等它下次说话时由 hook 递过去。它读完文档把回复写回原位。
+- **信到没到，一眼知道。** @ 列表里每个成员都写明它现在怎么收到：马上收到、下次说话时看到，还是收不到（附一键修复：装 hook、去登录）。每条 @ 下面有一行状态：在信箱里、已送进会话正在处理、没送到和原因（可以重试）；对方一回复，这行就消失。
 - **修改建议。** 回复可以附带对划线原文的替换文本（人或 AI 都能提），卡片上显示 原文 → 改法，点「采纳」原文才会变。
 - **未读一眼看清。** 别人或 AI 的回复带红点，面板顶部常驻「N 条评论 · M 未读」，文件目录里对应文档也挂红色角标；看完点「标为已读」，聊完点「解决」，也可以加个 emoji 反应。设置里「未读通知」一键关掉。
 - **编辑与阅读视图、桌面与手机。** 阅读视图里同款高亮 + 角标，原始标记隐藏；超长线程折叠成预览。

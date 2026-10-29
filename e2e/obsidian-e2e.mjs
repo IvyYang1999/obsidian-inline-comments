@@ -374,6 +374,8 @@ async function run() {
     }));
     check('管理成员打开独立弹窗', modal.title === '评论 @ 成员' && modal.sections === 3 && !modal.settingsOpen, JSON.stringify(modal));
     check('弹窗列出现有成员', (modal.members ?? 0) === 6, `members=${modal.members}`);
+    const memberStatus = await page.evaluate(() => [...document.querySelectorAll('.ilc-members-list .ilc-members-status')].map((s) => s.textContent ?? ''));
+    check('成员状态写明怎么收到（自己加的成员不再一律「闲置」）', memberStatus.some((s) => s.includes('终端里打开它')), memberStatus.join(' | '));
     check('弹窗发现本机会话（这台机器上有 claude 在跑）', (modal.sessionRows ?? 0) > 0, `sessions=${modal.sessionRows}`);
     const titled = await page.evaluate(() => [...document.querySelectorAll('.ilc-members-session .ilc-members-title')].filter((t) => !/^[0-9a-f]{8}$/.test(t.textContent ?? '')).length);
     check('绝大多数会话解析出标题/目录（大首行也能抽出）', titled >= (modal.sessionRows ?? 0) * 0.8, `titled=${titled}/${modal.sessionRows}`);
@@ -788,6 +790,83 @@ async function run() {
       const lastLaunch = fs.readFileSync(path.join(WORK, 'launch.log'), 'utf8').trim().split('\n').pop();
       check('「终端」用 codex resume 打开同一个会话', term && lastLaunch.includes(`codex resume '${threadId}'`), lastLaunch.slice(0, 160));
 
+      // ── The line under each @ (B) and how each member gets letters (A)
+      const lineOf = (text) => page.evaluate((text) => {
+        const entry = [...document.querySelectorAll('.ilc-card .ilc-entry')].reverse().find((e) => e.querySelector('.ilc-entry-body')?.textContent?.includes(text));
+        const line = entry?.querySelector('.ilc-delivery');
+        if (!line || line.classList.contains('ilc-hidden')) return null;
+        return { text: line.querySelector('.ilc-delivery-text')?.textContent ?? '', action: line.querySelector('.ilc-delivery-action')?.textContent ?? '' };
+      }, text);
+      const clickLineAction = (text) => page.evaluate((text) => {
+        const entry = [...document.querySelectorAll('.ilc-card .ilc-entry')].reverse().find((e) => e.querySelector('.ilc-entry-body')?.textContent?.includes(text));
+        entry?.querySelector('.ilc-delivery-action')?.click();
+      }, text);
+      const docCount = (text) => page.evaluate(async (text) => (await app.vault.adapter.read('harness.md')).split(text).length - 1, text);
+      const atRows = async () => {
+        await page.locator('.ilc-card').first().click();
+        const input = page.locator('.ilc-card-active .ilc-reply-input');
+        await input.waitFor({ state: 'visible', timeout: 5000 });
+        await input.fill('');
+        await input.click();
+        await page.keyboard.type('@');
+        await page.waitForSelector('.ilc-at-dropdown .ilc-at-item', { timeout: 5000 });
+        await sleep(200);
+        const rows = await page.evaluate(() => [...document.querySelectorAll('.ilc-at-dropdown .ilc-at-item')].map((it) => ({
+          name: it.querySelector('.ilc-at-name')?.textContent ?? '', role: it.querySelector('.ilc-at-role')?.textContent ?? '',
+          fix: it.querySelector('.ilc-at-fix')?.textContent ?? '', here: [...it.querySelectorAll('.ilc-at-source')].some((p) => p.textContent === '这条里回复过'), cls: it.className,
+        })));
+        await page.keyboard.press('Escape');
+        await input.fill('');
+        return rows;
+      };
+      check('对方回复后，@ 下面的投递状态行消失', await waitFor(async () => (await lineOf('再看一眼')) === null, 4000), JSON.stringify(await lineOf('再看一眼')));
+
+      let rows = await atRows();
+      const coderRow = rows.find((r) => r.name === '码农甲');
+      check('@ 列表写明怎么收到：Codex 没登录 → 收不到 +「去登录」', !!coderRow?.role.includes('好像还没登录') && coderRow.fix === '去登录' && coderRow.cls.includes('status-offline'), JSON.stringify(coderRow));
+      check('这条讨论里回复过的成员带标记', coderRow?.here === true);
+      check('「用新会话回答」要用的 Codex 没登录：先说清楚，并显示为不可用', !!rows[0]?.role.includes('Codex 好像还没登录') && rows[0].cls.includes('is-disabled'), rows[0]?.role);
+      fs.mkdirSync(path.join(WORK, 'home', '.codex'), { recursive: true });
+      fs.writeFileSync(path.join(WORK, 'home', '.codex', 'auth.json'), '{}');
+      rows = await atRows();
+      const loggedRow = rows.find((r) => r.name === '码农甲');
+      check('登录后「用新会话回答」写明用什么开、之后 @ 它接着聊', !!rows[0]?.role.includes('用 Codex 在后台开') && rows[0].role.includes('都接着它聊'), rows[0]?.role);
+      check('登录后 → 在后台回复，立刻档里讨论参与者排最前', !!loggedRow?.role.includes('在后台回复') && loggedRow.cls.includes('status-online') && rows[1]?.name === '码农甲', JSON.stringify(rows.map((r) => `${r.name}:${r.role}`)));
+
+      await page.locator('.ilc-card').first().click();
+      await page.waitForSelector('.ilc-card-active .ilc-reply-input', { state: 'visible', timeout: 5000 });
+      await page.locator('.ilc-card-active .ilc-reply-input').fill(`[@码农甲](agent:${short}?notify) 失败一次也没关系`);
+      await page.locator('.ilc-card-active .ilc-reply-submit').click();
+      check('后台回复失败：@ 下面写明没送到和原因，给「重试」', await waitFor(async () => {
+        const l = await lineOf('失败一次');
+        return !!l?.text.includes('没送到：stream disconnected') && l.action === '重试';
+      }), JSON.stringify(await lineOf('失败一次')));
+      await clickLineAction('失败一次');
+      check('点「重试」重新送出，收到回复后状态行消失', await waitFor(async () => (await docCount('假 Codex 第二次回复')) === 2 && (await lineOf('失败一次')) === null), JSON.stringify(await lineOf('失败一次')));
+
+      // C: two replies in a row from 码农甲 read as one message and count as one unread
+      const headerUnread = () => page.evaluate(() => Number(document.querySelector('.ilc-panel-unread')?.textContent?.match(/\d+/)?.[0] ?? 0));
+      const unreadBefore = await headerUnread();
+      await page.evaluate(async () => {
+        const file = app.vault.getAbstractFileByPath('harness.md');
+        const doc = await app.vault.read(file);
+        const i = doc.indexOf('<<}', doc.lastIndexOf('{>>码农甲|')) + 3;
+        await app.vault.modify(file, `${doc.slice(0, i)}{>>码农甲|2026-10-28|reply: 补充一句<<}${doc.slice(i)}`);
+      });
+      const contEntry = () => page.evaluate(() => {
+        const e = [...document.querySelectorAll('.ilc-entry-cont')].find((x) => x.textContent.includes('补充一句'));
+        if (!e) return null;
+        const head = e.previousElementSibling;
+        return { avatar: getComputedStyle(e.querySelector('.ilc-entry-avatar')).display, headIsCodex: !!head?.textContent?.includes('假 Codex'), headUnread: !!head?.classList.contains('ilc-entry-unread'), readBtn: !!e.querySelector('.ilc-read-btn'), headReadBtn: !!head?.querySelector('.ilc-read-btn') };
+      });
+      check('同一人连着的两条回复合在一个头像下', await waitFor(async () => (await contEntry()) !== null, 4000));
+      const cont = await contEntry();
+      check('……第二条不再重复头像和名字，红点在这组的头像上', cont?.avatar === 'none' && cont.headIsCodex && cont.headUnread, JSON.stringify(cont));
+      check('……两条只算一条未读，「标为已读」只在这组最后一条下', (await headerUnread()) === unreadBefore && cont?.readBtn === true && cont.headReadBtn === false, `before=${unreadBefore} now=${await headerUnread()}`);
+      await page.evaluate(() => [...document.querySelectorAll('.ilc-entry-cont')].find((x) => x.textContent.includes('补充一句'))?.querySelector('.ilc-read-btn')?.click());
+      await sleep(300);
+      check('……「标为已读」一次标掉整组', (await headerUnread()) < unreadBefore && (await contEntry())?.headUnread === false, `now=${await headerUnread()} ${JSON.stringify(await contEntry())}`);
+
       // ── A Claude member whose session is open (here: a fake Claude app chat) gets the
       // letter through the session's own inbox; once the session is gone it falls back to Terminal
       const SID = '7e57c1a0-de5c-4000-8000-00000000c1a0';
@@ -795,7 +874,8 @@ async function run() {
       const sock = path.join(WORK, 'home', 'cc.sock');
       const token = 'e2e0'.repeat(8);
       fs.mkdirSync(sessions, { recursive: true });
-      fs.writeFileSync(path.join(sessions, `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: SID, cwd: path.join(WORK, 'vault'), kind: 'interactive', entrypoint: 'claude-desktop', messagingSocketPath: sock }));
+      const HOST_ID = 'local_e2e0c1a0-0000-4000-8000-000000000000';
+      fs.writeFileSync(path.join(sessions, `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: SID, cwd: path.join(WORK, 'vault'), kind: 'interactive', entrypoint: 'claude-desktop', hostSessionId: HOST_ID, messagingSocketPath: sock }));
       fs.writeFileSync(path.join(sessions, `${process.pid}.${createHash('sha256').update(sock).digest('hex')}.key`), JSON.stringify({ peerToken: token }));
       // Its transcript: each turn records the permission mode; a queued letter shows up at once
       const transcript = path.join(WORK, 'home', '.claude', 'projects', '-e2e', `${SID}.jsonl`);
@@ -840,6 +920,18 @@ async function run() {
       check('信标为 已读（已送进会话）', deskLetter()[0]?.includes('status: 已读（已送进会话）'));
       const deskLaunched = () => (fs.existsSync(path.join(WORK, 'launch.log')) ? fs.readFileSync(path.join(WORK, 'launch.log'), 'utf8') : '').includes(SID);
       check('会话开着时不弹终端', !deskLaunched());
+      check('@ 下面显示「已送进 桌面助理 的会话，处理中…」', (await lineOf('客户端里的你看得到吗'))?.text === '已送进 桌面助理 的会话，处理中…', JSON.stringify(await lineOf('客户端里的你看得到吗')));
+      check('信里请它改自己的回复，而不是再追加一条', !!msg?.message?.content?.includes('直接改你自己的那条回复'));
+      const deskRow = (await atRows()).find((r) => r.name === '桌面助理');
+      check('@ 列表：开着的客户端会话 → 直接送进去', !!deskRow?.role.includes('开着（Claude 客户端），直接送进去') && deskRow.cls.includes('status-online'), JSON.stringify(deskRow));
+      await page.evaluate(() => {
+        const p = app.plugins.plugins['inline-comments'];
+        for (const r of p.deliveryLog.records) r.at -= 11 * 60 * 1000;
+        p.getPanel()?.updateDelivery();
+      });
+      check('十分钟没回复 →「还没回复」+「打开它的会话」', (await lineOf('客户端里的你看得到吗'))?.action === '打开它的会话', JSON.stringify(await lineOf('客户端里的你看得到吗')));
+      await clickLineAction('客户端里的你看得到吗');
+      check('「打开它的会话」用 claude:// 链接打开客户端里的那个会话', await waitFor(() => (fs.existsSync(path.join(WORK, 'launch.log')) ? fs.readFileSync(path.join(WORK, 'launch.log'), 'utf8') : '').includes(`claude://code/continue?session=${HOST_ID}`)));
 
       // Bypass-permissions session: Claude Code would hold the letter and drop it after 5 min — keep it in the mailbox
       turn('bypassPermissions');
@@ -849,6 +941,20 @@ async function run() {
       check('会话跳过权限确认：不往收信口送', inboxLines.length === 0, `lines=${inboxLines.length}`);
       check('……信留在信箱里等 hook（未读）', deskLetter().find((l) => l.includes('跳过权限确认的会话'))?.includes('status: 未读'));
       check('……也不弹终端', !deskLaunched());
+      check('……@ 下面写「已放进信箱：它跳过了权限确认，下次说话时会看到」', !!(await lineOf('跳过权限确认的会话'))?.text.includes('跳过了权限确认，下次说话时会看到'), JSON.stringify(await lineOf('跳过权限确认的会话')));
+      const heldRow = (await atRows()).find((r) => r.name === '桌面助理');
+      check('……@ 列表：跳过权限确认 → 下次说话时看到（稍后档）', !!heldRow?.role.includes('跳过了权限确认') && heldRow.cls.includes('status-idle'), JSON.stringify(heldRow));
+      await page.locator('.ilc-card').first().click();
+      await page.locator('.ilc-card-active .ilc-reply-input').fill('写了一半的回复');
+      {
+        const dir = path.join(WORK, 'vault', 'Agent协作空间', '信箱', SID.slice(0, 8));
+        const name = fs.readdirSync(dir).find((n) => fs.readFileSync(path.join(dir, n), 'utf8').includes('跳过权限确认的会话'));
+        const p = path.join(dir, name);
+        fs.writeFileSync(p, fs.readFileSync(p, 'utf8').replace('status: 未读', 'status: 已读（hook代标）'));
+      }
+      check('hook 递过去后，@ 下面原地变成「已看到留言」', await waitFor(async () => !!(await lineOf('跳过权限确认的会话'))?.text.includes('已看到留言')), JSON.stringify(await lineOf('跳过权限确认的会话')));
+      check('……写了一半的回复还在', (await page.locator('.ilc-card-active .ilc-reply-input').inputValue()) === '写了一半的回复');
+      await page.locator('.ilc-card-active .ilc-reply-input').fill('');
 
       // The session takes the frames but never queues the letter: back to unread
       turn('default');
@@ -864,6 +970,7 @@ async function run() {
       await atDesk('现在关掉了');
       check('会话关了：退回到在终端里恢复它（autoStart）', await waitFor(() => deskLaunched()));
       check('退回时不再往收信口写', inboxLines.length === 0);
+      check('……@ 下面写「已在终端打开 桌面助理，处理中…」', !!(await lineOf('现在关掉了'))?.text.startsWith('已在终端打开 桌面助理'), JSON.stringify(await lineOf('现在关掉了')));
     }
 
     await shot(page, '06-full-window');

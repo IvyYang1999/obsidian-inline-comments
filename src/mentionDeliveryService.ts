@@ -17,6 +17,9 @@ import {
   type DeliverySettings,
 } from './mentionDelivery.ts';
 
+/** The @ a letter was written for */
+export interface DeliveredMention { key: string; highlight: string; text: string }
+
 export class MentionDelivery {
   private processed = new Set<string>();
   private loaded = false;
@@ -27,7 +30,7 @@ export class MentionDelivery {
     private app: App,
     private settings: () => DeliverySettings,
     private notice: (msg: string) => void = () => {},
-    private onDelivered: (c: Candidate, relPath: string, letterPath: string) => void = () => {},
+    private onDelivered: (c: Candidate, relPath: string, letterPath: string, mention: DeliveredMention) => void = () => {},
   ) {}
 
   private get mailboxRoot(): string {
@@ -98,6 +101,11 @@ export class MentionDelivery {
     return this.scanFileWith(file, candidates, quiet);
   }
 
+  /** The member a short id points at now (for retrying a letter) */
+  async candidate(shortId: string): Promise<Candidate | undefined> {
+    return (await this.loadCandidates()).byShort.get(shortId.toLowerCase());
+  }
+
   // ── Core ───────────────────────────────────────────────────────────────────
 
   private async loadCandidates(): Promise<{ byShort: Map<string, Candidate>; names: Set<string> }> {
@@ -146,7 +154,7 @@ export class MentionDelivery {
           if (written) {
             delivered++;
             if (!quiet) this.notice(t('已投信给 @{0}', [m.name]));
-            try { this.onDelivered(candidate!, relPath, written); } catch { /* notification is best-effort */ }
+            try { this.onDelivered(candidate!, relPath, written, { key, highlight: ann.highlightText, text: c.text }); } catch { /* notification is best-effort */ }
           }
         }
       }

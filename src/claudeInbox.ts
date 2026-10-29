@@ -26,6 +26,8 @@ export interface ClaudeInbox {
   cwd?: string;
   /** Started by the Claude app (Code tab) rather than a terminal */
   desktop: boolean;
+  /** The Claude app's own id for the chat (local_…), for claude://code/continue?session= */
+  hostSessionId?: string;
 }
 
 const SENDER = 'Agent Comments';
@@ -81,6 +83,7 @@ export async function findClaudeInbox(sessionId: string, home = process.env.ILC_
         token: await readToken(dir, pid, socket),
         cwd: typeof r.cwd === 'string' ? r.cwd : undefined,
         desktop: String(r.entrypoint ?? '').startsWith('claude-desktop'),
+        hostSessionId: typeof r.hostSessionId === 'string' && /^local_[0-9a-f-]{8,64}$/i.test(r.hostSessionId) ? r.hostSessionId : undefined,
       },
     };
   }
