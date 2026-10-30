@@ -2,10 +2,12 @@
  * What happened to each @ letter, so the card can say it right under the
  * comment: in the mailbox, handed to the session (working on it), or not
  * delivered and why. The reply itself is not recorded: the card sees it in
- * the thread. Kept in the plugin folder (delivery-status.json), newest 500.
+ * the thread, and then keeps one quiet line of how the letter got there.
+ * Kept in the plugin folder (delivery-status.json), newest 500.
  */
 import type { App } from 'obsidian';
 import { t } from './i18n.ts';
+import { HOLD_MS } from './claudeInbox.ts';
 
 export type DeliveryState = 'sending' | 'mailbox' | 'handed' | 'failed';
 /** How a handed letter reached the session */
@@ -36,25 +38,43 @@ export interface DeliveryRecord {
 
 export interface DeliveryLine {
   text: string;
-  tone: 'info' | 'busy' | 'warn' | 'error';
+  tone: 'info' | 'busy' | 'warn' | 'error' | 'done';
   action?: 'retry' | 'hook' | 'login' | 'open';
 }
 
 /** A handed letter with no reply after this long gets "还没回复 · 打开它的会话" */
 export const STALE_MS = 10 * 60 * 1000;
 
-/** The card's line for one @, or null once the member has replied in the thread */
+/** 14:05 today, 10/29 14:05 another day (local time) */
+function clock(at: number, now: number): string {
+  const d = new Date(at);
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return d.toDateString() === new Date(now).toDateString() ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+}
+
+/** After the reply: how the letter got there, as one quiet line */
+function doneLine(r: DeliveryRecord, now: number): DeliveryLine {
+  const when = clock(r.at, now);
+  const how = r.state !== 'handed' ? t('{0} 放进信箱', [when])
+    : r.route === 'background' ? t('{0} 交给后台', [when])
+      : r.route === 'terminal' ? t('{0} 在终端打开', [when])
+        : r.route === 'hook' ? t('{0} 由 hook 递过去', [when])
+          : t('{0} 送进会话', [when]);
+  return { text: t('已回复 · {0}', [how]), tone: 'done' };
+}
+
+/** The card's line for one @; once the member has replied, a quiet line of how it got there */
 export function deliveryLine(r: DeliveryRecord, ctx: { replied: boolean; now: number; hookInstalled: boolean; label: string }): DeliveryLine | null {
-  if (ctx.replied) return null;
+  if (ctx.replied) return doneLine(r, ctx.now);
   const who = r.name;
   if (r.state === 'sending') return { text: t('正在送给 {0}…', [who]), tone: 'busy' };
   if (r.state === 'mailbox') {
+    // Held at the session's door: switching its mode lets it in, no restart needed
+    if (r.reason === 'held' && ctx.now - r.at < HOLD_MS) return { text: t('{0} 跳过了权限确认，留言在门口等：5 分钟内把它换个权限模式就直接送进去', [who]), tone: 'info', action: 'open' };
     if (r.reason === 'not-autostart') return { text: t('已放进 {0} 的信箱，但 {1} 会话不会自己看信箱', [who, ctx.label]), tone: 'warn' };
     if (!ctx.hookInstalled) return { text: t('已放进 {0} 的信箱，但它看不到：没装唤醒 hook', [who]), tone: 'warn', action: 'hook' };
-    return {
-      text: r.reason === 'held' ? t('已放进 {0} 的信箱：它跳过了权限确认，下次说话时会看到', [who]) : t('已放进 {0} 的信箱，它下次说话时会看到', [who]),
-      tone: 'info',
-    };
+    if (r.reason === 'held') return { text: t('已放进 {0} 的信箱：它跳过了权限确认，下次说话时会看到；换了权限模式可以重试', [who]), tone: 'info', action: 'retry' };
+    return { text: t('已放进 {0} 的信箱，它下次说话时会看到', [who]), tone: 'info' };
   }
   if (r.state === 'handed') {
     if (ctx.now - r.at > STALE_MS) return { text: t('{0} 还没回复', [who]), tone: 'warn', action: 'open' };

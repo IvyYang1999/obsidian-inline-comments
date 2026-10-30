@@ -56,8 +56,20 @@ export function decideReach(f: ReachFacts): Reach {
   }
   if (f.open && !f.holds) return { level: 'now', text: f.desktop ? t('开着（Claude 客户端），直接送进去') : t('开着（终端），直接送进去') };
   if (!f.open && f.autoStart && f.cliInstalled && f.canOpenTerminal) return { level: 'now', text: t('没开着，@ 时会在终端里打开它') };
-  if (f.hookInstalled) return { level: 'later', text: f.open ? t('跳过了权限确认，它下次说话时会看到') : t('没开着，下次打开它时会看到') };
-  return { level: 'none', text: f.open ? t('看不到：跳过了权限确认，又没装 hook') : t('看不到：没开着，又没装 hook'), fix: 'hook' };
+  // A session that skips permission prompts holds letters from other programs; switching its
+  // mode takes effect at once (no restart), so the text says so
+  if (f.hookInstalled) return { level: 'later', text: f.open ? t('它跳过了权限确认，要等它下次说话；换个权限模式就能直接送到') : t('没开着，下次打开它时会看到') };
+  return { level: 'none', text: f.open ? t('看不到：它跳过了权限确认又没装 hook；装 hook 或换个权限模式') : t('看不到：没开着，又没装 hook'), fix: 'hook' };
+}
+
+/** A member whose harness the plugin does not know: its letters only wait in the mailbox */
+export function unknownHarnessReach(harness: string): Reach {
+  return { level: 'later', text: t('只放进信箱：插件不认识「{0}」这种会话，要它自己去看', [harness]) };
+}
+
+/** What a member's dot means, for its tooltip */
+export function levelHint(level: ReachLevel): string {
+  return level === 'now' ? t('现在就能收到') : level === 'later' ? t('要等它下次说话或打开') : t('现在收不到');
 }
 
 /** Members from the old roster file carry their own presence */

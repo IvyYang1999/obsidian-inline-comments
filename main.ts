@@ -25,7 +25,7 @@ import type { Candidate } from './src/mentionDelivery.ts';
 import { renderAgentRegistrySection } from './src/settings/agentRegistrySection.ts';
 import { type HarnessDef, detectHarnesses, harnessDef, headlessArgs, looksUnauthenticated, resumeShell, runHeadless } from './src/harnesses.ts';
 import { readRegistry, setAgentThread } from './src/registry.ts';
-import { claudeInboxHolds, claudeInboxQueued, findClaudeInbox, sendToClaudeInbox } from './src/claudeInbox.ts';
+import { HOLD_MS, type ClaudeInbox, claudeInboxGate, claudeInboxQueued, findClaudeInbox, sendToClaudeInbox } from './src/claudeInbox.ts';
 import { DeliveryLog, type DeliveryLine } from './src/deliveryStatus.ts';
 import type { DeliveredMention } from './src/mentionDeliveryService.ts';
 import { SUGGESTED_HOTKEY, bindSuggestedHotkey, boundHotkeys, formatHotkey, openHotkeySettings, sameHotkey } from './src/hotkeys.ts';
@@ -101,6 +101,8 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
   private runningGlobalThreads = new Set<string>();
   /** Per-member chain of headless runs (Codex / Gemini), keyed by sessionId */
   private headlessRuns = new Map<string, Promise<void>>();
+  /** Stops the watches on held letters when the plugin unloads */
+  private heldWatches = new AbortController();
   private runningAgentReplies = new Set<string>();
   unreadTracker!: UnreadTracker;
   explorerBadge!: ExplorerBadge;
@@ -337,12 +339,12 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
         name: c.name, sessionId: c.sessionId, harness: c.harness, letter: letterPath, state: 'sending',
       });
     }
-    const inbox = harness?.id === 'claude' ? await this.handToClaudeInbox(c, letterPath) : 'closed';
+    const inbox = harness?.id === 'claude' ? await this.handToClaudeInbox(c, letterPath, key) : 'closed';
     if (inbox === 'handed') { this.logDelivery(key, { state: 'handed', route: 'inbox' }); return; }
     const file = relPath.split('/').pop();
     if (inbox === 'held') {
       this.logDelivery(key, { state: 'mailbox', reason: 'held' });
-      this.notifyDesktop(t('评论区有新留言给 {0}', [c.name]), t('{0} · Claude Code 没让留言直接送进它的会话（跳过权限确认的会话不收）；它下一次说话/收尾时会看到', [file]));
+      this.notifyDesktop(t('评论区有新留言给 {0}', [c.name]), t('{0} · 它跳过了权限确认，留言没能直接送进去。5 分钟内把它换成别的权限模式就会送进去，否则它下一次说话/收尾时会看到', [file]));
       return; // running already: nothing to start
     }
     if (harness?.mode === 'headless' && !c.autoStart) this.logDelivery(key, { state: 'mailbox', reason: 'not-autostart' });
@@ -419,14 +421,18 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
 
   /**
    * Put the letter into the member's running Claude Code session. 'held': the
-   * session runs but would not take it (bypass permissions), or did not queue it,
-   * so the letter stays unread in the mailbox. 'closed': no running session.
+   * session runs but did not queue it (it skips permission prompts), so the
+   * letter stays unread in the mailbox — and goes in after all if the user
+   * switches that session's mode within Claude Code's hold. 'closed': no
+   * running session. The letter is sent even when the mode on record says it
+   * will be held: that record only changes with the session's next message.
    */
-  private async handToClaudeInbox(c: Candidate, letterPath: string): Promise<'handed' | 'held' | 'closed'> {
+  private async handToClaudeInbox(c: Candidate, letterPath: string, key?: string): Promise<'handed' | 'held' | 'closed'> {
     if (!Platform.isDesktop) return 'closed';
     const inbox = await findClaudeInbox(c.sessionId);
     if (!inbox) return 'closed';
-    if (await claudeInboxHolds(inbox)) return 'held';
+    const gate = await claudeInboxGate(inbox);
+    if (gate === 'refuse') return 'held';
     const adapter = this.app.vault.adapter;
     let raw: string;
     try { raw = await adapter.read(letterPath); } catch { return 'handed'; }
@@ -441,12 +447,31 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       await this.restoreUnread(letterPath, handed);
       return 'closed';
     }
-    if (!await claudeInboxQueued(inbox.sessionId, prompt, msgId)) {
+    // An accepted letter shows up within a moment; a held one would not, so don't wait long for it
+    if (!await claudeInboxQueued(inbox.sessionId, prompt, msgId, undefined, gate === 'hold' ? 4000 : 10000)) {
       await this.restoreUnread(letterPath, handed);
+      this.watchHeld(c, inbox, prompt, msgId, letterPath, key);
       return 'held';
     }
     new Notice(t('留言已送进「{0}」的会话（{1}）', [c.name, inbox.desktop ? t('Claude 客户端') : t('终端')]));
     return 'handed';
+  }
+
+  /**
+   * A held letter goes in the moment the user switches that session out of
+   * bypass (no restart needed). Watch its transcript for as long as Claude Code
+   * holds it; once it is in, take it out of the mailbox and tell the card.
+   */
+  private watchHeld(c: Candidate, inbox: ClaudeInbox, prompt: string, msgId: string, letterPath: string, key?: string): void {
+    void claudeInboxQueued(inbox.sessionId, prompt, msgId, undefined, HOLD_MS + 15000, 2000, this.heldWatches.signal).then(async (queued) => {
+      if (!queued) return;
+      try {
+        const raw = await this.app.vault.adapter.read(letterPath);
+        if (raw.includes('status: 未读')) await this.app.vault.adapter.write(letterPath, raw.replace('status: 未读', 'status: 已读（已送进会话）'));
+      } catch { /* letter gone */ }
+      if (key && this.deliveryLog.byKey(key)?.state === 'mailbox') this.logDelivery(key, { state: 'handed', route: 'inbox' });
+      new Notice(t('留言已送进「{0}」的会话（{1}）', [c.name, inbox.desktop ? t('Claude 客户端') : t('终端')]));
+    });
   }
 
   /**
@@ -593,6 +618,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
   }
 
   onunload(): void {
+    this.heldWatches.abort();
     this.explorerBadge?.detach();
     // Deliberately no detachLeavesOfType: Obsidian restores the leaf itself, and
     // detaching here would reset a panel the user moved to another sidebar.

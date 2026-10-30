@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { createServer, type Server } from 'net';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { claudeInboxHolds, claudeInboxQueued, findClaudeInbox, inboxFrames, sendToClaudeInbox } from './claudeInbox.ts';
+import { claudeInboxGate, claudeInboxHolds, claudeInboxQueued, findClaudeInbox, inboxFrames, sendToClaudeInbox } from './claudeInbox.ts';
 
 const SID = '3f1c2b9a-1111-4222-8333-444455556666';
 let home: string;
@@ -120,6 +120,9 @@ describe('claudeInboxHolds', () => {
     transcript({ type: 'user', permissionMode: 'default' });
     userSettings({ crossSessionInbound: 'hold' });
     expect(await claudeInboxHolds({ sessionId: SID }, home)).toBe(true);
+    expect(await claudeInboxGate({ sessionId: SID }, home)).toBe('hold');
+    userSettings({ crossSessionInbound: 'refuse' });
+    expect(await claudeInboxGate({ sessionId: SID }, home)).toBe('refuse');
   });
 });
 
@@ -141,5 +144,12 @@ describe('claudeInboxQueued', () => {
     transcript({ type: 'assistant' });
     setTimeout(() => transcript({ type: 'queue-operation', operation: 'enqueue', timestamp: now(), content: 'late' }), 200);
     expect(await claudeInboxQueued(SID, 'late', 'm-4', home, 3000)).toBe(true);
+  });
+  it('stops a long watch when told to', async () => {
+    const stop = new AbortController();
+    setTimeout(() => stop.abort(), 150);
+    const t0 = Date.now();
+    expect(await claudeInboxQueued(SID, 'never', 'm-5', home, 60000, 50, stop.signal)).toBe(false);
+    expect(Date.now() - t0).toBeLessThan(2000);
   });
 });

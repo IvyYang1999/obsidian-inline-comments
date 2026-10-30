@@ -9,6 +9,13 @@ describe('harnessDef', () => {
     expect(harnessDef('codex')?.mode).toBe('headless');
     expect(harnessDef('kimi')).toBeUndefined();
   });
+
+  it('reads the spellings people and older join scripts write', () => {
+    for (const s of ['claude-code', 'Claude Code', 'claude_code', 'CLAUDE', 'unknown', '']) expect(harnessDef(s)?.id, s).toBe('claude');
+    expect(harnessDef('codex-cli')?.id).toBe('codex');
+    expect(harnessDef('Gemini CLI')?.id).toBe('gemini');
+    expect(harnessDef('cursor')).toBeUndefined();
+  });
 });
 
 describe('headlessArgs', () => {

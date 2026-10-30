@@ -356,7 +356,7 @@ async function run() {
     check('@ 下拉 = 「用新会话回答」+ 4 位样例 + 新会话1 + 新人甲', dd.items === 7 && dd.names[0]?.text === '用新会话回答', `items=${dd.items} first=${dd.names[0]?.text}`);
     check('列表第一项常驻「用新会话回答」', dd.names[0]?.text === '用新会话回答');
     check('名字单行不竖排', dd.names.every((n) => n.lines < 1.5), dd.names.map((n) => `${n.text}:${n.h.toFixed(0)}px`).join(' '));
-    check('自己加入的成员显示 harness 胶囊（不再是黑话「自助」）', dd.sources.includes('codex') && !dd.sources.some((s) => s.includes('自助')), dd.sources.join(','));
+    check('自己加入的成员显示 harness 胶囊（不再是黑话「自助」）', dd.sources.includes('Codex') && !dd.sources.some((s) => s.includes('自助')), dd.sources.join(','));
     const notifyLabel = await page.locator('.ilc-at-notify').textContent();
     check('通知开关用人话', (notifyLabel ?? '').includes('通知对方'), notifyLabel ?? '');
     await shot(page, '03-at-dropdown', '.workspace-leaf-content[data-type="ilc-comments-panel"]');
@@ -602,7 +602,7 @@ async function run() {
           return { hlText: hl?.textContent ?? null, hlCls: hl?.className ?? '', cardTop: card.getBoundingClientRect().top, textTop: c?.top ?? null };
         });
         check('草稿期间划线文字有临时高亮', draftState.hlText === '这是一段没有评论', `hl=${draftState.hlText}`);
-        check('临时高亮与正式高亮同款（类型色类名）', /ilc-highlight/.test(draftState.hlCls) && /ilc-hl-agree/.test(draftState.hlCls), draftState.hlCls);
+        check('临时高亮与正式高亮同款（类型色类名，默认「备注」）', /ilc-highlight/.test(draftState.hlCls) && /ilc-hl-note/.test(draftState.hlCls), draftState.hlCls);
         await page.locator('.ilc-draft-type-btn', { hasText: '疑问' }).click();
         await sleep(100);
         const hlAfter = await page.evaluate(() => document.querySelector('.cm-editor .ilc-draft-highlight')?.className ?? '');
@@ -814,12 +814,14 @@ async function run() {
         const rows = await page.evaluate(() => [...document.querySelectorAll('.ilc-at-dropdown .ilc-at-item')].map((it) => ({
           name: it.querySelector('.ilc-at-name')?.textContent ?? '', role: it.querySelector('.ilc-at-role')?.textContent ?? '',
           fix: it.querySelector('.ilc-at-fix')?.textContent ?? '', here: [...it.querySelectorAll('.ilc-at-source')].some((p) => p.textContent === '这条里回复过'), cls: it.className,
+          pills: [...it.querySelectorAll('.ilc-at-source')].map((p) => p.textContent), dot: it.querySelector('.ilc-at-dot')?.getAttribute('title') ?? '',
         })));
         await page.keyboard.press('Escape');
         await input.fill('');
         return rows;
       };
-      check('对方回复后，@ 下面的投递状态行消失', await waitFor(async () => (await lineOf('再看一眼')) === null, 4000), JSON.stringify(await lineOf('再看一眼')));
+      check('对方回复后，@ 下面留一行「已回复 · HH:MM 交给后台」', await waitFor(async () => /^已回复 · \d\d:\d\d 交给后台$/.test((await lineOf('再看一眼'))?.text ?? ''), 4000), JSON.stringify(await lineOf('再看一眼')));
+      check('……这行是淡色的收尾，没有按钮', await page.evaluate(() => [...document.querySelectorAll('.ilc-delivery-done')].length > 0) && (await lineOf('再看一眼'))?.action === '');
 
       let rows = await atRows();
       const coderRow = rows.find((r) => r.name === '码农甲');
@@ -842,7 +844,7 @@ async function run() {
         return !!l?.text.includes('没送到：stream disconnected') && l.action === '重试';
       }), JSON.stringify(await lineOf('失败一次')));
       await clickLineAction('失败一次');
-      check('点「重试」重新送出，收到回复后状态行消失', await waitFor(async () => (await docCount('假 Codex 第二次回复')) === 2 && (await lineOf('失败一次')) === null), JSON.stringify(await lineOf('失败一次')));
+      check('点「重试」重新送出，收到回复后变成「已回复」', await waitFor(async () => (await docCount('假 Codex 第二次回复')) === 2 && !!(await lineOf('失败一次'))?.text.startsWith('已回复 ·')), JSON.stringify(await lineOf('失败一次')));
 
       // C: two replies in a row from 码农甲 read as one message and count as one unread
       const headerUnread = () => page.evaluate(() => Number(document.querySelector('.ilc-panel-unread')?.textContent?.match(/\d+/)?.[0] ?? 0));
@@ -880,7 +882,8 @@ async function run() {
       // Its transcript: each turn records the permission mode; a queued letter shows up at once
       const transcript = path.join(WORK, 'home', '.claude', 'projects', '-e2e', `${SID}.jsonl`);
       fs.mkdirSync(path.dirname(transcript), { recursive: true });
-      const turn = (mode) => fs.appendFileSync(transcript, `${JSON.stringify({ type: 'user', permissionMode: mode, timestamp: new Date().toISOString() })}\n`);
+      let curMode = 'acceptEdits';
+      const turn = (mode) => { curMode = mode; fs.appendFileSync(transcript, `${JSON.stringify({ type: 'user', permissionMode: mode, timestamp: new Date().toISOString() })}\n`); };
       turn('acceptEdits');
       let inboxLines = [];
       let queues = true;
@@ -891,14 +894,14 @@ async function run() {
           const lines = buf.trim().split('\n').map((l) => JSON.parse(l));
           inboxLines.push(...lines);
           const letter = lines.find((l) => l.type === 'user');
-          if (letter && queues) fs.appendFileSync(transcript, `${JSON.stringify({ type: 'queue-operation', operation: 'enqueue', timestamp: new Date().toISOString(), sessionId: SID, content: letter.message.content })}\n`);
+          if (letter && queues && curMode !== 'bypassPermissions') fs.appendFileSync(transcript, `${JSON.stringify({ type: 'queue-operation', operation: 'enqueue', timestamp: new Date().toISOString(), sessionId: SID, content: letter.message.content })}\n`);
           c.end();
         });
       });
       await new Promise((r) => inbox.listen(sock, r));
       await page.evaluate(async (sid) => {
         const reg = JSON.parse(await app.vault.adapter.read('_os/comment-agents.json'));
-        reg.agents.push({ name: '桌面助理', sessionId: sid, harness: 'claude', joinedAt: new Date().toISOString(), autoStart: true });
+        reg.agents.push({ name: '桌面助理', sessionId: sid, harness: 'claude-code', joinedAt: new Date().toISOString(), autoStart: true });
         await app.vault.adapter.write('_os/comment-agents.json', JSON.stringify(reg, null, 2));
       }, SID);
       const atDesk = async (text) => {
@@ -924,6 +927,7 @@ async function run() {
       check('信里请它改自己的回复，而不是再追加一条', !!msg?.message?.content?.includes('直接改你自己的那条回复'));
       const deskRow = (await atRows()).find((r) => r.name === '桌面助理');
       check('@ 列表：开着的客户端会话 → 直接送进去', !!deskRow?.role.includes('开着（Claude 客户端），直接送进去') && deskRow.cls.includes('status-online'), JSON.stringify(deskRow));
+      check('……登记成 claude-code 的成员也认得：标签写 Claude Code，圆点有说明', !!deskRow?.pills.includes('Claude Code') && deskRow.dot === '现在就能收到', JSON.stringify(deskRow));
       await page.evaluate(() => {
         const p = app.plugins.plugins['inline-comments'];
         for (const r of p.deliveryLog.records) r.at -= 11 * 60 * 1000;
@@ -933,17 +937,18 @@ async function run() {
       await clickLineAction('客户端里的你看得到吗');
       check('「打开它的会话」用 claude:// 链接打开客户端里的那个会话', await waitFor(() => (fs.existsSync(path.join(WORK, 'launch.log')) ? fs.readFileSync(path.join(WORK, 'launch.log'), 'utf8') : '').includes(`claude://code/continue?session=${HOST_ID}`)));
 
-      // Bypass-permissions session: Claude Code would hold the letter and drop it after 5 min — keep it in the mailbox
+      // Bypass-permissions session as far as its transcript says (a mode switch only shows with the next
+      // turn): the letter is sent anyway, Claude Code holds it, so it stays in the mailbox for the hook
       turn('bypassPermissions');
       inboxLines = [];
       await atDesk('跳过权限确认的会话');
-      await sleep(2500);
-      check('会话跳过权限确认：不往收信口送', inboxLines.length === 0, `lines=${inboxLines.length}`);
+      check('会话记录是跳过权限确认：照样往收信口送（模式可能刚切过）', await waitFor(() => inboxLines.length >= 2));
+      check('……没进队列：@ 下面写「在门口等：5 分钟内换个权限模式就直接送进去」', await waitFor(async () => !!(await lineOf('跳过权限确认的会话'))?.text.includes('5 分钟内把它换个权限模式'), 10000), JSON.stringify(await lineOf('跳过权限确认的会话')));
+      check('……给「打开它的会话」', (await lineOf('跳过权限确认的会话'))?.action === '打开它的会话');
       check('……信留在信箱里等 hook（未读）', deskLetter().find((l) => l.includes('跳过权限确认的会话'))?.includes('status: 未读'));
       check('……也不弹终端', !deskLaunched());
-      check('……@ 下面写「已放进信箱：它跳过了权限确认，下次说话时会看到」', !!(await lineOf('跳过权限确认的会话'))?.text.includes('跳过了权限确认，下次说话时会看到'), JSON.stringify(await lineOf('跳过权限确认的会话')));
       const heldRow = (await atRows()).find((r) => r.name === '桌面助理');
-      check('……@ 列表：跳过权限确认 → 下次说话时看到（稍后档）', !!heldRow?.role.includes('跳过了权限确认') && heldRow.cls.includes('status-idle'), JSON.stringify(heldRow));
+      check('……@ 列表：跳过权限确认 → 稍后档，并说换个权限模式就行', !!heldRow?.role.includes('跳过了权限确认') && heldRow.role.includes('换个权限模式') && heldRow.cls.includes('status-idle'), JSON.stringify(heldRow));
       await page.locator('.ilc-card').first().click();
       await page.locator('.ilc-card-active .ilc-reply-input').fill('写了一半的回复');
       {
@@ -955,6 +960,33 @@ async function run() {
       check('hook 递过去后，@ 下面原地变成「已看到留言」', await waitFor(async () => !!(await lineOf('跳过权限确认的会话'))?.text.includes('已看到留言')), JSON.stringify(await lineOf('跳过权限确认的会话')));
       check('……写了一半的回复还在', (await page.locator('.ilc-card-active .ilc-reply-input').inputValue()) === '写了一半的回复');
       await page.locator('.ilc-card-active .ilc-reply-input').fill('');
+
+      // The user switches that session to another mode: Claude Code lets the held letter in at once
+      inboxLines = [];
+      await atDesk('切换模式后放行');
+      check('又一封扣在门口', await waitFor(async () => !!(await lineOf('切换模式后放行'))?.text.includes('门口等'), 10000), JSON.stringify(await lineOf('切换模式后放行')));
+      const heldMsg = inboxLines.find((l) => l.type === 'user');
+      curMode = 'acceptEdits';
+      fs.appendFileSync(transcript, `${JSON.stringify({ type: 'user', uuid: heldMsg?.uuid, permissionMode: 'acceptEdits', origin: { kind: 'peer', msg_id: heldMsg?.msg_id }, timestamp: new Date().toISOString() })}\n`);
+      check('切换模式后信进去了：@ 下面原地变成「已送进…的会话」，不用重开会话', await waitFor(async () => (await lineOf('切换模式后放行'))?.text === '已送进 桌面助理 的会话，处理中…'), JSON.stringify(await lineOf('切换模式后放行')));
+      check('……信标为 已读（已送进会话）', !!deskLetter().find((l) => l.includes('切换模式后放行'))?.includes('status: 已读（已送进会话）'));
+
+      // Past Claude Code's five-minute hold: switch modes, then 重试
+      turn('bypassPermissions');
+      inboxLines = [];
+      await atDesk('过了五分钟');
+      await waitFor(async () => !!(await lineOf('过了五分钟'))?.text.includes('门口等'), 10000);
+      await page.evaluate(() => {
+        const p = app.plugins.plugins['inline-comments'];
+        const r = p.deliveryLog.records.find((x) => x.text.includes('过了五分钟'));
+        if (r) r.at -= 6 * 60 * 1000;
+        p.getPanel()?.updateDelivery();
+      });
+      const lateLine = await lineOf('过了五分钟');
+      check('扣了 5 分钟以上：写「换了权限模式可以重试」+「重试」', !!lateLine?.text.includes('换了权限模式可以重试') && lateLine.action === '重试', JSON.stringify(lateLine));
+      turn('default');
+      await clickLineAction('过了五分钟');
+      check('换了模式后点「重试」：直接送进去', await waitFor(async () => (await lineOf('过了五分钟'))?.text === '已送进 桌面助理 的会话，处理中…', 12000), JSON.stringify(await lineOf('过了五分钟')));
 
       // The session takes the frames but never queues the letter: back to unread
       turn('default');
@@ -971,6 +1003,53 @@ async function run() {
       check('会话关了：退回到在终端里恢复它（autoStart）', await waitFor(() => deskLaunched()));
       check('退回时不再往收信口写', inboxLines.length === 0);
       check('……@ 下面写「已在终端打开 桌面助理，处理中…」', !!(await lineOf('现在关掉了'))?.text.startsWith('已在终端打开 桌面助理'), JSON.stringify(await lineOf('现在关掉了')));
+
+      // ── A reply that lands on a card outside the visible part of the panel gets 「X 回复了 ↓」
+      await page.evaluate(async () => {
+        const filler = Array.from({ length: 160 }, (_, i) => `第 ${i + 1} 行，把最后一条评论推到屏幕外。`).join('\n\n');
+        const f = await app.vault.create('long.md', `开头 {==顶上的划线==}{>>yyt|2026-10-29|note: 顶上<<}\n\n${filler}\n\n结尾 {==最底下的划线==}{>>yyt|2026-10-29|question: 底下这条<<}\n`);
+        await app.workspace.getLeavesOfType('markdown')[0].openFile(f);
+      });
+      await page.waitForSelector('.ilc-card', { timeout: 5000 });
+      await sleep(800);
+      const pill = () => page.evaluate(() => { const el = document.querySelector('.ilc-new-reply'); return el && !el.classList.contains('ilc-hidden') ? el.textContent : null; });
+      const addReply = (text) => page.evaluate(async (text) => {
+        const file = app.vault.getAbstractFileByPath('long.md');
+        const doc = await app.vault.read(file);
+        const i = doc.lastIndexOf('<<}') + 3;
+        await app.vault.modify(file, `${doc.slice(0, i)}{>>助手乙|2026-10-29|reply: ${text}<<}${doc.slice(i)}`);
+      }, text);
+      check('刚打开笔记时没有「新回复」提示', (await pill()) === null);
+      await addReply('底下这条我看过了');
+      check('屏幕外的卡片来了新回复 → 面板底部「助手乙 回复了 ↓」', await waitFor(async () => (await pill()) === '助手乙 回复了 ↓', 4000), String(await pill()));
+      await shot(page, '07-new-reply-pill', '.workspace-leaf-content[data-type="ilc-comments-panel"]');
+      await page.locator('.ilc-new-reply').click();
+      await sleep(900);
+      const replyInView = () => page.evaluate(() => {
+        const card = [...document.querySelectorAll('.ilc-card')].find((c) => c.textContent.includes('底下这条我看过了'));
+        const panel = document.querySelector('.ilc-panel');
+        if (!card || !panel) return false;
+        const c = card.getBoundingClientRect(), p = panel.getBoundingClientRect();
+        return c.bottom > p.top && c.top < p.bottom;
+      });
+      check('点它跳到那张卡片，提示消失', (await replyInView()) && (await pill()) === null, `inView=${await replyInView()} pill=${await pill()}`);
+      await addReply('再补一句');
+      await sleep(900);
+      check('看得见的卡片来了新回复：不提示', (await pill()) === null, String(await pill()));
+
+      // ── A new comment starts as 备注; the type the user picks is the one saved
+      await page.evaluate(async () => {
+        const view = app.workspace.getLeavesOfType('markdown')[0].view;
+        const from = view.editor.getValue().indexOf('第 3 行');
+        view.editor.setSelection(view.editor.offsetToPos(from), view.editor.offsetToPos(from + '第 3 行'.length));
+        await app.plugins.plugins['inline-comments'].addCommentFromSelection(view.editor);
+      });
+      await page.waitForSelector('.ilc-card-draft', { timeout: 5000 });
+      check('新评论默认类型是「备注」', (await page.locator('.ilc-draft-type-active').textContent())?.trim() === '备注');
+      await page.locator('.ilc-draft-type-btn', { hasText: '疑问' }).click();
+      await page.locator('.ilc-draft-input').fill('选了疑问');
+      await page.locator('.ilc-draft-post').click();
+      check('选了「疑问」，存下来的就是疑问', await waitFor(() => page.evaluate(async () => (await app.vault.adapter.read('long.md')).includes('{==第 3 行==}{>>yyt|') && (await app.vault.adapter.read('long.md')).includes('|question: 选了疑问<<}')), 4000));
     }
 
     await shot(page, '06-full-window');

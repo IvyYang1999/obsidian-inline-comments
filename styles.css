@@ -132,6 +132,24 @@ body {
 /* Absolute-positioned card container - height set by JS */
 .ilc-cards-zone { position: relative; }
 
+/* 「X 回复了 ↓」: sits after the cards and sticks to the bottom of the panel */
+.ilc-panel .ilc-new-reply {
+  position: sticky;
+  bottom: 12px;
+  z-index: 25; /* above cards, below the header */
+  display: block;
+  margin: 0 auto;
+  height: auto;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: var(--ilc-font-small);
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+}
+.ilc-panel .ilc-new-reply:hover { background: var(--interactive-accent-hover); }
+
 .ilc-empty {
   padding: 48px 20px;
   color: var(--text-faint);
@@ -1182,6 +1200,7 @@ body {
 .ilc-delivery-warn .ilc-delivery-dot { background: #f0b429; }
 .ilc-delivery-error { color: var(--text-error, #e5484d); }
 .ilc-delivery-error .ilc-delivery-dot { background: var(--text-error, #e5484d); }
+.ilc-delivery-done .ilc-delivery-dot { background: var(--color-green, #3fb950); opacity: 0.6; }
 @keyframes ilc-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .ilc-delivery-busy .ilc-delivery-dot { animation: none; } }
 
@@ -1203,6 +1222,7 @@ body {
 .ilc-members-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .ilc-members-title { font-size: var(--ilc-font-body); font-weight: 500; color: var(--text-normal); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ilc-members-sub { font-size: var(--ilc-font-small); color: var(--text-faint); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ilc-members-sub.ilc-members-holds { color: var(--color-orange, #d9822b); white-space: normal; }
 .ilc-members-status { font-size: var(--ilc-font-small); color: var(--text-faint); }
 .ilc-members-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); opacity: 0.5; flex-shrink: 0; }
 .ilc-members-dot.is-on { background: #34d058; opacity: 1; box-shadow: 0 0 0 3px color-mix(in srgb, #34d058 18%, transparent); }

@@ -1,11 +1,12 @@
 import { statusLabel, t } from '../i18n.ts';
 import { App, Modal, Notice, Platform } from 'obsidian';
 import { loadRoster, memberReach, type RosterEntry } from '../atSelector.ts';
-import type { Reach } from '../reach.ts';
+import { levelHint, type Reach } from '../reach.ts';
 import { readRegistry, removeAgent, upsertAgent, validateName } from '../registry.ts';
 import { discoverLocalSessions, shortCwd, timeAgo, type LocalSession } from '../sessionDiscovery.ts';
 import { DEFAULT_MAILBOX_ROOT } from '../mentionDelivery.ts';
 import { harnessDef } from '../harnesses.ts';
+import { claudeInboxHolds, findClaudeInbox } from '../claudeInbox.ts';
 
 const STATUS_CLS: Record<string, string> = { '在线': 'online', '闲置': 'idle', '离线': 'offline' };
 const LEVEL_CLS: Record<Reach['level'], string> = { now: 'online', later: 'idle', none: 'offline' };
@@ -26,6 +27,8 @@ export class MembersModal extends Modal {
   private searchEl!: HTMLInputElement;
   private sessions: LocalSession[] = [];
   private registrySnapshot: { joined: Map<string, string>; left: Map<string, string> } = { joined: new Map(), left: new Map() };
+  /** Open Claude sessions that would hold a letter (they skip permission prompts), by lower-case id */
+  private holding = new Set<string>();
 
   constructor(app: App) {
     super(app);
@@ -139,12 +142,13 @@ export class MembersModal extends Modal {
 
     const avatar = row.createEl('span', { cls: 'ilc-at-avatar', text: e.name.charAt(0) });
     avatar.setCssStyles({ background: avatarColor(e.name) });
-    avatar.createEl('span', { cls: `ilc-at-dot ilc-at-dot-${statusCls}` });
+    const dot = avatar.createEl('span', { cls: `ilc-at-dot ilc-at-dot-${statusCls}` });
+    if (reach) dot.setAttribute('title', levelHint(reach.level));
 
     const main = row.createEl('div', { cls: 'ilc-members-main' });
     const line1 = main.createEl('div', { cls: 'ilc-members-line' });
     line1.createEl('span', { cls: 'ilc-at-name', text: e.name });
-    if (e.harness) line1.createEl('span', { cls: 'ilc-at-source', text: e.harness });
+    if (e.harness) line1.createEl('span', { cls: 'ilc-at-source', text: harnessDef(e.harness)?.label ?? e.harness });
     const headless = e.autoStart && harnessDef(e.harness)?.mode === 'headless';
     if (e.autoStart) {
       const tag = line1.createEl('span', { cls: 'ilc-at-source ilc-at-source-muted', text: t('自动启动') });
@@ -201,6 +205,14 @@ export class MembersModal extends Modal {
       el.createEl('div', { cls: 'ilc-members-empty', text: t('查找失败：{0}', [String((err as Error)?.message ?? err)]) });
       return;
     }
+    // A chat open in the Claude app is running even when its command line does not say which session it is
+    this.holding = new Set();
+    await Promise.all(sessions.filter((s) => s.harness === 'claude').map(async (s) => {
+      const inbox = await findClaudeInbox(s.sessionId);
+      if (!inbox) return;
+      s.running = true;
+      if (await claudeInboxHolds(inbox)) this.holding.add(s.sessionId.toLowerCase());
+    }));
     const registry = await readRegistry(this.app);
     this.registrySnapshot = {
       joined: new Map(registry.agents.map((a) => [a.sessionId.toLowerCase(), a.name])),
@@ -244,6 +256,10 @@ export class MembersModal extends Modal {
     const line2 = main.createEl('div', { cls: 'ilc-members-sub' });
     const bits = [s.running ? t('运行中') : timeAgo(s.lastActive), shortCwd(s.cwd), s.shortId].filter(Boolean);
     line2.setText(bits.join(' · '));
+    if (this.holding.has(s.sessionId.toLowerCase())) {
+      const warn = main.createEl('div', { cls: 'ilc-members-sub ilc-members-holds', text: t('它跳过了权限确认：@ 它要等它下次说话；换个权限模式就能直接送到（不用重开）') });
+      warn.setAttribute('title', t('Claude Code 不让别的程序直接往跳过权限确认的会话里送消息。在那个会话里切到别的权限模式即可，立刻生效。'));
+    }
 
     const action = row.createEl('div', { cls: 'ilc-members-action' });
     if (joinedAs) {

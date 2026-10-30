@@ -117,6 +117,11 @@ export class CommentPanel extends ItemView {
   private currentFilePath: string | null = null;
   /** Delivery line redraws, by deliverySlot — updated in place so a half-typed reply survives */
   private deliverySlots = new Map<string, () => void>();
+  /** Replies by others already shown for this note (read keys), so a new one can be pointed at */
+  private seenReplies: { path: string; keys: Set<string> } | null = null;
+  /** 「X 回复了 ↓」: a new reply landed on a card outside the visible part of the panel */
+  private newReplyEl!: HTMLElement;
+  private newReplyAnn: string | null = null;
 
   /** Latest positions received from CM6 */
   private lastPositions: AnnotationPosition[] = [];
@@ -144,6 +149,26 @@ export class CommentPanel extends ItemView {
 
     this.headerEl = this.panelContainer.createEl('div', { cls: 'ilc-panel-header ilc-hidden' });
     this.cardsZone = this.panelContainer.createEl('div', { cls: 'ilc-cards-zone' });
+    this.newReplyEl = this.panelContainer.createEl('button', { cls: 'ilc-new-reply ilc-hidden' });
+    this.newReplyEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const ann = this.annotations.find((a) => a.id === this.newReplyAnn);
+      this.hideNewReply();
+      if (!ann) return;
+      // Far away: jump the editor there and let the panel follow at once, instead of a long smooth scroll
+      // (activating first keeps the editor's cursor from starting one)
+      this.highlightCard(ann.id, false);
+      this.jumpToAnnotation(ann);
+      window.setTimeout(() => {
+        this.ignoreEditorScrollUntil = 0;
+        const preview = this.previewScroller();
+        const cm = this.currentCm();
+        if (preview) { this.panelContainer.scrollTop = preview.scrollTop; this.layoutCards(); } else if (cm) this.alignWith(cm);
+      }, 60);
+    });
+    this.registerDomEvent(this.panelContainer, 'scroll', () => {
+      if (this.newReplyAnn && this.cardInView(this.newReplyAnn)) this.hideNewReply();
+    }, { passive: true });
 
     // History button in the view header (top-right clock icon)
     this.addAction('clock', t('删除历史'), () => {
@@ -196,7 +221,9 @@ export class CommentPanel extends ItemView {
   showDraftCard(highlightText: string, from: number, onPost: (markup: string) => void): void {
     this.cancelDraft();
 
-    const defaultType = this.plugin.settings.commentTypes[0]?.id ?? 'note';
+    // A plain note unless the user picks a stance (备注 if the user kept it, else their first type)
+    const types = this.plugin.settings.commentTypes;
+    const defaultType = (types.find((x) => x.id === 'note') ?? types[0])?.id ?? 'note';
     this.draft = {
       highlightText,
       from,
@@ -228,7 +255,8 @@ export class CommentPanel extends ItemView {
     }, 150);
   }
 
-  highlightCard(annotationId: string): void {
+  /** Make this card the active one; `scroll` brings it into view (off: the caller moves the panel itself) */
+  highlightCard(annotationId: string, scroll = true): void {
     if (this.activeAnnotationId === annotationId) return;
 
     // Deactivate previous
@@ -241,7 +269,10 @@ export class CommentPanel extends ItemView {
 
     this.activeAnnotationId = annotationId;
     const el = this.cardEls.get(annotationId);
-    if (el) {
+    if (el && !scroll) {
+      el.addClass('ilc-card-active');
+      window.setTimeout(() => this.layoutCards(), 50);
+    } else if (el) {
       el.addClass('ilc-card-active');
       // Pause editor scroll sync so it doesn't fight our scroll
       this.ignoreEditorScrollUntil = Date.now() + 400;
@@ -299,6 +330,7 @@ export class CommentPanel extends ItemView {
     }
 
     if (!file || file.extension !== 'md') {
+      this.hideNewReply();
       this.headerEl.addClass('ilc-hidden');
       this.cardsZone.createEl('div', {
         cls: 'ilc-empty',
@@ -324,6 +356,7 @@ export class CommentPanel extends ItemView {
     if (hadDraft && this.draft) {
       this.renderDraftCardEl();
     }
+    this.noteNewReplies(file);
 
     // Compute positions directly from the editor (don't wait for async CM6 callback)
     this.alignedCm = this.currentCm();
@@ -334,6 +367,57 @@ export class CommentPanel extends ItemView {
     // settle with two deferred passes.
     window.requestAnimationFrame(() => this.layoutCards());
     window.setTimeout(() => this.layoutCards(), 300);
+  }
+
+  // ── New reply out of view ─────────────────────────────────────────────────────
+
+  /**
+   * Point at a reply that just arrived (written by someone other than the user)
+   * when its card is outside the visible part of the panel. The panel follows
+   * the editor's scroll, so it never jumps there by itself.
+   */
+  private noteNewReplies(file: TFile): void {
+    const me = this.plugin.settings.authorName.toLowerCase();
+    const now = new Map<string, { ann: Annotation; author: string }>();
+    for (const ann of this.annotations) {
+      if (isResolved(ann) && !this.plugin.settings.showResolved) continue;
+      for (const c of ann.comments) {
+        if (!UNREAD_TYPES.has(c.type) || c.author.toLowerCase() === me) continue;
+        now.set(computeReadKey(file.path, ann.highlightText, c.author, c.date, c.text), { ann, author: c.author });
+      }
+    }
+    const before = this.seenReplies?.path === file.path ? this.seenReplies.keys : null;
+    this.seenReplies = { path: file.path, keys: new Set(now.keys()) };
+    if (!before) { this.hideNewReply(); return; } // first look at this note: nothing is "new"
+    const fresh = [...now].find(([key]) => !before.has(key))?.[1];
+    const target = fresh ?? (this.newReplyAnn ? { ann: this.annotations.find((a) => a.id === this.newReplyAnn), author: this.newReplyEl.dataset.author ?? '' } : null);
+    if (!target?.ann) { this.hideNewReply(); return; }
+    const id = target.ann.id;
+    const author = target.author;
+    // Cards settle after the deferred layout passes in refresh()
+    window.setTimeout(() => {
+      if (this.cardInView(id) || !this.cardEls.has(id)) { if (this.newReplyAnn === id) this.hideNewReply(); return; }
+      const below = this.cardEls.get(id)!.getBoundingClientRect().top > this.panelContainer.getBoundingClientRect().top;
+      this.newReplyAnn = id;
+      this.newReplyEl.dataset.author = author;
+      this.newReplyEl.setText(t('{0} 回复了 {1}', [author, below ? '↓' : '↑']));
+      this.newReplyEl.removeClass('ilc-hidden');
+    }, 350);
+  }
+
+  private hideNewReply(): void {
+    this.newReplyAnn = null;
+    this.newReplyEl?.addClass('ilc-hidden');
+  }
+
+  /** Is (enough of) this card inside the visible part of the panel? */
+  private cardInView(id: string): boolean {
+    const card = this.cardEls.get(id);
+    if (!card) return false;
+    const c = card.getBoundingClientRect();
+    const p = this.panelContainer.getBoundingClientRect();
+    const top = p.top + (this.headerEl.hasClass('ilc-hidden') ? 0 : this.headerEl.offsetHeight);
+    return c.bottom > top + 24 && c.top < p.bottom - 24;
   }
 
   // ── Panel background (settings) ──────────────────────────────────────────────

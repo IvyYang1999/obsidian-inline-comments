@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { App } from 'obsidian';
 import { DeliveryLog, STALE_MS, deliveryLine, deliverySlot, type DeliveryRecord } from './deliveryStatus.ts';
+import { HOLD_MS } from './claudeInbox.ts';
 
 const rec = (r: Partial<DeliveryRecord> = {}): DeliveryRecord => ({
   key: 'k1', doc: 'a.md', highlight: '原文', text: '[@助理](agent:12345678?notify) 看看', shortId: '12345678',
@@ -9,15 +10,19 @@ const rec = (r: Partial<DeliveryRecord> = {}): DeliveryRecord => ({
 const ctx = (c: Partial<Parameters<typeof deliveryLine>[1]> = {}) => ({ replied: false, now: 2000, hookInstalled: true, label: 'Claude Code', ...c });
 
 describe('deliveryLine', () => {
-  it('disappears once the member replied', () => {
-    expect(deliveryLine(rec({ state: 'handed' }), ctx({ replied: true }))).toBeNull();
+  it('once the member replied, keeps one quiet line of how the letter got there', () => {
+    const at = new Date(2026, 9, 29, 9, 5).getTime();
+    expect(deliveryLine(rec({ state: 'handed', route: 'inbox', at }), ctx({ replied: true, now: at + 60000 }))).toEqual({ tone: 'done', text: '已回复 · 09:05 送进会话' });
+    expect(deliveryLine(rec({ state: 'handed', route: 'hook', at }), ctx({ replied: true, now: at + 86400000 }))?.text).toBe('已回复 · 10/29 09:05 由 hook 递过去');
+    expect(deliveryLine(rec({ at }), ctx({ replied: true, now: at }))?.text).toBe('已回复 · 09:05 放进信箱');
   });
   it('sending: busy until the plugin knows where it went', () => {
     expect(deliveryLine(rec({ state: 'sending' }), ctx())).toEqual({ tone: 'busy', text: '正在送给 助理…' });
   });
   it('mailbox: says when it will be seen, or that it will not and how to fix it', () => {
     expect(deliveryLine(rec(), ctx())).toMatchObject({ tone: 'info', text: expect.stringContaining('下次说话时会看到') });
-    expect(deliveryLine(rec({ reason: 'held' }), ctx())?.text).toContain('跳过了权限确认');
+    expect(deliveryLine(rec({ reason: 'held' }), ctx())).toMatchObject({ action: 'open', text: expect.stringContaining('5 分钟内把它换个权限模式') });
+    expect(deliveryLine(rec({ reason: 'held' }), ctx({ now: 1000 + HOLD_MS }))).toMatchObject({ action: 'retry', text: expect.stringContaining('下次说话时会看到') });
     expect(deliveryLine(rec(), ctx({ hookInstalled: false }))).toMatchObject({ tone: 'warn', action: 'hook' });
     expect(deliveryLine(rec({ reason: 'not-autostart' }), ctx({ label: 'Codex' }))).toMatchObject({ tone: 'warn', text: expect.stringContaining('Codex 会话不会自己看信箱') });
   });

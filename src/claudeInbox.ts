@@ -9,8 +9,9 @@
  * The letter queues behind the session's current turn (priority "next"), so it
  * never interrupts one. A session in bypass-permissions mode holds it instead,
  * waiting for an approval the Claude app has no place for, and drops it after
- * five minutes — so such sessions get their letters from the mailbox, and a
- * letter only counts as handed over once the session's transcript shows it queued.
+ * five minutes (HOLD_MS); switching that session to another mode lets it in at
+ * once. So a letter only counts as handed over once the session's transcript
+ * shows it queued, and until then it stays in the mailbox for the wake hook.
  *
  * Desktop only (Node net/fs). `ILC_HOME` overrides the home directory (e2e).
  */
@@ -31,6 +32,8 @@ export interface ClaudeInbox {
 }
 
 const SENDER = 'Agent Comments';
+/** How long Claude Code holds a letter it would not queue (CLAUDE_CODE_USER_DIALOG_TIMEOUT_MS) */
+export const HOLD_MS = 5 * 60 * 1000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 async function readJson(file: string, maxBytes = 64 * 1024): Promise<Record<string, unknown> | null> {
@@ -150,26 +153,36 @@ export async function claudeSessionMode(sessionId: string, home = process.env.IL
 }
 
 /**
- * Would the session hold a letter from us rather than queue it? Claude Code
- * holds messages whose sender states no permission mode while the session runs
- * in bypassPermissions, unless the user's `crossSessionInbound` setting says
- * otherwise. An unknown mode counts as holding: the mailbox never loses a letter.
+ * What the session would do with a letter from us. Claude Code holds messages
+ * whose sender states no permission mode while the session runs in
+ * bypassPermissions, unless the user's `crossSessionInbound` setting says
+ * otherwise ('refuse' drops them). The mode is the one the transcript last
+ * recorded: a switch shows up only with the session's next message, so 'hold'
+ * is a guess worth testing — a letter sent anyway goes in if the guess is stale.
+ * An unknown mode counts as holding.
  */
-export async function claudeInboxHolds(inbox: Pick<ClaudeInbox, 'sessionId'>, home = process.env.ILC_HOME || nodeOs().homedir()): Promise<boolean> {
+export async function claudeInboxGate(inbox: Pick<ClaudeInbox, 'sessionId'>, home = process.env.ILC_HOME || nodeOs().homedir()): Promise<'accept' | 'hold' | 'refuse'> {
   const setting = (await readJson(nodePath().join(home, '.claude', 'settings.json'), 1024 * 1024))?.crossSessionInbound;
-  if (setting === 'accept') return false;
-  if (setting === 'hold' || setting === 'refuse') return true;
+  if (setting === 'accept') return 'accept';
+  if (setting === 'refuse') return 'refuse';
+  if (setting === 'hold') return 'hold';
   const mode = await claudeSessionMode(inbox.sessionId, home);
-  return mode === undefined || mode === 'bypassPermissions';
+  return mode === undefined || mode === 'bypassPermissions' ? 'hold' : 'accept';
+}
+
+/** Would the session hold (or refuse) a letter from us rather than queue it? */
+export async function claudeInboxHolds(inbox: Pick<ClaudeInbox, 'sessionId'>, home = process.env.ILC_HOME || nodeOs().homedir()): Promise<boolean> {
+  return (await claudeInboxGate(inbox, home)) !== 'accept';
 }
 
 const squash = (s: string) => s.replace(/\s+/g, ' ').trim();
 
 /**
  * Did the session queue the letter? It writes the queue entry to its transcript
- * right away, even in the middle of a turn; a held or refused letter leaves no trace.
+ * right away, even in the middle of a turn; a held or refused letter leaves no
+ * trace until it is let in. `signal` stops a long watch early (false).
  */
-export async function claudeInboxQueued(sessionId: string, text: string, msgId: string, home = process.env.ILC_HOME || nodeOs().homedir(), timeoutMs = 10000): Promise<boolean> {
+export async function claudeInboxQueued(sessionId: string, text: string, msgId: string, home = process.env.ILC_HOME || nodeOs().homedir(), timeoutMs = 10000, pollMs = 500, signal?: AbortSignal): Promise<boolean> {
   const want = squash(text);
   const since = Date.now() - 5000; // an identical letter queued earlier is not this one
   const deadline = Date.now() + timeoutMs;
@@ -188,7 +201,7 @@ export async function claudeInboxQueued(sessionId: string, text: string, msgId: 
         } catch { /* a line still being written */ }
       }
     }
-    if (Date.now() >= deadline) return false;
-    await new Promise((r) => setTimeout(r, 500));
+    if (Date.now() >= deadline || signal?.aborted) return false;
+    await new Promise((r) => setTimeout(r, pollMs));
   }
 }

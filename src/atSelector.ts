@@ -6,7 +6,7 @@ import { NewSessionModal, createSessionMember, defaultHarness, defaultSessionCwd
 import { validateName, nextAutoSessionName } from './registry.ts';
 import { HARNESSES, detectHarnesses, harnessDef, type HarnessId } from './harnesses.ts';
 import { claudeInboxHolds, findClaudeInbox } from './claudeInbox.ts';
-import { REACH_ORDER, decideReach, harnessLoggedIn, legacyReach, type Reach } from './reach.ts';
+import { REACH_ORDER, decideReach, harnessLoggedIn, legacyReach, levelHint, unknownHarnessReach, type Reach } from './reach.ts';
 
 export { REGISTRY_PATH };
 
@@ -156,7 +156,7 @@ export async function memberReach(app: App, entries: RosterEntry[]): Promise<Map
     if (e.isAction) return;
     if (e.source === 'roster') { out.set(e.name, legacyReach(e.status)); return; }
     const h = harnessDef(e.harness);
-    if (!h) return;
+    if (!h) { out.set(e.name, unknownHarnessReach(e.harness ?? '')); return; }
     let open = false, holds = false, desktop = false;
     if (h.id === 'claude' && e.sessionId) {
       const inbox = await findClaudeInbox(e.sessionId);
@@ -346,7 +346,8 @@ export function attachAtSelector(
       const avatar = item.createEl('span', { cls: `ilc-at-avatar${entry.isAction ? ' ilc-at-avatar-new' : ''}`, text: entry.isAction ? '＋' : entry.name.charAt(0) });
       if (!entry.isAction) {
         avatar.setCssStyles({ background: avatarColor(entry.name) });
-        avatar.createEl('span', { cls: `ilc-at-dot ilc-at-dot-${statusCls}` });
+        const dot = avatar.createEl('span', { cls: `ilc-at-dot ilc-at-dot-${statusCls}` });
+        if (r) dot.setAttribute('title', levelHint(r.level));
       }
 
       const main = item.createEl('span', { cls: 'ilc-at-main' });
@@ -374,7 +375,7 @@ export function attachAtSelector(
       if (entry.isAction) {
         // no source pill
       } else if (entry.source === 'registry') {
-        const pill = item.createEl('span', { cls: 'ilc-at-source', text: entry.harness ?? t('会话') });
+        const pill = item.createEl('span', { cls: 'ilc-at-source', text: harnessDef(entry.harness)?.label ?? entry.harness ?? t('会话') });
         pill.setAttribute('title', t('{0} 会话 {1}，自己加入的成员', [entry.harness ?? '', entry.shortId]));
       } else if (entry.status === '离线') {
         item.createEl('span', { cls: 'ilc-at-source ilc-at-source-muted', text: '离线' });

@@ -31,9 +31,16 @@ export const HARNESSES: HarnessDef[] = [
   { id: 'gemini', label: 'Gemini CLI', bin: 'gemini', mode: 'headless' },
 ];
 
-/** Registry members without a harness are Claude Code sessions (the original behaviour) */
+/**
+ * A member's harness from what the registry says. Members joined by hand or by
+ * older scripts say `claude-code`, `Claude Code`, `codex-cli`…; none or `unknown`
+ * is a Claude Code session (the original behaviour). Anything else: undefined.
+ */
 export function harnessDef(id: string | undefined): HarnessDef | undefined {
-  return HARNESSES.find((h) => h.id === (id || 'claude'));
+  const key = (id ?? '').trim().toLowerCase();
+  if (!key || key === 'unknown') return HARNESSES[0];
+  const letters = key.replace(/[^a-z]/g, '');
+  return HARNESSES.find((h) => key === h.id || letters.startsWith(h.id));
 }
 
 // ─── Detection ───────────────────────────────────────────────────────────────

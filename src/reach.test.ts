@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { decideReach, harnessLoggedIn, legacyReach, type ReachFacts } from './reach.ts';
+import { decideReach, harnessLoggedIn, legacyReach, unknownHarnessReach, type ReachFacts } from './reach.ts';
 
 const claude = (f: Partial<ReachFacts> = {}): ReachFacts => ({
   harness: 'claude', label: 'Claude Code', headless: false, autoStart: false,
@@ -24,6 +24,7 @@ describe('decideReach: Claude Code', () => {
   });
   it('bypass or closed sessions wait for the hook', () => {
     expect(decideReach(claude({ open: true, holds: true, hookInstalled: true }))).toMatchObject({ level: 'later', text: expect.stringContaining('跳过了权限确认') });
+    expect(decideReach(claude({ open: true, holds: true, hookInstalled: true })).text).toContain('换个权限模式');
     expect(decideReach(claude({ hookInstalled: true }))).toMatchObject({ level: 'later' });
   });
   it('without the hook nobody reads it, and the fix is the hook', () => {
@@ -41,6 +42,10 @@ describe('decideReach: Codex / Gemini', () => {
     expect(decideReach(codex({ cliInstalled: false }))).toMatchObject({ level: 'none', text: expect.stringContaining('没找到 Codex') });
     expect(decideReach(codex({ autoStart: false }))).toMatchObject({ level: 'none', text: expect.stringContaining('不会自己看信箱') });
   });
+});
+
+it('an unknown harness says its letters only wait in the mailbox', () => {
+  expect(unknownHarnessReach('cursor')).toMatchObject({ level: 'later', text: expect.stringContaining('cursor') });
 });
 
 it('legacy roster presence maps onto the same levels', () => {
