@@ -6,7 +6,7 @@ import { readRegistry, removeAgent, upsertAgent, validateName } from '../registr
 import { discoverLocalSessions, shortCwd, timeAgo, type LocalSession } from '../sessionDiscovery.ts';
 import { DEFAULT_MAILBOX_ROOT } from '../mentionDelivery.ts';
 import { harnessDef } from '../harnesses.ts';
-import { claudeInboxHolds, findClaudeInbox } from '../claudeInbox.ts';
+import { claudeInboxHolds, findClaudeSession } from '../claudeInbox.ts';
 
 const STATUS_CLS: Record<string, string> = { '在线': 'online', '闲置': 'idle', '离线': 'offline' };
 const LEVEL_CLS: Record<Reach['level'], string> = { now: 'online', later: 'idle', none: 'offline' };
@@ -29,6 +29,8 @@ export class MembersModal extends Modal {
   private registrySnapshot: { joined: Map<string, string>; left: Map<string, string> } = { joined: new Map(), left: new Map() };
   /** Open Claude sessions that would hold a letter (they skip permission prompts), by lower-case id */
   private holding = new Set<string>();
+  /** Claude sessions that run without a cross-session inbox, by lower-case id */
+  private noInbox = new Set<string>();
 
   constructor(app: App) {
     super(app);
@@ -207,11 +209,13 @@ export class MembersModal extends Modal {
     }
     // A chat open in the Claude app is running even when its command line does not say which session it is
     this.holding = new Set();
+    this.noInbox = new Set();
     await Promise.all(sessions.filter((s) => s.harness === 'claude').map(async (s) => {
-      const inbox = await findClaudeInbox(s.sessionId);
-      if (!inbox) return;
+      const { running, inbox } = await findClaudeSession(s.sessionId);
+      if (!running) return;
       s.running = true;
-      if (await claudeInboxHolds(inbox)) this.holding.add(s.sessionId.toLowerCase());
+      if (!inbox) this.noInbox.add(s.sessionId.toLowerCase());
+      else if (await claudeInboxHolds(inbox)) this.holding.add(s.sessionId.toLowerCase());
     }));
     const registry = await readRegistry(this.app);
     this.registrySnapshot = {
@@ -256,7 +260,10 @@ export class MembersModal extends Modal {
     const line2 = main.createEl('div', { cls: 'ilc-members-sub' });
     const bits = [s.running ? t('运行中') : timeAgo(s.lastActive), shortCwd(s.cwd), s.shortId].filter(Boolean);
     line2.setText(bits.join(' · '));
-    if (this.holding.has(s.sessionId.toLowerCase())) {
+    if (this.noInbox.has(s.sessionId.toLowerCase())) {
+      const warn = main.createEl('div', { cls: 'ilc-members-sub ilc-members-holds', text: t('它的 Claude Code 没开收信口：@ 它要等它下次说话') });
+      warn.setAttribute('title', t('Claude Code 按账号逐步开放会话之间的收信口，有的会话启动后才打开，旧版本没有。重开这个会话或更新 Claude Code 后再看。'));
+    } else if (this.holding.has(s.sessionId.toLowerCase())) {
       const warn = main.createEl('div', { cls: 'ilc-members-sub ilc-members-holds', text: t('它跳过了权限确认：@ 它要等它下次说话；换个权限模式就能直接送到（不用重开）') });
       warn.setAttribute('title', t('Claude Code 不让别的程序直接往跳过权限确认的会话里送消息。在那个会话里切到别的权限模式即可，立刻生效。'));
     }

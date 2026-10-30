@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { createServer, type Server } from 'net';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { claudeInboxGate, claudeInboxHolds, claudeInboxQueued, findClaudeInbox, inboxFrames, sendToClaudeInbox } from './claudeInbox.ts';
+import { claudeInboxGate, claudeInboxHolds, claudeInboxQueued, findClaudeInbox, findClaudeSession, inboxFrames, sendToClaudeInbox } from './claudeInbox.ts';
 
 const SID = '3f1c2b9a-1111-4222-8333-444455556666';
 let home: string;
@@ -59,6 +59,21 @@ describe('findClaudeInbox', () => {
     rmSync(join(home, '.claude', 'sessions'), { recursive: true });
     record({ messagingSocketPath: join(home, 'gone.sock') });
     expect(await findClaudeInbox(SID, home)).toBeNull();
+  });
+});
+
+describe('findClaudeSession', () => {
+  it('tells a running session without an inbox from one that is not running', async () => {
+    record({ messagingSocketPath: undefined });
+    expect(await findClaudeSession(SID, home)).toEqual({ running: true, inbox: null });
+    record({ messagingSocketPath: undefined }, 999999);
+    rmSync(join(home, '.claude', 'sessions', `${process.pid}.json`));
+    expect(await findClaudeSession(SID, home)).toEqual({ running: false, inbox: null });
+  });
+  it('reads records as large as Claude Code allows', async () => {
+    await listen();
+    record({ formerNames: Array.from({ length: 2000 }, (_, i) => ({ name: `name ${i}`, until: i, sessionId: SID })) });
+    expect((await findClaudeSession(SID, home)).inbox).toMatchObject({ socket });
   });
 });
 

@@ -25,7 +25,7 @@ import type { Candidate } from './src/mentionDelivery.ts';
 import { renderAgentRegistrySection } from './src/settings/agentRegistrySection.ts';
 import { type HarnessDef, detectHarnesses, harnessDef, headlessArgs, looksUnauthenticated, resumeShell, runHeadless } from './src/harnesses.ts';
 import { readRegistry, setAgentThread } from './src/registry.ts';
-import { HOLD_MS, type ClaudeInbox, claudeInboxGate, claudeInboxQueued, findClaudeInbox, sendToClaudeInbox } from './src/claudeInbox.ts';
+import { HOLD_MS, type ClaudeInbox, claudeInboxGate, claudeInboxQueued, findClaudeSession, sendToClaudeInbox } from './src/claudeInbox.ts';
 import { DeliveryLog, type DeliveryLine } from './src/deliveryStatus.ts';
 import type { DeliveredMention } from './src/mentionDeliveryService.ts';
 import { SUGGESTED_HOTKEY, bindSuggestedHotkey, boundHotkeys, formatHotkey, openHotkeySettings, sameHotkey } from './src/hotkeys.ts';
@@ -134,7 +134,11 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     // Right-click on a selection → 添加划线评论 (no hotkey needed)
     this.registerEvent(
       this.app.workspace.on('editor-menu', (menu, editor) => {
-        if (!editor.getSelection()) return;
+        // Without a selection the item still shows (greyed out), so people can find it
+        if (!editor.getSelection()) {
+          menu.addItem((item) => item.setTitle(t('添加划线评论（先选中一段文字）')).setIcon('message-square').setSection('selection').setDisabled(true));
+          return;
+        }
         menu.addItem((item) =>
           item
             .setTitle(t('添加划线评论'))
@@ -347,6 +351,11 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       this.notifyDesktop(t('评论区有新留言给 {0}', [c.name]), t('{0} · 它跳过了权限确认，留言没能直接送进去。5 分钟内把它换成别的权限模式就会送进去，否则它下一次说话/收尾时会看到', [file]));
       return; // running already: nothing to start
     }
+    if (inbox === 'running') {
+      this.logDelivery(key, { state: 'mailbox', reason: 'no-inbox' });
+      this.notifyDesktop(t('评论区有新留言给 {0}', [c.name]), t('{0} · 它开着，但它的 Claude Code 没开收信口，留言没能直接送进去；它下一次说话/收尾时会看到', [file]));
+      return; // running already: nothing to start
+    }
     if (harness?.mode === 'headless' && !c.autoStart) this.logDelivery(key, { state: 'mailbox', reason: 'not-autostart' });
     // headless members answer right away and say so themselves
     if (!(c.autoStart && harness?.mode === 'headless')) {
@@ -392,9 +401,9 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
   /** Show the member's session: its chat in the Claude app, else a terminal that resumes it */
   async openMemberSession(c: Pick<Candidate, 'name' | 'sessionId' | 'harness' | 'cwd' | 'threadId'>): Promise<void> {
     if (harnessDef(c.harness)?.id === 'claude') {
-      const inbox = Platform.isDesktop ? await findClaudeInbox(c.sessionId) : null;
+      const { running, inbox } = Platform.isDesktop ? await findClaudeSession(c.sessionId) : { running: false, inbox: null };
       if (inbox?.hostSessionId) { await openExternalUrl(`claude://code/continue?session=${inbox.hostSessionId}`); return; }
-      if (inbox) { new Notice(t('「{0}」开在终端里，去那个窗口看看', [c.name])); return; }
+      if (running) { new Notice(t('「{0}」开在终端里，去那个窗口看看', [c.name])); return; }
     }
     await this.resumeInTerminal(c.sessionId, c.cwd, c.harness, c.threadId);
   }
@@ -424,13 +433,14 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
    * session runs but did not queue it (it skips permission prompts), so the
    * letter stays unread in the mailbox — and goes in after all if the user
    * switches that session's mode within Claude Code's hold. 'closed': no
-   * running session. The letter is sent even when the mode on record says it
-   * will be held: that record only changes with the session's next message.
+   * running session; 'running': it runs, but without an inbox. The letter is
+   * sent even when the mode on record says it will be held: that record only
+   * changes with the session's next message.
    */
-  private async handToClaudeInbox(c: Candidate, letterPath: string, key?: string): Promise<'handed' | 'held' | 'closed'> {
+  private async handToClaudeInbox(c: Candidate, letterPath: string, key?: string): Promise<'handed' | 'held' | 'running' | 'closed'> {
     if (!Platform.isDesktop) return 'closed';
-    const inbox = await findClaudeInbox(c.sessionId);
-    if (!inbox) return 'closed';
+    const { running, inbox } = await findClaudeSession(c.sessionId);
+    if (!inbox) return running ? 'running' : 'closed';
     const gate = await claudeInboxGate(inbox);
     if (gate === 'refuse') return 'held';
     const adapter = this.app.vault.adapter;

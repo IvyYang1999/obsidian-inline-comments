@@ -12,7 +12,7 @@ import { HOLD_MS } from './claudeInbox.ts';
 export type DeliveryState = 'sending' | 'mailbox' | 'handed' | 'failed';
 /** How a handed letter reached the session */
 export type DeliveryRoute = 'inbox' | 'terminal' | 'background' | 'hook';
-export type DeliveryReason = 'held' | 'not-autostart' | 'not-logged-in' | 'missing-cli' | 'error';
+export type DeliveryReason = 'held' | 'no-inbox' | 'not-autostart' | 'not-logged-in' | 'missing-cli' | 'error';
 
 export interface DeliveryRecord {
   /** The mention's key (mentionDelivery.mentionKey) */
@@ -74,6 +74,7 @@ export function deliveryLine(r: DeliveryRecord, ctx: { replied: boolean; now: nu
     if (r.reason === 'not-autostart') return { text: t('已放进 {0} 的信箱，但 {1} 会话不会自己看信箱', [who, ctx.label]), tone: 'warn' };
     if (!ctx.hookInstalled) return { text: t('已放进 {0} 的信箱，但它看不到：没装唤醒 hook', [who]), tone: 'warn', action: 'hook' };
     if (r.reason === 'held') return { text: t('已放进 {0} 的信箱：它跳过了权限确认，下次说话时会看到；换了权限模式可以重试', [who]), tone: 'info', action: 'retry' };
+    if (r.reason === 'no-inbox') return { text: t('已放进 {0} 的信箱：它开着，但收不到直送，下次说话时会看到', [who]), tone: 'info' };
     return { text: t('已放进 {0} 的信箱，它下次说话时会看到', [who]), tone: 'info' };
   }
   if (r.state === 'handed') {

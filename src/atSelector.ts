@@ -5,7 +5,7 @@ import { MembersModal } from './views/MembersModal.ts';
 import { NewSessionModal, createSessionMember, defaultHarness, defaultSessionCwd } from './views/NewSessionModal.ts';
 import { validateName, nextAutoSessionName } from './registry.ts';
 import { HARNESSES, detectHarnesses, harnessDef, type HarnessId } from './harnesses.ts';
-import { claudeInboxHolds, findClaudeInbox } from './claudeInbox.ts';
+import { claudeInboxHolds, findClaudeSession } from './claudeInbox.ts';
 import { REACH_ORDER, decideReach, harnessLoggedIn, legacyReach, levelHint, unknownHarnessReach, type Reach } from './reach.ts';
 
 export { REGISTRY_PATH };
@@ -157,14 +157,16 @@ export async function memberReach(app: App, entries: RosterEntry[]): Promise<Map
     if (e.source === 'roster') { out.set(e.name, legacyReach(e.status)); return; }
     const h = harnessDef(e.harness);
     if (!h) { out.set(e.name, unknownHarnessReach(e.harness ?? '')); return; }
-    let open = false, holds = false, desktop = false;
+    let open = false, noInbox = false, holds = false, desktop = false;
     if (h.id === 'claude' && e.sessionId) {
-      const inbox = await findClaudeInbox(e.sessionId);
-      if (inbox) { open = true; desktop = inbox.desktop; holds = await claudeInboxHolds(inbox); }
+      const { running, inbox } = await findClaudeSession(e.sessionId);
+      open = running;
+      noInbox = running && !inbox;
+      if (inbox) { desktop = inbox.desktop; holds = await claudeInboxHolds(inbox); }
     }
     out.set(e.name, decideReach({
       harness: h.id, label: h.label, headless: h.mode === 'headless', autoStart: !!e.autoStart,
-      open, holds, desktop, hookInstalled: !!hookInstalled, cliInstalled: !!bins[h.id],
+      open, noInbox, holds, desktop, hookInstalled: !!hookInstalled, cliInstalled: !!bins[h.id],
       loggedIn: h.mode === 'headless' ? await harnessLoggedIn(h.id) : true,
       canOpenTerminal: process.platform === 'darwin',
     }));

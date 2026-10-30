@@ -24,6 +24,7 @@ describe('deliveryLine', () => {
     expect(deliveryLine(rec({ reason: 'held' }), ctx())).toMatchObject({ action: 'open', text: expect.stringContaining('5 分钟内把它换个权限模式') });
     expect(deliveryLine(rec({ reason: 'held' }), ctx({ now: 1000 + HOLD_MS }))).toMatchObject({ action: 'retry', text: expect.stringContaining('下次说话时会看到') });
     expect(deliveryLine(rec(), ctx({ hookInstalled: false }))).toMatchObject({ tone: 'warn', action: 'hook' });
+    expect(deliveryLine(rec({ reason: 'no-inbox' }), ctx())?.text).toContain('它开着，但收不到直送');
     expect(deliveryLine(rec({ reason: 'not-autostart' }), ctx({ label: 'Codex' }))).toMatchObject({ tone: 'warn', text: expect.stringContaining('Codex 会话不会自己看信箱') });
   });
   it('handed: says how it got there, then turns into 还没回复 with a way to look', () => {

@@ -32,8 +32,10 @@ export interface ReachFacts {
   headless: boolean;
   /** Plugin-created member: started / answered by the plugin when a letter arrives */
   autoStart: boolean;
-  /** Claude: the session is running with a live inbox */
+  /** Claude: the session is running */
   open?: boolean;
+  /** Claude: it runs, but its Claude Code has no cross-session inbox */
+  noInbox?: boolean;
   /** Claude: that session would not take a letter from us (it skips permission prompts) */
   holds?: boolean;
   /** Claude: the open session is a chat in the Claude app (else a terminal) */
@@ -53,6 +55,11 @@ export function decideReach(f: ReachFacts): Reach {
     if (!f.cliInstalled) return { level: 'none', text: t('收不到：本机没找到 {0}', [f.label]) };
     if (!f.loggedIn) return { level: 'none', text: t('收不到：{0} 好像还没登录', [f.label]), fix: 'login' };
     return { level: 'now', text: t('在后台回复') };
+  }
+  if (f.open && f.noInbox) {
+    return f.hookInstalled
+      ? { level: 'later', text: t('开着，但它的 Claude Code 没开收信口，要等它下次说话') }
+      : { level: 'none', text: t('看不到：开着但没开收信口，又没装 hook'), fix: 'hook' };
   }
   if (f.open && !f.holds) return { level: 'now', text: f.desktop ? t('开着（Claude 客户端），直接送进去') : t('开着（终端），直接送进去') };
   if (!f.open && f.autoStart && f.cliInstalled && f.canOpenTerminal) return { level: 'now', text: t('没开着，@ 时会在终端里打开它') };

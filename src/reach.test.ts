@@ -27,6 +27,10 @@ describe('decideReach: Claude Code', () => {
     expect(decideReach(claude({ open: true, holds: true, hookInstalled: true })).text).toContain('换个权限模式');
     expect(decideReach(claude({ hookInstalled: true }))).toMatchObject({ level: 'later' });
   });
+  it('a running session without an inbox is open, not closed', () => {
+    expect(decideReach(claude({ open: true, noInbox: true, hookInstalled: true, autoStart: true, cliInstalled: true }))).toMatchObject({ level: 'later', text: expect.stringContaining('开着') });
+    expect(decideReach(claude({ open: true, noInbox: true }))).toMatchObject({ level: 'none', fix: 'hook' });
+  });
   it('without the hook nobody reads it, and the fix is the hook', () => {
     expect(decideReach(claude({ open: true, holds: true }))).toMatchObject({ level: 'none', fix: 'hook' });
     expect(decideReach(claude())).toMatchObject({ level: 'none', fix: 'hook' });

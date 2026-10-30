@@ -551,6 +551,25 @@ async function run() {
     await page.evaluate(async () => { const leaf = app.workspace.getLeavesOfType('markdown')[0]; const st = leaf.getViewState(); st.state = { ...st.state, mode: 'source' }; await leaf.setViewState(st, { focus: true }); });
     await sleep(600);
 
+    // ── Right-click with nothing selected: the item is there, greyed out, saying what to do
+    {
+      await page.evaluate(() => {
+        const leaf = app.workspace.getLeavesOfType('markdown')[0];
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        leaf.view.editor.setCursor({ line: 2, ch: 2 });
+        leaf.view.editor.focus();
+        app.commands.executeCommandById('editor:context-menu');
+      });
+      const open = await page.waitForSelector('.menu', { timeout: 3000 }).then(() => true).catch(() => false);
+      const item = open ? await page.evaluate(() => {
+        const el = [...document.querySelectorAll('.menu .menu-item')].find((m) => m.textContent.includes('添加划线评论'));
+        return el ? { text: el.textContent.trim(), disabled: el.classList.contains('is-disabled') } : null;
+      }) : null;
+      check('没选中文字时右键也有「添加划线评论（先选中一段文字）」，灰着', item?.text === '添加划线评论（先选中一段文字）' && item.disabled, JSON.stringify(item));
+      await page.keyboard.press('Escape');
+      await sleep(200);
+    }
+
     // ── Right-click → 添加划线评论 (right-click INSIDE the selection)
     const selPoint = await page.evaluate(() => {
       const view = app.workspace.getLeavesOfType('markdown')[0].view;
@@ -995,6 +1014,17 @@ async function run() {
       await atDesk('没排上队');
       check('送出但没进队列：信改回未读', await waitFor(() => inboxLines.length >= 2 && deskLetter().find((l) => l.includes('没排上队'))?.includes('status: 未读'), 16000));
       queues = true;
+
+      // Running, but this Claude Code has no inbox (not yet turned on for the account, or too old):
+      // say it is open, keep the letter for the hook, and don't open a second terminal
+      fs.writeFileSync(path.join(sessions, `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: SID, cwd: path.join(WORK, 'vault'), kind: 'interactive', entrypoint: 'cli' }));
+      const noInboxRow = (await atRows()).find((r) => r.name === '桌面助理');
+      check('开着但没有收信口：@ 列表写「开着，但…没开收信口」，不是「没开着」', !!noInboxRow?.role.includes('开着，但它的 Claude Code 没开收信口') && noInboxRow.cls.includes('status-idle'), JSON.stringify(noInboxRow));
+      inboxLines = [];
+      await atDesk('开着但没有收信口');
+      check('……@ 下面写「它开着，但收不到直送，下次说话时会看到」', await waitFor(async () => !!(await lineOf('开着但没有收信口'))?.text.includes('它开着，但收不到直送')), JSON.stringify(await lineOf('开着但没有收信口')));
+      check('……不弹第二个终端，信留在信箱（未读）', !deskLaunched()
+        && !!deskLetter().find((l) => l.includes('开着但没有收信口'))?.includes('status: 未读') && inboxLines.length === 0);
 
       await new Promise((r) => inbox.close(r));
       fs.rmSync(path.join(sessions, `${process.pid}.json`));

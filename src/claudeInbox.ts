@@ -57,20 +57,30 @@ async function readToken(dir: string, pid: number, socket: string): Promise<stri
   return typeof token === 'string' && /^[0-9a-f]{16,128}$/i.test(token) ? token : undefined;
 }
 
-/** The live inbox of this session, or null when it is not running (or its Claude Code has no inbox) */
-export async function findClaudeInbox(sessionId: string, home = process.env.ILC_HOME || nodeOs().homedir()): Promise<ClaudeInbox | null> {
-  if (!UUID_RE.test(sessionId)) return null;
+/** Claude Code's own cap on a session record (they grow with names and status) */
+const RECORD_MAX = 256 * 1024;
+
+/**
+ * Is this session running, and can it take a letter? A session can run without
+ * an inbox: Claude Code turns the cross-session inbox on per account (sometimes
+ * only after startup) and older versions have none. `inbox` is null then.
+ */
+export async function findClaudeSession(sessionId: string, home = process.env.ILC_HOME || nodeOs().homedir()): Promise<{ running: boolean; inbox: ClaudeInbox | null }> {
+  if (!UUID_RE.test(sessionId)) return { running: false, inbox: null };
   const dir = nodePath().join(home, '.claude', 'sessions');
   let files: string[];
-  try { files = await nodeFsp().readdir(dir); } catch { return null; }
+  try { files = await nodeFsp().readdir(dir); } catch { return { running: false, inbox: null }; }
+  let running = false;
   let best: { inbox: ClaudeInbox; at: number } | null = null;
   for (const f of files) {
     const pid = Number(/^(\d+)\.json$/.exec(f)?.[1]);
     if (!pid) continue;
-    const r = await readJson(nodePath().join(dir, f));
+    const r = await readJson(nodePath().join(dir, f), RECORD_MAX);
     if (!r || String(r.sessionId).toLowerCase() !== sessionId.toLowerCase()) continue;
+    if (r.pid !== pid || !alive(pid)) continue;
+    running = true;
     const socket = r.messagingSocketPath;
-    if (r.pid !== pid || typeof socket !== 'string' || !nodePath().isAbsolute(socket) || !alive(pid)) continue;
+    if (typeof socket !== 'string' || !nodePath().isAbsolute(socket)) continue;
     try {
       const st = await nodeFsp().lstat(socket);
       if (!st.isSocket() || st.uid !== process.getuid?.()) continue;
@@ -90,7 +100,12 @@ export async function findClaudeInbox(sessionId: string, home = process.env.ILC_
       },
     };
   }
-  return best?.inbox ?? null;
+  return { running, inbox: best?.inbox ?? null };
+}
+
+/** The live inbox of this session, or null when it is not running or has no inbox */
+export async function findClaudeInbox(sessionId: string, home = process.env.ILC_HOME || nodeOs().homedir()): Promise<ClaudeInbox | null> {
+  return (await findClaudeSession(sessionId, home)).inbox;
 }
 
 /** What goes down the socket: the auth line (when there is a key), then the letter as a user message */
