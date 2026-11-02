@@ -38,6 +38,8 @@
 
 **Unread, at a glance.** Replies from other people or AI get a red dot, the panel header shows *N comments · M unread*, and the file explorer shows a red count on the document. Mark as read with one click, resolve a thread when it's done, react with an emoji. One switch turns the unread signals off.
 
+**Many comments, still readable.** Cards stay fully open and stack down the margin. Click a card and the note scrolls so its passage sits level with it; click a passage and its card moves level with the text. Fold a card you don't need open to a single line (it opens while you're on it), or hide it from the panel until you click its passage again.
+
 <p align="center">
   <img src="docs/obsidian-en.png" width="1000" alt="Obsidian with the comments panel: a question, the AI session's reply with an unread dot, a resolved thread, and the unread badge in the file explorer">
 </p>
@@ -111,6 +113,7 @@ Design notes live in [`DESIGN.md`](DESIGN.md). Releases are built by CI from a v
 - **信到没到，一眼知道。** @ 列表里每个成员都写明它现在怎么收到：马上收到、下次说话时看到，还是收不到（附一键修复：装 hook、去登录）。每条 @ 下面有一行状态：在信箱里、已送进会话正在处理、没送到和原因（可以重试）；对方回复后，这行缩成一行淡淡的「已回复 · 几点送进会话」。回复落在看不见的卡片上时，面板底部会出现「某某 回复了 ↓」，点一下就到。跳过权限确认的会话收不到直送，信会在门口等 5 分钟：这期间把它换个权限模式（不用重开）就直接送进去。
 - **修改建议。** 回复可以附带对划线原文的替换文本（人或 AI 都能提），卡片上显示 原文 → 改法，点「采纳」原文才会变。
 - **未读一眼看清。** 别人或 AI 的回复带红点，面板顶部常驻「N 条评论 · M 未读」，文件目录里对应文档也挂红色角标；看完点「标为已读」，聊完点「解决」，也可以加个 emoji 反应。设置里「未读通知」一键关掉。
+- **评论再多也看得清。** 卡片全部展开、竖着往下排；点卡片，正文滚过来和它对齐；点正文里的划线，卡片移过去和它对齐。暂时不用看的卡片可以折叠成一行（选中时会展开），也可以隐藏，直到再点它在正文里的划线。
 - **编辑与阅读视图、桌面与手机。** 阅读视图里同款高亮 + 角标，原始标记隐藏；超长线程折叠成预览。
 
 **安装**：Obsidian 设置 → 第三方插件 → 浏览，搜 **Agent Comments**；或直接打开 <a href="obsidian://show-plugin?id=inline-comments">obsidian://show-plugin?id=inline-comments</a>。Obsidian 1.8 以上，桌面与手机；会话发现、hook、「用新会话回答」是桌面能力，其中在终端里开 Claude Code 目前仅 macOS。预发布版用 BRAT 添加 `IvyYang1999/obsidian-inline-comments`。

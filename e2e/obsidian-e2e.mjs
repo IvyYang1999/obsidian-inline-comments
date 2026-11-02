@@ -1095,6 +1095,101 @@ async function run() {
       check('选了「疑问」，存下来的就是疑问', await waitFor(() => page.evaluate(async () => (await app.vault.adapter.read('long.md')).includes('{==第 3 行==}{>>yyt|') && (await app.vault.adapter.read('long.md')).includes('|question: 选了疑问<<}')), 4000));
     }
 
+    // ── Many comments close together: cards stack in full; clicking a card or a passage lines the two up
+    // (Feishu-style); a card can be folded to one line or hidden until its passage is clicked
+    {
+      const waitFor = async (fn, ms = 8000) => {
+        for (const end = Date.now() + ms; Date.now() < end; await sleep(250)) if (await fn()) return true;
+        return false;
+      };
+      const filler = Array.from({ length: 30 }, (_, i) => `填充正文第 ${i + 1} 段，让笔记足够长，可以滚动。`).join('\n\n');
+      const long = (n) => `第 ${n} 条评论，写得长一点，好把卡片撑高，看看挤在一起的时候怎么排。`.repeat(2);
+      const body = `${filler}\n\n## 密集区\n\n`
+        + [1, 2, 3, 4, 5].map((n) => `第 ${n} 行 {==密集划线${n}==}{>>yyt|2026-11-01|note: ${long(n)}<<}{>>助手|2026-11-01|reply: 回复 ${n}<<}`).join('\n')
+        + `\n\n${filler}\n`;
+      await page.evaluate(async (body) => {
+        await app.vault.create('dense.md', body);
+        await app.workspace.openLinkText('dense', '', false);
+      }, body);
+      await sleep(1500);
+      await page.evaluate(() => {
+        const cm = app.workspace.getLeavesOfType('markdown')[0].view.editor.cm;
+        cm.scrollDOM.scrollTop = cm.lineBlockAt(cm.state.doc.toString().indexOf('## 密集区')).top - 40;
+      });
+      await sleep(800);
+      const at = (n) => page.evaluate((n) => {
+        const hl = [...document.querySelectorAll('.cm-content .ilc-highlight')].find((e) => e.textContent === `密集划线${n}`);
+        const card = [...document.querySelectorAll('.ilc-panel .ilc-card')].find((c) => c.querySelector('.ilc-card-preview-text')?.textContent === `密集划线${n}`);
+        const r = hl?.getBoundingClientRect();
+        return { hl: r ? r.top : null, x: r ? r.left + 8 : 0, y: r ? r.top + r.height / 2 : 0, card: card ? card.getBoundingClientRect().top : null, h: card?.offsetHeight ?? 0, active: !!card?.classList.contains('ilc-card-active') };
+      }, n);
+      const cardDo = (n, js) => page.evaluate(([n, js]) => {
+        const card = [...document.querySelectorAll('.ilc-panel .ilc-card')].find((c) => c.querySelector('.ilc-card-preview-text')?.textContent === `密集划线${n}`);
+        return new Function('card', js)(card);
+      }, [n, js]);
+
+      const c2 = await at(2);
+      check('评论挤在一起时卡片完整展开、依次往下排（第 2 张在自己划线下方）', c2.card !== null && c2.card > c2.hl + 100 && c2.h > 150, JSON.stringify(c2));
+      await cardDo(2, "card.querySelector('.ilc-thread').click()");
+      await sleep(900);
+      const c2b = await at(2);
+      check('点被挤开的卡片：卡片不动，正文滚过来让划线和它齐平（±6px）', c2b.active && Math.abs(c2b.card - c2.card) <= 6 && Math.abs(c2b.hl - c2b.card) <= 6, `before=${Math.round(c2.card)} after=${JSON.stringify(c2b)}`);
+
+      const h4 = await at(4);
+      await page.mouse.click(h4.x, h4.y);
+      await sleep(900);
+      const c4 = await at(4);
+      check('点正文里的划线：它的卡片移到和划线齐平（±6px）', c4.active && Math.abs(c4.card - c4.hl) <= 6, JSON.stringify(c4));
+      await shot(page, '08-dense-aligned', '.workspace-leaf-content[data-type="ilc-comments-panel"]');
+
+      await cardDo(3, "card.querySelector('.ilc-fold-btn').click()");
+      await sleep(500);
+      const f3 = await cardDo(3, "return { h: card.offsetHeight, count: card.querySelector('.ilc-card-fold-count')?.textContent, dot: !!card.querySelector('.ilc-card-fold-unread'), state: '' }");
+      const saved3 = await waitFor(() => page.evaluate(async () => Object.values(JSON.parse(await app.vault.adapter.read(`${app.plugins.plugins['inline-comments'].pluginDir()}/card-state.json`).catch(() => '{}'))).includes('collapsed')), 3000);
+      check('折叠：卡片缩成一行（引文 + 条数 + 未读点），并记下来', f3.h < 60 && f3.count === '2' && f3.dot && saved3, JSON.stringify(f3));
+
+      await cardDo(5, "card.querySelector('.ilc-card-preview .ilc-more-btn:last-child').dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 900, clientY: 300 }))");
+      await sleep(300);
+      await page.evaluate(() => [...document.querySelectorAll('.menu .menu-item')].find((m) => m.textContent.includes('隐藏'))?.click());
+      await sleep(500);
+      const hid = await page.evaluate(() => ({ gone: ![...document.querySelectorAll('.ilc-panel .ilc-card')].some((c) => c.querySelector('.ilc-card-preview-text')?.textContent === '密集划线5'), toggle: document.querySelector('.ilc-hidden-toggle')?.textContent ?? null }));
+      check('隐藏：卡片从侧栏消失，顶部写「已隐藏 1」', hid.gone && hid.toggle === '已隐藏 1', JSON.stringify(hid));
+      await shot(page, '09-folded-hidden', '.workspace-leaf-content[data-type="ilc-comments-panel"]');
+
+      // Survives a full refresh (it is stored per comment, not per card element)
+      await page.evaluate(() => app.workspace.getLeavesOfType('ilc-comments-panel')[0].view.refresh());
+      await sleep(800);
+      const kept = await page.evaluate(() => ({ cards: document.querySelectorAll('.ilc-panel .ilc-card').length, folded: document.querySelectorAll('.ilc-panel .ilc-card-collapsed').length }));
+      check('刷新后折叠和隐藏都还在', kept.cards === 4 && kept.folded === 1, JSON.stringify(kept));
+
+      const h5 = await at(5);
+      await page.mouse.click(h5.x, h5.y);
+      await sleep(900);
+      const c5 = await at(5);
+      const toggleAfter = await page.evaluate(() => document.querySelector('.ilc-hidden-toggle')?.textContent ?? null);
+      check('点被隐藏那条的划线：卡片回来、选中、和划线齐平，「已隐藏」消失', c5.active && c5.card !== null && Math.abs(c5.card - c5.hl) <= 6 && toggleAfter === null, `${JSON.stringify(c5)} toggle=${toggleAfter}`);
+
+      const h3 = await at(3);
+      await page.mouse.click(h3.x, h3.y);
+      await sleep(700);
+      const open3 = await at(3);
+      const h1 = await at(1);
+      await page.mouse.click(h1.x, h1.y);
+      await sleep(700);
+      const back3 = await at(3);
+      check('折叠的卡片选中时完整展开，离开后又缩回一行', open3.active && open3.h > 150 && !back3.active && back3.h < 60, `open=${open3.h} back=${back3.h}`);
+
+      // Hiding again, then 「已隐藏」 in the header brings it back
+      await cardDo(2, "card.querySelector('.ilc-card-preview .ilc-more-btn:last-child').dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 900, clientY: 300 }))");
+      await sleep(300);
+      await page.evaluate(() => [...document.querySelectorAll('.menu .menu-item')].find((m) => m.textContent.includes('隐藏'))?.click());
+      await sleep(400);
+      await page.evaluate(() => document.querySelector('.ilc-hidden-toggle')?.click());
+      await sleep(800);
+      const all = await page.evaluate(() => ({ cards: document.querySelectorAll('.ilc-panel .ilc-card').length, toggle: !!document.querySelector('.ilc-hidden-toggle') }));
+      check('点顶部「已隐藏」：隐藏的评论全部回来', all.cards === 5 && !all.toggle, JSON.stringify(all));
+    }
+
     await shot(page, '06-full-window');
   } finally {
     const failed = results.filter((r) => !r.ok);

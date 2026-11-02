@@ -25,7 +25,8 @@ export interface AnnotationPosition {
 
 /** Callback interface to avoid circular import with main.ts */
 export interface ICommentHost {
-  onEditorCursorInAnnotation(annotationId: string, view?: EditorView): void;
+  /** `byPointer`: the user clicked into the passage (vs. moving the cursor with keys) */
+  onEditorCursorInAnnotation(annotationId: string, view?: EditorView, byPointer?: boolean): void;
   onPositionsUpdated(positions: AnnotationPosition[], view?: EditorView): void;
   onEditorScroll(scrollTop: number, view?: EditorView): void;
   /** Badge after a highlight was clicked → reveal + focus the matching card */
@@ -159,7 +160,8 @@ class CommentViewPlugin implements PluginValue {
       const anns = parseAnnotations(content);
       const active = anns.find((a) => pos >= a.from && pos <= a.to);
       if (active) {
-        this.host.onEditorCursorInAnnotation(active.id, update.view);
+        const byPointer = update.transactions.some((tr) => tr.isUserEvent('select.pointer'));
+        this.host.onEditorCursorInAnnotation(active.id, update.view, byPointer);
       }
     }
   }

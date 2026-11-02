@@ -80,6 +80,8 @@ export function readingPostProcessor(host: ReadingHost) {
       span.dataset.annId = ann.id;
       const bg = resolved ? null : host.highlightBg?.(firstType);
       if (bg) span.setCssProps({ '--ilc-hl-bg': bg });
+      // Clicking the passage itself (not selecting in it) focuses its card, like the badge
+      span.addEventListener('click', () => { if (!window.getSelection()?.toString()) host.onBadgeClick?.(ann.id); });
       const badge = createSpan({ cls: 'ilc-badge', text: String(ann.comments.filter((c) => c.type !== 'resolve' && c.type !== 'react').length) });
       badge.title = t('{0} 条评论 · 点击定位', [ann.comments.length]);
       badge.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); host.onBadgeClick?.(ann.id); });

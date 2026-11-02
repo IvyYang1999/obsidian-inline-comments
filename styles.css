@@ -1399,9 +1399,23 @@ body {
 }
 .ilc-panel .ilc-resolved-toggle.is-off { text-decoration: line-through; }
 .ilc-panel .ilc-resolved-toggle:hover { color: var(--text-normal) !important; }
+.ilc-panel .ilc-resolved-toggle + .ilc-hidden-toggle { margin-left: 6px; }
+
+/* ─── Folded card: one line (quote, count, unread dot) until it is focused ──── */
+.ilc-card-fold-meta { display: none; }
+.ilc-card-collapsed:not(.ilc-card-active) > :not(.ilc-card-preview) { display: none !important; }
+.ilc-card-collapsed:not(.ilc-card-active) .ilc-card-preview { padding-bottom: 11px; }
+.ilc-card-collapsed:not(.ilc-card-active) .ilc-card-preview-text { -webkit-line-clamp: 1; }
+.ilc-card-collapsed:not(.ilc-card-active) .ilc-card-fold-meta {
+  display: inline-flex; align-items: center; gap: 5px; flex: none; align-self: center;
+  font-size: var(--ilc-font-small); color: var(--text-faint);
+}
+.ilc-card-fold-count { min-width: 16px; padding: 0 5px; border-radius: var(--ilc-radius-pill); background: var(--background-modifier-hover); text-align: center; line-height: 16px; }
+.ilc-card-fold-unread { width: 6px; height: 6px; border-radius: 50%; background: var(--text-error, #e5484d); }
+.ilc-fold-btn { font-size: 15px !important; }
 
 /* ─── Reading view ───────────────────────────────────────────────────────────── */
-.markdown-preview-view .ilc-highlight { cursor: default; }
+.markdown-preview-view .ilc-highlight { cursor: pointer; }
 .markdown-preview-view .ilc-badge { cursor: pointer; margin-left: 3px; }
 
 /* ─── Reactions ──────────────────────────────────────────────────────────────── */

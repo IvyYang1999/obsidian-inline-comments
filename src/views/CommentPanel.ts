@@ -161,12 +161,7 @@ export class CommentPanel extends ItemView {
       // (activating first keeps the editor's cursor from starting one)
       this.highlightCard(ann.id, false);
       this.jumpToAnnotation(ann);
-      window.setTimeout(() => {
-        this.ignoreEditorScrollUntil = 0;
-        const preview = this.previewScroller();
-        const cm = this.currentCm();
-        if (preview) { this.panelContainer.scrollTop = preview.scrollTop; this.layoutCards(); } else if (cm) this.alignWith(cm);
-      }, 60);
+      window.setTimeout(() => this.followNote(), 60);
     });
     this.registerDomEvent(this.panelContainer, 'scroll', () => {
       if (this.newReplyAnn && this.cardInView(this.newReplyAnn)) this.hideNewReply();
@@ -236,14 +231,10 @@ export class CommentPanel extends ItemView {
 
     this.renderDraftCardEl();
     this.setEditorDraftRange({ from, to: from + highlightText.length, cls: `ilc-highlight ilc-hl-${defaultType}` });
-    // Scroll panel to show the draft card
+    // The draft sits on its selection: following the note's scroll puts it level with the text
     window.setTimeout(() => {
-      this.draftInputEl?.focus();
-      if (this.draftEl) {
-        const cardTop = this.draftEl.offsetTop;
-        const panelHeight = this.panelContainer.clientHeight;
-        this.panelContainer.scrollTo({ top: Math.max(0, cardTop - panelHeight / 4), behavior: 'smooth' });
-      }
+      this.draftInputEl?.focus({ preventScroll: true });
+      this.followNote();
     }, 80);
 
     this.clickAwayHandler = (e: MouseEvent) => {
@@ -276,13 +267,8 @@ export class CommentPanel extends ItemView {
       window.setTimeout(() => this.layoutCards(), 50);
     } else if (el) {
       el.addClass('ilc-card-active');
-      // Pause editor scroll sync so it doesn't fight our scroll
-      this.ignoreEditorScrollUntil = Date.now() + 400;
-      // Scroll panel so the card is visible
-      const cardTop = el.offsetTop;
-      const panelHeight = this.panelContainer.clientHeight;
-      const scrollTarget = cardTop - panelHeight / 4;
-      this.panelContainer.scrollTo({ top: Math.max(0, scrollTarget), behavior: 'smooth' });
+      // The focused card now sits on its anchor: follow the note's scroll and it is level with the passage
+      this.followNote();
       // Re-layout because focused card may have different height (reply input shown)
       window.setTimeout(() => this.layoutCards(), 50);
     }
@@ -325,6 +311,7 @@ export class CommentPanel extends ItemView {
     if (newPath !== this.currentFilePath) {
       this.cancelDraft();
       this.currentFilePath = newPath;
+      this.activeAnnotationId = null; // ids are offsets: the last note's focused id may name a card here
     }
 
     if (!file || file.extension !== 'md') {
@@ -347,8 +334,10 @@ export class CommentPanel extends ItemView {
 
     this.updateHeader(file);
 
+    this.unhideOnNewReply(file);
     for (const ann of this.annotations) {
       if (isResolved(ann) && !this.plugin.settings.showResolved) continue;
+      if (this.plugin.cardPrefs.get(ann) === 'hidden') continue;
       const card = this.renderCard(this.cardsZone, ann, file);
       this.cardEls.set(ann.id, card);
     }
@@ -374,6 +363,101 @@ export class CommentPanel extends ItemView {
     this.cardsZone.empty();
     this.cardEls.clear();
     this.deliverySlots.clear();
+  }
+
+  /** A hidden comment that gets a reply from someone else comes back, folded, so the reply isn't missed */
+  private unhideOnNewReply(file: TFile): void {
+    const seen = this.seenReplies?.path === file.path ? this.seenReplies.keys : null;
+    if (!seen) return;
+    const me = this.plugin.settings.authorName.toLowerCase();
+    for (const ann of this.annotations) {
+      if (this.plugin.cardPrefs.get(ann) !== 'hidden') continue;
+      const fresh = ann.comments.some((c) => UNREAD_TYPES.has(c.type) && c.author.toLowerCase() !== me
+        && !seen.has(computeReadKey(file.path, ann.highlightText, c.author, c.date, c.text)));
+      if (fresh) this.plugin.cardPrefs.set(ann, 'collapsed');
+    }
+  }
+
+  /** Focus a card; one the user hid comes back first (they clicked its passage or its badge) */
+  showCard(annotationId: string): void {
+    const ann = this.annotations.find((a) => a.id === annotationId);
+    const file = this.currentFilePath ? this.app.vault.getFileByPath(this.currentFilePath) : null;
+    if (ann && file && !this.cardEls.has(annotationId) && this.plugin.cardPrefs.get(ann) === 'hidden') {
+      this.plugin.cardPrefs.set(ann, null);
+      this.cardEls.set(ann.id, this.renderCard(this.cardsZone, ann, file));
+      this.updateHeader(file);
+      if (this.activeAnnotationId === annotationId) this.activeAnnotationId = null; // let highlightCard align it
+    }
+    this.highlightCard(annotationId);
+  }
+
+  private hideCard(ann: Annotation): void {
+    this.plugin.cardPrefs.set(ann, 'hidden');
+    const el = this.cardEls.get(ann.id);
+    if (el) {
+      this.resizeObserver?.unobserve(el);
+      el.remove();
+      this.cardEls.delete(ann.id);
+    }
+    if (this.activeAnnotationId === ann.id) this.activeAnnotationId = null;
+    if (this.newReplyAnn === ann.id) this.hideNewReply();
+    const file = this.currentFilePath ? this.app.vault.getFileByPath(this.currentFilePath) : null;
+    if (file) this.updateHeader(file);
+    this.layoutCards();
+  }
+
+  /** Fold a card to one line (it opens up again while focused), or keep it open */
+  private setFolded(ann: Annotation, card: HTMLElement, folded: boolean): void {
+    this.plugin.cardPrefs.set(ann, folded ? 'collapsed' : null);
+    card.toggleClass('ilc-card-collapsed', folded);
+    const btn = card.querySelector<HTMLElement>('.ilc-fold-btn');
+    if (btn) {
+      btn.textContent = folded ? '+' : '−';
+      btn.setAttribute('aria-label', folded ? t('展开（不再折叠）') : t('折叠成一行'));
+      btn.title = btn.getAttribute('aria-label') ?? '';
+    }
+    // Folding the focused card: let it go, or it would stay open
+    if (folded && this.activeAnnotationId === ann.id) {
+      card.removeClass('ilc-card-active');
+      this.activeAnnotationId = null;
+    }
+    this.layoutCards();
+  }
+
+  /** Mirror the note's scroll: the focused card sits on its anchor, so this puts it level with its passage */
+  private followNote(): void {
+    this.ignoreEditorScrollUntil = 0;
+    const preview = this.previewScroller();
+    const cm = this.currentCm();
+    if (preview) { this.panelContainer.scrollTop = preview.scrollTop; this.layoutCards(); }
+    else if (cm) this.alignWith(cm);
+  }
+
+  /**
+   * A card was clicked: scroll the note so the passage comes level with the card, where the
+   * reader is looking, instead of moving the card (Feishu-style). Falls back to centring it.
+   */
+  private bringPassageToCard(ann: Annotation): void {
+    const card = this.cardEls.get(ann.id);
+    const anchor = this.lastPositions.find((p) => p.annotationId === ann.id)?.topInEditor;
+    const preview = this.previewScroller();
+    const cm = this.currentCm();
+    const scroller = preview ?? cm?.scrollDOM;
+    if (!card || anchor === undefined || !scroller) { this.jumpToAnnotation(ann); return; }
+    // The panel mirrors the note's scroll; at panel scroll S the card's anchor is on screen at zoneTop0 + anchor − S.
+    // A card (partly) out of view is brought to a comfortable spot instead of where it was.
+    const zoneTop0 = this.cardsZone.getBoundingClientRect().top + this.panelContainer.scrollTop;
+    const view = this.panelContainer.getBoundingClientRect();
+    const top = view.top + (this.headerEl.hasClass('ilc-hidden') ? 0 : this.headerEl.offsetHeight);
+    const cardY = card.getBoundingClientRect().top;
+    const y = cardY >= top && cardY <= view.bottom - 80 ? cardY : top + (view.bottom - top) / 4;
+    scroller.scrollTop = Math.max(0, zoneTop0 + anchor - y);
+    if (cm && !preview) {
+      cm.focus();
+      cm.dispatch({ selection: { anchor: Math.min(ann.from + 3, cm.state.doc.length) } }); // no scrollIntoView
+    }
+    card.addClass('ilc-card-flash');
+    window.setTimeout(() => card.removeClass('ilc-card-flash'), 600);
   }
 
   // ── New reply out of view ─────────────────────────────────────────────────────
@@ -488,6 +572,15 @@ export class CommentPanel extends ItemView {
         this.plugin.settings.showResolved = !show;
         await this.plugin.saveSettings();
         await this.refresh();
+      });
+    }
+    const hidden = this.annotations.filter((a) => this.plugin.cardPrefs.get(a) === 'hidden' && (!isResolved(a) || this.plugin.settings.showResolved));
+    if (hidden.length > 0) {
+      const btn = this.headerEl.createEl('button', { cls: 'ilc-resolved-toggle ilc-hidden-toggle', text: t('已隐藏 {0}', [hidden.length]), attr: { title: t('点击重新显示隐藏的评论') } });
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        for (const a of hidden) this.plugin.cardPrefs.set(a, null);
+        void this.refresh();
       });
     }
   }
@@ -685,7 +778,10 @@ export class CommentPanel extends ItemView {
 
     const lastItem = items[items.length - 1];
     if (lastItem) {
-      this.cardsZone.setCssStyles({ minHeight: `${lastItem.actualTop + lastItem.height + 60}px` });
+      // At least as tall as the note, so the panel can follow any scroll (a focused card near the
+      // end of the cards would otherwise sit below its passage once the panel runs out of room)
+      const noteHeight = (this.previewScroller() ?? this.currentCm()?.scrollDOM)?.scrollHeight ?? 0;
+      this.cardsZone.setCssStyles({ minHeight: `${Math.max(lastItem.actualTop + lastItem.height + 60, noteHeight)}px` });
     }
 
     for (const item of items) {
@@ -909,7 +1005,7 @@ export class CommentPanel extends ItemView {
 
     card.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest('.ilc-reply-input-row')) return;
-      this.jumpToAnnotation(ann);
+      this.bringPassageToCard(ann);
       this.highlightCard(ann.id);
     });
 
@@ -921,7 +1017,11 @@ export class CommentPanel extends ItemView {
       cls: 'ilc-card-preview-text',
       text: previewText.slice(0, 60) + (previewText.length > 60 ? '…' : ''),
     });
+    // Shown only while the card is folded: how many comments, and whether any is unread
+    const foldMeta = preview.createEl('span', { cls: 'ilc-card-fold-meta' });
     const resolved = isResolved(ann);
+    const folded = !resolved && this.plugin.cardPrefs.get(ann) === 'collapsed';
+    if (folded) card.addClass('ilc-card-collapsed');
     if (resolved) card.addClass('ilc-card-resolved');
     const setResolved = async (on: boolean) => {
       const content = await this.app.vault.read(file);
@@ -936,6 +1036,10 @@ export class CommentPanel extends ItemView {
       const resolveBtn = preview.createEl('button', { cls: 'ilc-more-btn ilc-resolve-btn', attr: { 'aria-label': t('标为已解决'), title: t('标为已解决') } });
       resolveBtn.textContent = '✓';
       resolveBtn.addEventListener('click', (e) => { e.stopPropagation(); void setResolved(true); });
+      const foldLabel = folded ? t('展开（不再折叠）') : t('折叠成一行');
+      const foldBtn = preview.createEl('button', { cls: 'ilc-more-btn ilc-fold-btn', attr: { 'aria-label': foldLabel, title: foldLabel } });
+      foldBtn.textContent = folded ? '+' : '−';
+      foldBtn.addEventListener('click', (e) => { e.stopPropagation(); this.setFolded(ann, card, !card.hasClass('ilc-card-collapsed')); });
     }
     const cardMoreBtn = preview.createEl('button', {
       cls: 'ilc-more-btn',
@@ -945,6 +1049,21 @@ export class CommentPanel extends ItemView {
     cardMoreBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       const menu = new Menu();
+      if (!resolved) {
+        const isFolded = card.hasClass('ilc-card-collapsed');
+        menu.addItem((item) =>
+          item
+            .setTitle(isFolded ? t('展开（不再折叠）') : t('折叠成一行'))
+            .setIcon(isFolded ? 'chevrons-up-down' : 'chevrons-down-up')
+            .onClick(() => this.setFolded(ann, card, !isFolded)),
+        );
+      }
+      menu.addItem((item) =>
+        item
+          .setTitle(t('隐藏（点正文里的划线可再显示）'))
+          .setIcon('eye-off')
+          .onClick(() => this.hideCard(ann)),
+      );
       menu.addItem((item) =>
         item
           .setTitle(resolved ? t('重新打开') : t('标为已解决'))
@@ -992,6 +1111,8 @@ export class CommentPanel extends ItemView {
       if (comment.type === 'resolve' || comment.type === 'react') return; // markers, not entries
       this.renderCommentEntry(thread, comment, ann, i, file, runs.get(heads[i])!);
     });
+    foldMeta.createEl('span', { cls: 'ilc-card-fold-count', text: String(ann.comments.filter((c) => c.type !== 'resolve' && c.type !== 'react').length) });
+    if ([...runs.values()].some((r) => r.unreadKeys.length > 0)) foldMeta.createEl('span', { cls: 'ilc-card-fold-unread', attr: { 'aria-label': t('有未读回复') } });
     window.requestAnimationFrame(() => this.applyClamp(card, threadWrap, ann.id));
 
     // Reply input row (visible only when card is active, controlled by CSS)
@@ -1201,6 +1322,8 @@ export class CommentPanel extends ItemView {
           e.stopPropagation();
           container.querySelectorAll(`[data-run="${CSS.escape(runId)}"]`).forEach((el) => el.removeClass('ilc-entry-unread'));
           footer.remove();
+          const card = entry.closest('.ilc-card');
+          if (card && !card.querySelector('.ilc-entry-unread')) card.querySelector('.ilc-card-fold-unread')?.remove();
           void tracker.markAsRead(run.unreadKeys, file);
           this.updateHeader(file);
         });

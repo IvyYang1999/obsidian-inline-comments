@@ -27,6 +27,7 @@ import { type HarnessDef, detectHarnesses, harnessDef, headlessArgs, looksUnauth
 import { readRegistry, setAgentThread } from './src/registry.ts';
 import { HOLD_MS, type ClaudeInbox, claudeInboxGate, claudeInboxQueued, findClaudeSession, sendToClaudeInbox } from './src/claudeInbox.ts';
 import { DeliveryLog, type DeliveryLine } from './src/deliveryStatus.ts';
+import { CardPrefs } from './src/cardPrefs.ts';
 import type { DeliveredMention } from './src/mentionDeliveryService.ts';
 import { SUGGESTED_HOTKEY, bindSuggestedHotkey, boundHotkeys, formatHotkey, openHotkeySettings, sameHotkey } from './src/hotkeys.ts';
 import { localIsoDate } from './src/localDate.ts';
@@ -108,6 +109,8 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
   explorerBadge!: ExplorerBadge;
   mentionDelivery!: MentionDelivery;
   deliveryLog!: DeliveryLog;
+  /** Cards the user folded or hid */
+  cardPrefs!: CardPrefs;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -219,6 +222,8 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     // Where each @ letter is, for the line under the comment
     this.deliveryLog = new DeliveryLog(this.app, `${this.pluginDir()}/delivery-status.json`);
     await this.deliveryLog.load();
+    this.cardPrefs = new CardPrefs(this.app, `${this.pluginDir()}/card-state.json`);
+    await this.cardPrefs.load();
     this.deliveryLog.onChange((r) => this.getPanel()?.updateDelivery(r));
     if (Platform.isDesktop) this.app.workspace.onLayoutReady(() => void this.refreshHookState().then(() => this.getPanel()?.updateDelivery()));
 
@@ -634,19 +639,20 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     // detaching here would reset a panel the user moved to another sidebar.
   }
 
-  /** Badge after a highlight was clicked → open the panel and focus the card */
+  /** Badge after a highlight was clicked → open the panel and focus the card (a hidden one comes back) */
   onBadgeClick(annotationId: string): void {
     void (async () => {
       await this.activatePanel();
-      this.getPanel()?.highlightCard(annotationId);
+      this.getPanel()?.showCard(annotationId);
     })();
   }
 
-  /** Called by CM6 extension when editor cursor enters an annotation */
-  onEditorCursorInAnnotation(annotationId: string, view?: EditorView): void {
+  /** Called by CM6 extension when editor cursor enters an annotation; a click there also brings back a hidden card */
+  onEditorCursorInAnnotation(annotationId: string, view?: EditorView, byPointer = false): void {
     const panel = this.getPanel();
     if (!panel || !panel.isCurrentEditor(view)) return;
-    panel.highlightCard(annotationId);
+    if (byPointer) panel.showCard(annotationId);
+    else panel.highlightCard(annotationId);
   }
 
   /** Called by CM6 extension when annotation positions change */
