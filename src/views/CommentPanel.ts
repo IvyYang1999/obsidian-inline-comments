@@ -99,7 +99,7 @@ export class CommentPanel extends ItemView {
     window.requestAnimationFrame(() => {
       if (!this.previewEl) return;
       this.syncingScroll = true;
-      this.panelContainer.scrollTop = this.previewEl.scrollTop;
+      this.panelContainer.scrollTop = this.previewEl.scrollTop + this.topRoom;
       this.syncingScroll = false;
       this.layoutCards(); // lazily rendered sections may have appeared
     });
@@ -131,6 +131,12 @@ export class CommentPanel extends ItemView {
   private syncingScroll = false;
   /** Temporarily ignore editor scroll sync (e.g. during jumpToAnnotation) */
   private ignoreEditorScrollUntil = 0;
+  /**
+   * Room above the cards' origin for cards that yield upward past the top of the panel, so a focused
+   * card can sit level with its passage even near the top of a note. The panel mirrors the note's
+   * scroll plus this much.
+   */
+  private topRoom = 0;
   /** Observe card size changes to trigger relayout */
   private resizeObserver: ResizeObserver | null = null;
   /** Editor instance the panel is currently aligned with (same note may be open in several panes) */
@@ -293,7 +299,7 @@ export class CommentPanel extends ItemView {
     // Skip if we're in a user-initiated scroll (e.g. after clicking a card)
     if (Date.now() < this.ignoreEditorScrollUntil) return;
     this.syncingScroll = true;
-    this.panelContainer.scrollTop = scrollTop;
+    this.panelContainer.scrollTop = scrollTop + this.topRoom;
     window.requestAnimationFrame(() => { this.syncingScroll = false; });
   }
 
@@ -429,7 +435,7 @@ export class CommentPanel extends ItemView {
     this.ignoreEditorScrollUntil = 0;
     const preview = this.previewScroller();
     const cm = this.currentCm();
-    if (preview) { this.panelContainer.scrollTop = preview.scrollTop; this.layoutCards(); }
+    if (preview) { this.panelContainer.scrollTop = preview.scrollTop + this.topRoom; this.layoutCards(); }
     else if (cm) this.alignWith(cm);
   }
 
@@ -597,22 +603,66 @@ export class CommentPanel extends ItemView {
     if (this.expanded.has(annId)) return;
     const needs = wrap.scrollHeight > CLAMP_HEIGHT + 60;
     const has = wrap.hasClass('is-clamped');
+    if (needs) {
+      // Cut below the last comment that fits whole, so no half avatar or name shows under the cut;
+      // only a first comment taller than the clamp is cut through (its text fades out)
+      let cut = 0;
+      for (const entry of Array.from(wrap.querySelectorAll<HTMLElement>('.ilc-entry'))) {
+        if (entry.offsetParent === null) continue; // folded into 「还有 N 条回复」
+        const bottom = entry.offsetTop - wrap.offsetTop + entry.offsetHeight;
+        if (bottom > CLAMP_HEIGHT) break;
+        cut = bottom;
+      }
+      wrap.toggleClass('is-clamped-fade', cut === 0);
+      wrap.setCssProps({ '--ilc-clamp-h': `${cut || CLAMP_HEIGHT}px` });
+    }
     if (needs && !has) {
       wrap.addClass('is-clamped');
       const n = wrap.querySelectorAll('.ilc-entry').length;
       const btn = createEl('button', { cls: 'ilc-expand-btn', text: t('展开全部 {0} 条', [n]) });
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.expanded.add(annId);
-        wrap.removeClass('is-clamped');
-        btn.remove();
-        this.layoutCards();
+        this.expandThread(card, wrap, annId);
       });
       wrap.insertAdjacentElement('afterend', btn);
     } else if (!needs && has) {
       wrap.removeClass('is-clamped');
       card.querySelector(':scope > .ilc-expand-btn')?.remove();
     }
+  }
+
+  /**
+   * A long thread shows its opening comment and the latest reply in full; the runs between them
+   * fold into 「还有 N 条回复」 (shown again while the card is focused, or for good once clicked).
+   */
+  private elideMiddle(card: HTMLElement, wrap: HTMLElement, ann: Annotation, heads: number[], runs: Map<number, ThreadRun>): void {
+    const shown = ann.comments.map((c, i) => (c.type === 'resolve' || c.type === 'react' ? -1 : i)).filter((i) => i >= 0);
+    if (shown.length < 4) return;
+    const first = heads[shown[0]];
+    const last = heads[shown[shown.length - 1]];
+    const entries = Array.from(wrap.querySelectorAll<HTMLElement>('.ilc-thread > .ilc-entry'));
+    const middle = shown.map((i, k) => ({ i, el: entries[k] })).filter(({ i, el }) => el && heads[i] !== first && heads[i] !== last);
+    if (middle.length < 2) return;
+    for (const { el } of middle) el.addClass('ilc-entry-elided');
+    const btn = createEl('button', { cls: 'ilc-expand-btn ilc-expand-mid', text: t('还有 {0} 条回复', [middle.length]) });
+    if (middle.some(({ i }) => (runs.get(heads[i])?.unreadKeys.length ?? 0) > 0)) {
+      btn.createEl('span', { cls: 'ilc-card-fold-unread', attr: { 'aria-label': t('有未读回复') } });
+    }
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.expandThread(card, wrap, ann.id);
+    });
+    middle[middle.length - 1].el.insertAdjacentElement('afterend', btn);
+  }
+
+  /** Show a thread in full for the rest of the session */
+  private expandThread(card: HTMLElement, wrap: HTMLElement, annId: string): void {
+    this.expanded.add(annId);
+    wrap.removeClass('is-clamped');
+    wrap.removeClass('is-clamped-fade');
+    wrap.querySelectorAll('.ilc-entry-elided').forEach((el) => el.removeClass('ilc-entry-elided'));
+    card.querySelectorAll('.ilc-expand-btn').forEach((el) => el.remove());
+    this.layoutCards();
   }
 
   // ── Position computation ─────────────────────────────────────────────────────
@@ -634,7 +684,7 @@ export class CommentPanel extends ItemView {
     this.previewEl = el;
     el.addEventListener('scroll', this.previewScrollHandler, { passive: true });
     this.syncingScroll = true;
-    this.panelContainer.scrollTop = el.scrollTop;
+    this.panelContainer.scrollTop = el.scrollTop + this.topRoom;
     window.requestAnimationFrame(() => { this.syncingScroll = false; });
   }
 
@@ -764,11 +814,8 @@ export class CommentPanel extends ItemView {
         const limit = items[i + 1].actualTop - items[i].height - GAP;
         items[i].actualTop = Math.min(items[i].actualTop, limit);
       }
-      // Ran out of room at the top → push the whole cluster back down just enough
-      if (items[0].actualTop < MIN_TOP) {
-        const shift = MIN_TOP - items[0].actualTop;
-        for (let i = 0; i <= fi; i++) items[i].actualTop += shift;
-      }
+      // Out of room at the top: those cards slide above the panel's top (see topRoom) rather than
+      // pushing the focused card down off its passage
       let next = items[fi].actualTop + items[fi].height + GAP;
       for (let i = fi + 1; i < items.length; i++) {
         items[i].actualTop = Math.max(items[i].idealTop, next);
@@ -776,16 +823,22 @@ export class CommentPanel extends ItemView {
       }
     }
 
+    const room = Math.max(0, Math.ceil(MIN_TOP - items[0].actualTop));
     const lastItem = items[items.length - 1];
-    if (lastItem) {
-      // At least as tall as the note, so the panel can follow any scroll (a focused card near the
-      // end of the cards would otherwise sit below its passage once the panel runs out of room)
-      const noteHeight = (this.previewScroller() ?? this.currentCm()?.scrollDOM)?.scrollHeight ?? 0;
-      this.cardsZone.setCssStyles({ minHeight: `${Math.max(lastItem.actualTop + lastItem.height + 60, noteHeight)}px` });
-    }
+    // At least as tall as the note, so the panel can follow any scroll (a focused card near the
+    // end of the cards would otherwise sit below its passage once the panel runs out of room)
+    const noteHeight = (this.previewScroller() ?? this.currentCm()?.scrollDOM)?.scrollHeight ?? 0;
+    this.cardsZone.setCssStyles({ minHeight: `${Math.max(lastItem.actualTop + lastItem.height + 60, noteHeight) + room}px` });
 
     for (const item of items) {
-      item.el.setCssStyles({ top: `${item.actualTop}px` });
+      item.el.setCssStyles({ top: `${item.actualTop + room}px` });
+    }
+    if (room !== this.topRoom) {
+      // Every card moved down by the change; scroll by the same amount so nothing on screen jumps
+      this.syncingScroll = true;
+      this.panelContainer.scrollTop += room - this.topRoom;
+      this.topRoom = room;
+      window.requestAnimationFrame(() => { this.syncingScroll = false; });
     }
   }
 
@@ -1111,6 +1164,7 @@ export class CommentPanel extends ItemView {
       if (comment.type === 'resolve' || comment.type === 'react') return; // markers, not entries
       this.renderCommentEntry(thread, comment, ann, i, file, runs.get(heads[i])!);
     });
+    if (!this.expanded.has(ann.id)) this.elideMiddle(card, threadWrap, ann, heads, runs);
     foldMeta.createEl('span', { cls: 'ilc-card-fold-count', text: String(ann.comments.filter((c) => c.type !== 'resolve' && c.type !== 'react').length) });
     if ([...runs.values()].some((r) => r.unreadKeys.length > 0)) foldMeta.createEl('span', { cls: 'ilc-card-fold-unread', attr: { 'aria-label': t('有未读回复') } });
     window.requestAnimationFrame(() => this.applyClamp(card, threadWrap, ann.id));
@@ -1494,7 +1548,7 @@ export class CommentPanel extends ItemView {
   private alignWith(cm: EditorView): void {
     this.alignedCm = cm;
     this.syncingScroll = true;
-    this.panelContainer.scrollTop = cm.scrollDOM.scrollTop;
+    this.panelContainer.scrollTop = cm.scrollDOM.scrollTop + this.topRoom;
     window.requestAnimationFrame(() => { this.syncingScroll = false; });
     this.computePositionsFromEditor();
     this.layoutCards();

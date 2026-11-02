@@ -500,21 +500,22 @@ async function run() {
     const unreactDoc = await page.evaluate(() => app.vault.adapter.read('sample.md'));
     check('再点一次取消反应', !/\|react: /.test(unreactDoc) && (await page.locator('.ilc-react-chip').count()) === 0);
 
-    // ── Long threads are clipped (unless focused); 「展开全部」 lifts the clamp
+    // ── Long threads show the opening comment and the latest reply; 「还有 N 条回复」 holds the ones between
     await page.evaluate(() => { const p = app.plugins.plugins['inline-comments'].getPanel(); p.activeAnnotationId = null; });
     await page.evaluate(() => app.plugins.plugins['inline-comments'].getPanel().refresh());
     await sleep(700);
-    const clampInfo = await page.evaluate(() => {
-      const w = document.querySelector('.ilc-card:not(.ilc-card-active) .ilc-thread-wrap.is-clamped');
-      if (!w) return null;
-      const card = w.closest('.ilc-card');
-      return { id: card.dataset.annotationId, visibleH: w.getBoundingClientRect().height, fullH: w.scrollHeight, btn: card.querySelector('.ilc-expand-btn')?.textContent ?? null };
+    const midInfo = await page.evaluate(() => {
+      const card = document.querySelector('.ilc-panel .ilc-card:not(.ilc-card-active) .ilc-expand-mid')?.closest('.ilc-card');
+      if (!card) return null;
+      const all = [...card.querySelectorAll('.ilc-thread > .ilc-entry')];
+      const vis = all.filter((e) => e.offsetParent !== null);
+      return { id: card.dataset.annotationId, total: all.length, visible: vis.length, firstShown: vis[0] === all[0], lastShown: vis[vis.length - 1] === all[all.length - 1], btn: card.querySelector('.ilc-expand-mid')?.textContent ?? null };
     });
-    check('超长线程被折叠到 ~260px 并有「展开全部」', !!clampInfo && clampInfo.visibleH <= 262 && clampInfo.fullH > 320 && /展开全部 \d+ 条/.test(clampInfo.btn ?? ''), JSON.stringify(clampInfo));
-    await page.locator(`.ilc-card[data-annotation-id="${clampInfo?.id}"] .ilc-expand-btn`).click();
+    check('长线程只显示第一条和最新一条，中间收成「还有 N 条回复」', !!midInfo && midInfo.firstShown && midInfo.lastShown && midInfo.total - midInfo.visible >= 2 && midInfo.btn === `还有 ${midInfo.total - midInfo.visible} 条回复`, JSON.stringify(midInfo));
+    await page.locator(`.ilc-card[data-annotation-id="${midInfo?.id}"] .ilc-expand-mid`).click();
     await sleep(250);
-    const expandedNow = await page.evaluate((id) => { const c = document.querySelector(`.ilc-card[data-annotation-id="${id}"]`); return { clamped: !!c?.querySelector('.ilc-thread-wrap.is-clamped'), btn: !!c?.querySelector('.ilc-expand-btn'), h: c?.querySelector('.ilc-thread-wrap')?.getBoundingClientRect().height }; }, clampInfo?.id);
-    check('点「展开全部」后该卡片展开、按钮消失', !expandedNow.clamped && !expandedNow.btn && expandedNow.h > 320, JSON.stringify(expandedNow));
+    const midOpen = await page.evaluate((id) => { const c = document.querySelector(`.ilc-card[data-annotation-id="${id}"]`); return { visible: [...c.querySelectorAll('.ilc-thread > .ilc-entry')].filter((e) => e.offsetParent !== null).length, btn: !!c.querySelector('.ilc-expand-btn') }; }, midInfo?.id);
+    check('点「还有 N 条回复」：整串显示、按钮消失', midOpen.visible === midInfo?.total && !midOpen.btn, JSON.stringify(midOpen));
 
     // ── Resolve / reopen
     const noteCard = page.locator('.ilc-card', { hasText: '能同桌很暖' }).first();
@@ -1188,6 +1189,71 @@ async function run() {
       await sleep(800);
       const all = await page.evaluate(() => ({ cards: document.querySelectorAll('.ilc-panel .ilc-card').length, toggle: !!document.querySelector('.ilc-hidden-toggle') }));
       check('点顶部「已隐藏」：隐藏的评论全部回来', all.cards === 5 && !all.toggle, JSON.stringify(all));
+    }
+
+    // ── A thread too tall even so is cut between whole comments (no half avatar / name under the cut);
+    // only a first comment taller than the clamp is cut through, fading out
+    {
+      const longText = (k) => `第 ${k} 段很长的评论，`.padEnd(10, ' ') + '这一句会重复很多次，好把这条评论撑得足够高。'.repeat(3);
+      const body = '开头一段。\n\n'
+        + '{==三段长评论==}{>>yyt|2026-11-01|note: ' + longText(1) + '<<}{>>助手|2026-11-01|reply: ' + longText(2) + '<<}{>>yyt|2026-11-01|reply: ' + longText(3) + '<<}\n\n'
+        + '中间隔开。\n\n'.repeat(12)
+        + '{==一条特别长==}{>>yyt|2026-11-01|note: ' + longText(4).repeat(8) + '<<}\n\n结尾。\n';
+      await page.evaluate(async (body) => {
+        await app.vault.create('longthread.md', body);
+        await app.workspace.openLinkText('longthread', '', false);
+      }, body);
+      await sleep(1500);
+      const cut = (quote) => page.evaluate((quote) => {
+        const card = [...document.querySelectorAll('.ilc-panel .ilc-card')].find((c) => c.querySelector('.ilc-card-preview-text')?.textContent === quote);
+        const wrap = card?.querySelector('.ilc-thread-wrap');
+        if (!wrap) return null;
+        const wb = wrap.getBoundingClientRect().bottom;
+        const entries = [...wrap.querySelectorAll('.ilc-entry')].filter((e) => e.offsetParent !== null).map((e) => e.getBoundingClientRect());
+        return { clamped: wrap.classList.contains('is-clamped'), fade: wrap.classList.contains('is-clamped-fade'), h: Math.round(wrap.getBoundingClientRect().height), cutThrough: entries.filter((r) => r.top < wb - 1 && r.bottom > wb + 1).length, btn: card.querySelector('.ilc-expand-btn')?.textContent ?? null };
+      }, quote);
+      const three = await cut('三段长评论');
+      check('三条长评论：在整条评论之间截断，不切到下一条的头像和名字', !!three && three.clamped && !three.fade && three.cutThrough === 0 && three.h > 60 && three.h <= 262 && three.btn === '展开全部 3 条', JSON.stringify(three));
+      const one = await cut('一条特别长');
+      check('第一条本身就超高：截在正文中间并淡出', !!one && one.clamped && one.fade && one.h <= 262, JSON.stringify(one));
+    }
+
+    // ── A short note with comments near the top: whichever card is clicked sits level with its passage,
+    // in both views (the cards above it slide up past the top of the panel instead of pushing it down)
+    {
+      await page.evaluate(() => app.workspace.openLinkText('sample', '', false));
+      await sleep(1200);
+      const ids = () => page.evaluate(() => {
+        const v = app.plugins.plugins['inline-comments'].getPanel();
+        return [...v.cardEls.entries()].sort((a, b) => a[1].getBoundingClientRect().top - b[1].getBoundingClientRect().top).map(([id]) => id);
+      });
+      const alignOf = (id) => page.evaluate((id) => {
+        const v = app.plugins.plugins['inline-comments'].getPanel();
+        const md = app.workspace.getLeavesOfType('markdown').map((l) => l.view).find((x) => x.file?.path === v.currentFilePath);
+        const ann = v.annotations.find((a) => a.id === id);
+        const panel = v.panelContainer.getBoundingClientRect();
+        const hl = md.getMode() === 'preview'
+          ? md.containerEl.querySelector(`.markdown-preview-view [data-ann-id="${id}"]`)?.getBoundingClientRect().top
+          : md.editor.cm.coordsAtPos(ann.from + 3)?.top;
+        const c = v.cardEls.get(id)?.getBoundingClientRect().top;
+        return { id, off: Math.round(c - hl), inView: c >= panel.top && c <= panel.bottom - 40, active: v.activeAnnotationId === id };
+      }, id);
+      for (const mode of ['source', 'preview']) {
+        if (mode === 'preview') {
+          await page.evaluate(async () => { const leaf = app.workspace.getLeavesOfType('markdown')[0]; await leaf.setViewState({ ...leaf.getViewState(), state: { ...leaf.getViewState().state, mode: 'preview' } }); });
+          await sleep(1200);
+        }
+        const out = [];
+        for (const id of await ids()) {
+          await page.evaluate((id) => { const c = app.plugins.plugins['inline-comments'].getPanel().cardEls.get(id); (c.querySelector('.ilc-thread') ?? c).click(); }, id);
+          await sleep(900);
+          out.push(await alignOf(id));
+        }
+        check(`短笔记里逐张点卡片（${mode === 'preview' ? '阅读' : '编辑'}视图）：每张都和划线齐平（±6px）且在视野内`, out.length >= 4 && out.every((r) => r.active && Math.abs(r.off) <= 6 && r.inView), JSON.stringify(out));
+        if (mode === 'preview') await shot(page, '10-short-note-aligned', '.workspace-leaf-content[data-type="ilc-comments-panel"]');
+      }
+      await page.evaluate(async () => { const leaf = app.workspace.getLeavesOfType('markdown')[0]; await leaf.setViewState({ ...leaf.getViewState(), state: { ...leaf.getViewState().state, mode: 'source' } }); });
+      await sleep(600);
     }
 
     await shot(page, '06-full-window');

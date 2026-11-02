@@ -148,6 +148,7 @@ const EN: Record<string, string> = {
   "点击隐藏已解决的评论": "Click to hide resolved threads",
   "点击显示已解决的评论": "Click to show resolved threads",
   "展开全部 {0} 条": "Show all {0}",
+  "还有 {0} 条回复": "{0} more replies",
   "更多操作": "More",
   "取消": "Cancel",
   "添加评论（可选）…": "Add a comment (optional)…",
