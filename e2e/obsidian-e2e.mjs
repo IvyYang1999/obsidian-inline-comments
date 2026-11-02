@@ -59,6 +59,19 @@ async function run() {
     check('面板无多余内边距', widths.padL === '0px' && widths.padR === '0px', `${widths.padL}/${widths.padR}`);
     check('卡片占满面板宽度（≥ 面板 − 20）', widths.card >= widths.panel - 20, `panel=${widths.panel} scrollbar=${widths.scrollbar} card=${widths.card} body=${widths.body}`);
 
+    // Refreshes that overlap (a save fires modify + layout-change together) must not pile up copies of every card
+    {
+      await page.evaluate(() => { const v = app.workspace.getLeavesOfType('ilc-comments-panel')[0].view; v.refresh(); v.refresh(); v.refresh(); });
+      await sleep(800);
+      const stack = await page.evaluate(() => {
+        const rects = [...document.querySelectorAll('.ilc-panel .ilc-cards-zone > .ilc-card')].map((c) => c.getBoundingClientRect());
+        let overlaps = 0;
+        for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) if (rects[i].bottom > rects[j].top + 1 && rects[j].bottom > rects[i].top + 1) overlaps++;
+        return { cards: rects.length, overlaps };
+      });
+      check('连着刷新三次：还是 5 张卡片，没有叠在一起', stack.cards === 5 && stack.overlaps === 0, JSON.stringify(stack));
+    }
+
     const previews = await page.locator('.ilc-card-preview-text').allTextContents();
     check('预览条无原始 markdown', previews.every((t) => !t.includes('**')), previews.join(' | '));
 

@@ -115,6 +115,8 @@ export class CommentPanel extends ItemView {
   private clickAwayHandler: ((e: MouseEvent) => void) | null = null;
 
   private currentFilePath: string | null = null;
+  /** Bumped by every refresh(); a refresh that finds it moved on drops its result */
+  private refreshGen = 0;
   /** Delivery line redraws, by deliverySlot — updated in place so a half-typed reply survives */
   private deliverySlots = new Map<string, () => void>();
   /** Replies by others already shown for this note (read keys), so a new one can be pointed at */
@@ -313,13 +315,9 @@ export class CommentPanel extends ItemView {
 
   async refresh(): Promise<void> {
     if (!this.cardsZone) return;
-
-    // Preserve draft element if it exists
-    const hadDraft = !!this.draft;
-
-    this.cardsZone.empty();
-    this.cardEls.clear();
-    this.deliverySlots.clear();
+    // Refreshes overlap (a save fires modify + layout-change at once); only the latest may draw,
+    // or each one appends a full set of cards and they pile up on top of each other
+    const gen = ++this.refreshGen;
 
     const file = this.app.workspace.getActiveFile();
     const newPath = file?.path ?? null;
@@ -330,6 +328,7 @@ export class CommentPanel extends ItemView {
     }
 
     if (!file || file.extension !== 'md') {
+      this.clearCards();
       this.hideNewReply();
       this.headerEl.addClass('ilc-hidden');
       this.cardsZone.createEl('div', {
@@ -340,6 +339,8 @@ export class CommentPanel extends ItemView {
     }
 
     const content = await this.app.vault.read(file);
+    if (gen !== this.refreshGen) return;
+    this.clearCards();
     this.annotations = parseAnnotations(content);
 
     if (this.annotations.length === 0 && !this.draft) this.renderEmptyHint();
@@ -353,7 +354,7 @@ export class CommentPanel extends ItemView {
     }
 
     // Re-add draft element into cardsZone
-    if (hadDraft && this.draft) {
+    if (this.draft) {
       this.renderDraftCardEl();
     }
     this.noteNewReplies(file);
@@ -367,6 +368,12 @@ export class CommentPanel extends ItemView {
     // settle with two deferred passes.
     window.requestAnimationFrame(() => this.layoutCards());
     window.setTimeout(() => this.layoutCards(), 300);
+  }
+
+  private clearCards(): void {
+    this.cardsZone.empty();
+    this.cardEls.clear();
+    this.deliverySlots.clear();
   }
 
   // ── New reply out of view ─────────────────────────────────────────────────────

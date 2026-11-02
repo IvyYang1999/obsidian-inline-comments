@@ -1179,6 +1179,7 @@ body {
 /* ─── Delivery line under an @（已送进… / 没送到…） ─────────────────────────────── */
 .ilc-delivery {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 6px;
   margin: 4px 0 0 var(--ilc-indent);
@@ -1193,8 +1194,9 @@ body {
   border-radius: 50%;
   background: var(--text-faint);
 }
-.ilc-delivery-text { flex: 1; min-width: 0; }
-.ilc-delivery .ilc-delivery-action { flex: none; padding: 0 6px; margin-top: -1px; }
+/* In a narrow card the button drops under the text instead of squeezing it into a thin column */
+.ilc-delivery-text { flex: 1 1 14em; min-width: 0; }
+.ilc-delivery .ilc-delivery-action { flex: none; margin-left: auto; padding: 0 6px; margin-top: -1px; }
 .ilc-delivery-busy .ilc-delivery-dot { background: var(--interactive-accent); animation: ilc-pulse 1.4s ease-in-out infinite; }
 .ilc-delivery-warn { color: var(--text-muted); }
 .ilc-delivery-warn .ilc-delivery-dot { background: #f0b429; }
