@@ -1,7 +1,8 @@
 import { getLocale, setLocale, t } from './src/i18n.ts';
 import { nodeCp, nodeCrypto, nodeFsp, nodeOs, nodePath } from './src/node.ts';
 import { MarkdownView, Platform, Plugin, PluginSettingTab, App, Setting, Notice, TFile } from 'obsidian';
-import type { EditorView } from '@codemirror/view';
+import { type EditorView, keymap } from '@codemirror/view';
+import { Prec } from '@codemirror/state';
 import type { Editor } from 'obsidian';
 import { buildAgentReplyPrompt, cleanReplyText } from './src/agentReply.ts';
 import { buildCommentExtension, type ICommentHost, type AnnotationPosition } from './src/editor/cmExtension.ts';
@@ -23,13 +24,14 @@ import { HOOK_SCRIPT_NAME } from './src/hookScript.ts';
 import { buildLaunchPlan, buildLaunchPrompt, launchInTerminal, openExternalUrl, runningClaudeIds, sessionFileExists, writePromptFile } from './src/sessionLauncher.ts';
 import type { Candidate } from './src/mentionDelivery.ts';
 import { renderAgentRegistrySection } from './src/settings/agentRegistrySection.ts';
-import { type HarnessDef, detectHarnesses, harnessDef, headlessArgs, looksUnauthenticated, resumeShell, runHeadless } from './src/harnesses.ts';
+import { type HarnessDef, type HarnessId, codexSignedIn, detectHarnesses, harnessDef, headlessArgs, looksUnauthenticated, resumeShell, runHeadless } from './src/harnesses.ts';
+import { harnessLoggedIn } from './src/reach.ts';
 import { readRegistry, setAgentThread } from './src/registry.ts';
 import { HOLD_MS, type ClaudeInbox, claudeInboxGate, claudeInboxQueued, findClaudeSession, sendToClaudeInbox } from './src/claudeInbox.ts';
 import { DeliveryLog, type DeliveryLine } from './src/deliveryStatus.ts';
 import { CardPrefs } from './src/cardPrefs.ts';
 import type { DeliveredMention } from './src/mentionDeliveryService.ts';
-import { SUGGESTED_HOTKEY, bindSuggestedHotkey, boundHotkeys, formatHotkey, openHotkeySettings, sameHotkey } from './src/hotkeys.ts';
+import { SUGGESTED_HOTKEY, bindSuggestedHotkey, boundHotkeys, eventMatchesHotkey, formatHotkey, openHotkeySettings, sameHotkey } from './src/hotkeys.ts';
 import { localIsoDate } from './src/localDate.ts';
 import {
   GLOBAL_THREAD_END_MARKER,
@@ -77,6 +79,8 @@ interface ILCSettings {
   showResolved: boolean;
   /** UI language: follow Obsidian, or force zh / en */
   language: 'auto' | 'zh' | 'en';
+  /** What each CLI's last background run showed: it answered, or was turned away for credentials */
+  harnessSignedIn: Partial<Record<HarnessId, boolean>>;
 }
 
 const DEFAULT_SETTINGS: ILCSettings = {
@@ -93,6 +97,7 @@ const DEFAULT_SETTINGS: ILCSettings = {
   mailboxRoot: DEFAULT_MAILBOX_ROOT,
   showResolved: true,
   language: 'auto',
+  harnessSignedIn: {},
 };
 
 // ─── Plugin ───────────────────────────────────────────────────────────────────
@@ -121,6 +126,11 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
 
     // Register CodeMirror 6 extension
     this.registerEditorExtension(buildCommentExtension(this));
+    // The key the user bound to 添加划线评论 is the comment's alone: the editor's own binding for it
+    // must not run too (⌘⇧K, which this plugin used to suggest, is CodeMirror's "delete line")
+    this.registerEditorExtension(Prec.highest(keymap.of([{
+      any: (_view, e) => e.type === 'keydown' && boundHotkeys(this.app).some((h) => eventMatchesHotkey(e, h, Platform.isMacOS)),
+    }])));
 
     // Reading view: same highlight + badge, raw comment markup hidden
     this.registerMarkdownPostProcessor(readingPostProcessor(this));
@@ -316,7 +326,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     if (r === 'unsupported') new Notice(t('仅 macOS 支持在终端启动会话'));
   }
 
-  /** One click: bind ⌘⇧K to 添加划线评论 as the user's own hotkey (refused if another command holds it) */
+  /** One click: bind ⌘⌥M to 添加划线评论 as the user's own hotkey (refused if another command holds it) */
   bindAddCommentHotkey(): void {
     const key = formatHotkey(SUGGESTED_HOTKEY, Platform.isMacOS);
     const res = bindSuggestedHotkey(this.app);
@@ -358,7 +368,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     }
     if (inbox === 'running') {
       this.logDelivery(key, { state: 'mailbox', reason: 'no-inbox' });
-      this.notifyDesktop(t('评论区有新留言给 {0}', [c.name]), t('{0} · 它开着，但它的 Claude Code 没开收信口，留言没能直接送进去；它下一次说话/收尾时会看到', [file]));
+      this.notifyDesktop(t('评论区有新留言给 {0}', [c.name]), t('{0} · 它开着，但留言没能直接送进它的会话（收信口没开或不见了）；它下一次说话/收尾时会看到', [file]));
       return; // running already: nothing to start
     }
     if (harness?.mode === 'headless' && !c.autoStart) this.logDelivery(key, { state: 'mailbox', reason: 'not-autostart' });
@@ -417,6 +427,12 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
   async openHarnessLogin(harness: string | undefined): Promise<void> {
     const h = harnessDef(harness);
     if (!h || h.mode !== 'headless' || !Platform.isDesktop) return;
+    // The user is signing in now: a run turned away earlier no longer says they aren't
+    if (this.settings.harnessSignedIn?.[h.id] === false) {
+      const { [h.id]: _was, ...rest } = this.settings.harnessSignedIn;
+      this.settings.harnessSignedIn = rest;
+      await this.saveSettings();
+    }
     const bin = (await detectHarnesses()).bins[h.id] ?? h.bin;
     const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
     const shell = h.id === 'codex' ? `${q(bin)} login` : q(bin);
@@ -583,11 +599,12 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
         stdin: harness.id === 'codex' ? prompt : undefined,
       });
       if (res.threadId && res.threadId !== threadId) await setAgentThread(this.app, c.sessionId, res.threadId);
-      if (res.ok) return; // the reply shows up in the panel when the note changes
+      if (res.ok) { await this.noteSignedIn(harness.id, true); return; } // the reply shows up in the panel when the note changes
 
       console.error('[ilc] headless run failed', harness.id, res.error, logFile);
       await this.restoreUnread(letterPath, handed);
       const unauthenticated = looksUnauthenticated(res.error);
+      if (unauthenticated) await this.noteSignedIn(harness.id, false);
       this.logDelivery(key, unauthenticated ? { state: 'failed', reason: 'not-logged-in' } : { state: 'failed', reason: 'error', detail: shortError(res.error) });
       new Notice(unauthenticated
         ? t('「{0}」没回复：{1} 还没登录。先在终端运行 {2} 登录一次。', [c.name, harness.label, harness.bin])
@@ -598,6 +615,17 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       this.logDelivery(key, { state: 'failed', reason: 'error', detail: shortError(err) });
       new Notice(t('「{0}」没回复：{1}', [c.name, String((err as Error)?.message ?? err)]));
     }
+  }
+
+  /** Is this CLI signed in? What its last background run showed, else a look at its files and itself */
+  harnessSignedIn(id: HarnessId): Promise<boolean> {
+    return harnessLoggedIn(id, undefined, undefined, { lastRun: this.settings.harnessSignedIn?.[id], askCli: id === 'codex' ? codexSignedIn : undefined });
+  }
+
+  private async noteSignedIn(id: HarnessId, signedIn: boolean): Promise<void> {
+    if (this.settings.harnessSignedIn?.[id] === signedIn) return;
+    this.settings.harnessSignedIn = { ...this.settings.harnessSignedIn, [id]: signedIn };
+    await this.saveSettings();
   }
 
   private async restoreUnread(letterPath: string, handed: string): Promise<void> {

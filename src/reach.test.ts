@@ -74,4 +74,32 @@ describe('harnessLoggedIn', () => {
       rmSync(home, { recursive: true, force: true });
     }
   });
+  it('a background run settles it either way; before one, Codex itself and its config are asked', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'ilc-login-'));
+    try {
+      expect(await harnessLoggedIn('codex', home, {}, { lastRun: true })).toBe(true);
+      expect(await harnessLoggedIn('gemini', home, {}, { lastRun: true })).toBe(true);
+      expect(await harnessLoggedIn('codex', home, { OPENAI_API_KEY: 'k' }, { lastRun: false })).toBe(false);
+      // credentials in the system keyring leave no file: `codex login status` knows
+      expect(await harnessLoggedIn('codex', home, {}, { askCli: async () => true })).toBe(true);
+      expect(await harnessLoggedIn('codex', home, {}, { askCli: async () => false })).toBe(false);
+      // another provider's credentials are its own business: don't claim it is signed out
+      mkdirSync(join(home, '.codex'));
+      writeFileSync(join(home, '.codex', 'config.toml'), 'model = "x"\n[profiles.local]\nmodel_provider = "ollama"\n');
+      expect(await harnessLoggedIn('codex', home, {})).toBe(true);
+      writeFileSync(join(home, '.codex', 'config.toml'), 'model_provider = "openai"\n');
+      expect(await harnessLoggedIn('codex', home, {})).toBe(false);
+      expect(await harnessLoggedIn('codex', home, { CODEX_HOME: join(home, 'elsewhere') }, { askCli: async () => true })).toBe(true);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('decideReach: a session whose inbox file was deleted', () => {
+  it('says the file is gone and that restarting the session fixes it', () => {
+    expect(decideReach(claude({ open: true, noInbox: true, inboxGone: true, hookInstalled: true }))).toMatchObject({ level: 'later', text: expect.stringContaining('收信口文件不见了') });
+    expect(decideReach(claude({ open: true, noInbox: true, inboxGone: true }))).toMatchObject({ level: 'none', fix: 'hook', text: expect.stringContaining('重开这个会话') });
+    expect(decideReach(claude({ open: true, noInbox: true, hookInstalled: true })).text).toContain('没开收信口');
+  });
 });

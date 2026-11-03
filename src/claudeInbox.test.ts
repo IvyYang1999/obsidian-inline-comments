@@ -65,10 +65,17 @@ describe('findClaudeInbox', () => {
 describe('findClaudeSession', () => {
   it('tells a running session without an inbox from one that is not running', async () => {
     record({ messagingSocketPath: undefined });
-    expect(await findClaudeSession(SID, home)).toEqual({ running: true, inbox: null });
+    expect(await findClaudeSession(SID, home)).toEqual({ running: true, inbox: null, socketGone: false });
     record({ messagingSocketPath: undefined }, 999999);
     rmSync(join(home, '.claude', 'sessions', `${process.pid}.json`));
-    expect(await findClaudeSession(SID, home)).toEqual({ running: false, inbox: null });
+    expect(await findClaudeSession(SID, home)).toEqual({ running: false, inbox: null, socketGone: false });
+  });
+  it('says so when the session had an inbox but its socket file is gone (a cleaned-up temp folder)', async () => {
+    record({ messagingSocketPath: join(home, 'cc-socks', 'gone.sock') });
+    expect(await findClaudeSession(SID, home)).toEqual({ running: true, inbox: null, socketGone: true });
+    await listen();
+    record();
+    expect(await findClaudeSession(SID, home)).toMatchObject({ running: true, socketGone: false });
   });
   it('reads records as large as Claude Code allows', async () => {
     await listen();

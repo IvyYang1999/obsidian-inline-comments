@@ -19,9 +19,9 @@ async function pickFolder(title: string, start: string): Promise<string | null> 
 }
 
 /** Installed harnesses, in table order; on mobile nothing can be detected, so Claude Code is assumed */
-async function installedHarnesses(): Promise<HarnessId[]> {
+async function installedHarnesses(refresh = false): Promise<HarnessId[]> {
   if (!Platform.isDesktopApp) return ['claude'];
-  const { bins } = await detectHarnesses();
+  const { bins } = await detectHarnesses(refresh);
   return HARNESSES.filter((h) => bins[h.id]).map((h) => h.id);
 }
 
@@ -125,7 +125,7 @@ export class NewSessionModal extends Modal {
 
   /** Fill the harness dropdown with what is installed; with nothing installed, say what to install */
   private async renderHarnesses(setting: Setting, createBtn: () => ButtonComponent | null): Promise<void> {
-    const installed = await installedHarnesses();
+    const installed = await installedHarnesses(true); // a CLI installed since Obsidian started shows up
     const preferred = await defaultHarness(this.app);
     if (installed.length === 0) {
       setting.setDesc(t('本机没找到 Claude Code、Codex 或 Gemini CLI。装好其中一个再来。'));

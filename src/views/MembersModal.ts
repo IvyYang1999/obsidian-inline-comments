@@ -31,6 +31,8 @@ export class MembersModal extends Modal {
   private holding = new Set<string>();
   /** Claude sessions that run without a cross-session inbox, by lower-case id */
   private noInbox = new Set<string>();
+  /** Of those, the ones whose socket file was deleted (they had an inbox) */
+  private inboxGone = new Set<string>();
 
   constructor(app: App) {
     super(app);
@@ -210,12 +212,15 @@ export class MembersModal extends Modal {
     // A chat open in the Claude app is running even when its command line does not say which session it is
     this.holding = new Set();
     this.noInbox = new Set();
+    this.inboxGone = new Set();
     await Promise.all(sessions.filter((s) => s.harness === 'claude').map(async (s) => {
-      const { running, inbox } = await findClaudeSession(s.sessionId);
+      const { running, inbox, socketGone } = await findClaudeSession(s.sessionId);
       if (!running) return;
       s.running = true;
-      if (!inbox) this.noInbox.add(s.sessionId.toLowerCase());
-      else if (await claudeInboxHolds(inbox)) this.holding.add(s.sessionId.toLowerCase());
+      if (!inbox) {
+        this.noInbox.add(s.sessionId.toLowerCase());
+        if (socketGone) this.inboxGone.add(s.sessionId.toLowerCase());
+      } else if (await claudeInboxHolds(inbox)) this.holding.add(s.sessionId.toLowerCase());
     }));
     const registry = await readRegistry(this.app);
     this.registrySnapshot = {
@@ -260,7 +265,10 @@ export class MembersModal extends Modal {
     const line2 = main.createEl('div', { cls: 'ilc-members-sub' });
     const bits = [s.running ? t('运行中') : timeAgo(s.lastActive), shortCwd(s.cwd), s.shortId].filter(Boolean);
     line2.setText(bits.join(' · '));
-    if (this.noInbox.has(s.sessionId.toLowerCase())) {
+    if (this.inboxGone.has(s.sessionId.toLowerCase())) {
+      const warn = main.createEl('div', { cls: 'ilc-members-sub ilc-members-holds', text: t('它的收信口文件不见了：@ 它要等它下次说话；重开这个会话就能直接送到') });
+      warn.setAttribute('title', t('会话开着，但 Claude Code 放收信口的临时文件夹被清理掉了（有的系统会定期清理临时文件）。Claude Code 只在会话启动时建收信口，所以要重开这个会话。'));
+    } else if (this.noInbox.has(s.sessionId.toLowerCase())) {
       const warn = main.createEl('div', { cls: 'ilc-members-sub ilc-members-holds', text: t('它的 Claude Code 没开收信口：@ 它要等它下次说话') });
       warn.setAttribute('title', t('Claude Code 按账号逐步开放会话之间的收信口，有的会话启动后才打开，旧版本没有。重开这个会话或更新 Claude Code 后再看。'));
     } else if (this.holding.has(s.sessionId.toLowerCase())) {

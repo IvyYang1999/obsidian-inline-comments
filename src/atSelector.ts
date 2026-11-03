@@ -141,6 +141,8 @@ export function parseRosterContent(content: string): RosterEntry[] {
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- the plugin instance is looked up through Obsidian's untyped registry */
 const pluginOf = (app: App): any => (app as any).plugins?.plugins?.['inline-comments'];
+/** The plugin's answer (it remembers what the last background run showed); the file check without it */
+const signedIn = (app: App, id: HarnessId): Promise<boolean> => (pluginOf(app)?.harnessSignedIn?.(id) as Promise<boolean> | undefined) ?? harnessLoggedIn(id);
 /* eslint-enable @typescript-eslint/no-explicit-any -- end of the plugin lookup */
 
 /** How each member would get a letter right now, by name (desktop only: empty on mobile) */
@@ -157,17 +159,18 @@ export async function memberReach(app: App, entries: RosterEntry[]): Promise<Map
     if (e.source === 'roster') { out.set(e.name, legacyReach(e.status)); return; }
     const h = harnessDef(e.harness);
     if (!h) { out.set(e.name, unknownHarnessReach(e.harness ?? '')); return; }
-    let open = false, noInbox = false, holds = false, desktop = false;
+    let open = false, noInbox = false, inboxGone = false, holds = false, desktop = false;
     if (h.id === 'claude' && e.sessionId) {
-      const { running, inbox } = await findClaudeSession(e.sessionId);
+      const { running, inbox, socketGone } = await findClaudeSession(e.sessionId);
       open = running;
       noInbox = running && !inbox;
+      inboxGone = noInbox && !!socketGone;
       if (inbox) { desktop = inbox.desktop; holds = await claudeInboxHolds(inbox); }
     }
     out.set(e.name, decideReach({
       harness: h.id, label: h.label, headless: h.mode === 'headless', autoStart: !!e.autoStart,
-      open, noInbox, holds, desktop, hookInstalled: !!hookInstalled, cliInstalled: !!bins[h.id],
-      loggedIn: h.mode === 'headless' ? await harnessLoggedIn(h.id) : true,
+      open, noInbox, inboxGone, holds, desktop, hookInstalled: !!hookInstalled, cliInstalled: !!bins[h.id],
+      loggedIn: h.mode === 'headless' ? await signedIn(app, h.id) : true,
       canOpenTerminal: process.platform === 'darwin',
     }));
   }));
@@ -454,7 +457,7 @@ export function attachAtSelector(
 
     const [entries, harness] = await Promise.all([loadRoster(app), defaultHarness(app)]);
     const reachNow = await memberReach(app, entries);
-    const ready = !harness || !Platform.isDesktopApp || await harnessLoggedIn(harness);
+    const ready = !harness || !Platform.isDesktopApp || await signedIn(app, harness);
     // Superseded (user moved on / another load finished first)? Just refresh the query.
     if (activeAtPos !== atPos || loadToken !== loadSeq) { if (dropdown) renderList(currentQuery()); return; }
     if (dropdown) { renderList(currentQuery()); return; }

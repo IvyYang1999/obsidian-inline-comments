@@ -1426,6 +1426,10 @@ body {
 .ilc-panel .ilc-resolved-toggle.is-off { text-decoration: line-through; }
 .ilc-panel .ilc-resolved-toggle:hover { color: var(--text-normal) !important; }
 .ilc-panel .ilc-resolved-toggle + .ilc-hidden-toggle { margin-left: 6px; }
+/* 管理成员 at the right end of the header */
+.ilc-panel .ilc-members-btn { margin-left: auto; align-self: center; padding: 2px !important; height: 22px !important; color: var(--text-muted); }
+.ilc-panel .ilc-resolved-toggle ~ .ilc-members-btn { margin-left: 0; }
+.ilc-panel .ilc-members-btn svg { width: 15px; height: 15px; }
 
 /* ─── Folded card: one line (quote, count, unread dot) until it is focused ──── */
 .ilc-card-fold-meta { display: none; }

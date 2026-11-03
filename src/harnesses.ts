@@ -53,11 +53,44 @@ export interface InstalledHarnesses {
 }
 
 let detecting: Promise<InstalledHarnesses> | null = null;
+let detectedAt = 0;
+/** A look older than this is redone, so a CLI installed while Obsidian runs shows up without a reload */
+const DETECT_FRESH_MS = 30_000;
 
-/** Which harnesses are installed; cached, `refresh` looks again (e.g. after the user installed one) */
+/**
+ * Which harnesses are installed. Cached; an old look answers once more while a new one runs in the
+ * background (menus open without waiting for the login shell). `refresh` waits for a new look
+ * (the New session dialog, where the list of CLIs is the point).
+ */
 export function detectHarnesses(refresh = false): Promise<InstalledHarnesses> {
-  if (!detecting || refresh) detecting = detect();
+  if (!detecting || refresh) {
+    detecting = detect();
+    detectedAt = Date.now();
+  } else if (Date.now() - detectedAt > DETECT_FRESH_MS) {
+    detectedAt = Date.now();
+    const next = detect();
+    void next.then(() => { detecting = next; });
+  }
   return detecting;
+}
+
+/**
+ * `codex login status` (exit 0 = signed in). It also sees credentials Codex keeps in the system
+ * keyring, which leave no file behind. Cached for a minute: the @ list asks for every Codex member.
+ */
+let codexStatus: { at: number; signedIn: Promise<boolean> } | null = null;
+export function codexSignedIn(): Promise<boolean> {
+  if (codexStatus && Date.now() - codexStatus.at < 60_000) return codexStatus.signedIn;
+  const signedIn = detectHarnesses().then(({ bins, path }) => new Promise<boolean>((resolve) => {
+    if (!bins.codex) { resolve(false); return; }
+    try {
+      nodeCp().execFile(bins.codex, ['login', 'status'], { timeout: 8000, env: { ...process.env, PATH: path } }, (err) => resolve(!err)).stdin?.end();
+    } catch {
+      resolve(false);
+    }
+  }));
+  codexStatus = { at: Date.now(), signedIn };
+  return signedIn;
 }
 
 const MARK = '__ILC_PATH__';

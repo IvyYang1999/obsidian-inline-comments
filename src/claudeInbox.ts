@@ -64,13 +64,16 @@ const RECORD_MAX = 256 * 1024;
  * Is this session running, and can it take a letter? A session can run without
  * an inbox: Claude Code turns the cross-session inbox on per account (sometimes
  * only after startup) and older versions have none. `inbox` is null then.
+ * `socketGone`: it had one, but the socket file is gone (a cleaned-up temp
+ * folder); Claude Code makes a new one only when the session restarts.
  */
-export async function findClaudeSession(sessionId: string, home = process.env.ILC_HOME || nodeOs().homedir()): Promise<{ running: boolean; inbox: ClaudeInbox | null }> {
+export async function findClaudeSession(sessionId: string, home = process.env.ILC_HOME || nodeOs().homedir()): Promise<{ running: boolean; inbox: ClaudeInbox | null; socketGone?: boolean }> {
   if (!UUID_RE.test(sessionId)) return { running: false, inbox: null };
   const dir = nodePath().join(home, '.claude', 'sessions');
   let files: string[];
   try { files = await nodeFsp().readdir(dir); } catch { return { running: false, inbox: null }; }
   let running = false;
+  let socketGone = false;
   let best: { inbox: ClaudeInbox; at: number } | null = null;
   for (const f of files) {
     const pid = Number(/^(\d+)\.json$/.exec(f)?.[1]);
@@ -84,7 +87,10 @@ export async function findClaudeSession(sessionId: string, home = process.env.IL
     try {
       const st = await nodeFsp().lstat(socket);
       if (!st.isSocket() || st.uid !== process.getuid?.()) continue;
-    } catch { continue; }
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') socketGone = true;
+      continue;
+    }
     const at = Number(r.updatedAt) || 0;
     if (best && best.at >= at) continue;
     best = {
@@ -100,7 +106,7 @@ export async function findClaudeSession(sessionId: string, home = process.env.IL
       },
     };
   }
-  return { running, inbox: best?.inbox ?? null };
+  return { running, inbox: best?.inbox ?? null, socketGone: !best && socketGone };
 }
 
 /** The live inbox of this session, or null when it is not running or has no inbox */

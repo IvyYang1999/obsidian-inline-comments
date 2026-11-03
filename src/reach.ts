@@ -36,6 +36,8 @@ export interface ReachFacts {
   open?: boolean;
   /** Claude: it runs, but its Claude Code has no cross-session inbox */
   noInbox?: boolean;
+  /** Claude: it had an inbox, but its socket file is gone (until the session restarts) */
+  inboxGone?: boolean;
   /** Claude: that session would not take a letter from us (it skips permission prompts) */
   holds?: boolean;
   /** Claude: the open session is a chat in the Claude app (else a terminal) */
@@ -55,6 +57,11 @@ export function decideReach(f: ReachFacts): Reach {
     if (!f.cliInstalled) return { level: 'none', text: t('收不到：本机没找到 {0}', [f.label]) };
     if (!f.loggedIn) return { level: 'none', text: t('收不到：{0} 好像还没登录', [f.label]), fix: 'login' };
     return { level: 'now', text: t('在后台回复') };
+  }
+  if (f.open && f.noInbox && f.inboxGone) {
+    return f.hookInstalled
+      ? { level: 'later', text: t('开着，但它的收信口文件不见了，要等它下次说话；重开这个会话就能直接送到') }
+      : { level: 'none', text: t('看不到：开着但收信口文件不见了，又没装 hook；装 hook 或重开这个会话'), fix: 'hook' };
   }
   if (f.open && f.noInbox) {
     return f.hookInstalled
@@ -90,16 +97,40 @@ async function exists(file: string): Promise<boolean> {
   try { await nodeFsp().access(file); return true; } catch { return false; }
 }
 
+/** Does this Codex config talk to a provider other than OpenAI (a local model, OpenRouter, …)? */
+async function otherProvider(configToml: string): Promise<boolean> {
+  try {
+    const text = await nodeFsp().readFile(configToml, 'utf8');
+    return [...text.matchAll(/^\s*model_provider\s*=\s*["']([^"']+)["']/gm)].some((m) => m[1].toLowerCase() !== 'openai');
+  } catch {
+    return false;
+  }
+}
+
+export interface LoginEvidence {
+  /** What this CLI's last background run showed: it answered (true) or was turned away for credentials (false) */
+  lastRun?: boolean;
+  /** Ask the CLI itself (Codex: `codex login status`) */
+  askCli?: () => Promise<boolean>;
+}
+
 /**
- * Has the user signed this CLI in? Looks for the files the CLIs write when they
- * log in, and for API keys in Obsidian's own environment. Keys exported only in
- * a shell profile are missed, so the UI says "好像" (seems).
+ * Has the user signed this CLI in? A background run settles it (`lastRun`): the
+ * runs use Obsidian's environment, so that is the answer that matters. Before
+ * any run: an API key in Obsidian's environment, the files the CLIs write when
+ * they log in, Codex's own `login status` (it can keep credentials in the system
+ * keyring), and a Codex set up for another provider, whose credentials we can't
+ * see, so we don't claim it is signed out. Still a guess, so the UI says "好像" (seems).
  */
-export async function harnessLoggedIn(id: HarnessId, home = process.env.ILC_HOME || nodeOs().homedir(), env: Record<string, string | undefined> = process.env): Promise<boolean> {
+export async function harnessLoggedIn(id: HarnessId, home = process.env.ILC_HOME || nodeOs().homedir(), env: Record<string, string | undefined> = process.env, evidence: LoginEvidence = {}): Promise<boolean> {
+  if (evidence.lastRun !== undefined) return evidence.lastRun;
   const join = nodePath().join;
   if (id === 'codex') {
     if (env.OPENAI_API_KEY || env.CODEX_API_KEY) return true;
-    return exists(join(env.CODEX_HOME || join(home, '.codex'), 'auth.json'));
+    const codexHome = env.CODEX_HOME || join(home, '.codex');
+    if (await exists(join(codexHome, 'auth.json'))) return true;
+    if (await otherProvider(join(codexHome, 'config.toml'))) return true;
+    return evidence.askCli ? evidence.askCli().catch(() => false) : false;
   }
   if (id === 'gemini') {
     if (env.GEMINI_API_KEY || env.GOOGLE_API_KEY || env.GOOGLE_GENAI_USE_VERTEXAI) return true;

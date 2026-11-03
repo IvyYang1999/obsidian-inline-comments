@@ -1,5 +1,5 @@
 import { t } from '../i18n.ts';
-import { ItemView, MarkdownRenderer, MarkdownView, Menu, Platform, TFile, WorkspaceLeaf } from 'obsidian';
+import { ItemView, MarkdownRenderer, MarkdownView, Menu, Platform, TFile, WorkspaceLeaf, setIcon } from 'obsidian';
 import { EditorView } from '@codemirror/view';
 import type { Annotation, CommentEntry } from '../types.ts';
 import { COMMENT_TYPE_META, UNREAD_TYPES } from '../types.ts';
@@ -19,6 +19,7 @@ import {
   toggleReaction,
 } from '../parser.ts';
 import { HistoryModal } from './HistoryModal.ts';
+import { MembersModal } from './MembersModal.ts';
 import { setDraftRange, type AnnotationPosition } from '../editor/cmExtension.ts';
 import { parseAtMention } from '../agentReply.ts';
 import type InlineCommentsPlugin from '../../main.ts';
@@ -589,6 +590,13 @@ export class CommentPanel extends ItemView {
         void this.refresh();
       });
     }
+    // Who can be @-ed, and how each of them gets a letter: one click from the panel
+    const members = this.headerEl.createEl('button', { cls: 'clickable-icon ilc-members-btn', attr: { 'aria-label': t('管理成员…') } });
+    setIcon(members, 'users');
+    members.addEventListener('click', (e) => {
+      e.stopPropagation();
+      new MembersModal(this.app).open();
+    });
   }
 
   /** Clip long threads (unless expanded or focused); re-run whenever a card resizes */

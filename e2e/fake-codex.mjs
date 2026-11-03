@@ -4,6 +4,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const args = process.argv.slice(2);
+// `codex login status`: signed in when the test wrote an auth file
+if (args[0] === 'login' && args[1] === 'status') {
+  const signedIn = fs.existsSync(path.join(process.env.ILC_HOME ?? '', '.codex', 'auth.json'));
+  console.log(signedIn ? 'Logged in using an API key' : 'Not logged in');
+  process.exit(signedIn ? 0 : 1);
+}
 let prompt = '';
 process.stdin.on('data', (d) => { prompt += d; });
 process.stdin.on('end', () => {

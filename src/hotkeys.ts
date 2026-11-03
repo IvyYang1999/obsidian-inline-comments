@@ -1,7 +1,9 @@
 /**
  * Hotkey for 添加划线评论. Obsidian's plugin guidelines forbid shipping a default
  * hotkey, so the command starts unbound. The UI shows whatever the user bound and
- * offers a one-click ⌘⇧K that is saved as the user's own binding.
+ * offers a one-click ⌘⌥M (Ctrl+Alt+M; Google Docs uses it for comments) that is
+ * saved as the user's own binding. It used to offer ⌘⇧K, which the editor already
+ * uses for "delete line": the line went away as the comment opened.
  *
  * `hotkeyManager` and `setting` are internal Obsidian APIs: every access is
  * guarded and degrades to "not bound" / "could not open".
@@ -9,7 +11,7 @@
 import type { App, Hotkey, Modifier } from 'obsidian';
 
 export const ADD_COMMENT_COMMAND = 'inline-comments:add-inline-comment';
-export const SUGGESTED_HOTKEY: Hotkey = { modifiers: ['Mod', 'Shift'], key: 'K' };
+export const SUGGESTED_HOTKEY: Hotkey = { modifiers: ['Mod', 'Alt'], key: 'M' };
 
 interface HotkeyManagerLike {
   getHotkeys?(id: string): Hotkey[] | undefined;
@@ -39,17 +41,32 @@ export function boundHotkeys(app: App, id = ADD_COMMENT_COMMAND): Hotkey[] {
   }
 }
 
-// ⌘ first, as the plugin has always written it (⌘⇧K)
+// ⌘ first, as the plugin has always written it (⌘⌥M)
 const MAC_ORDER: Modifier[] = ['Mod', 'Meta', 'Ctrl', 'Alt', 'Shift'];
 const MAC_SYMBOL: Record<Modifier, string> = { Ctrl: '⌃', Alt: '⌥', Shift: '⇧', Mod: '⌘', Meta: '⌘' };
 const PC_ORDER: Modifier[] = ['Mod', 'Ctrl', 'Meta', 'Alt', 'Shift'];
 const PC_NAME: Record<Modifier, string> = { Mod: 'Ctrl', Ctrl: 'Ctrl', Meta: 'Win', Alt: 'Alt', Shift: 'Shift' };
 
-/** ⌘⇧K on macOS, Ctrl+Shift+K elsewhere */
+/** ⌘⌥M on macOS, Ctrl+Alt+M elsewhere */
 export function formatHotkey(h: Hotkey, mac: boolean): string {
   const key = h.key.length === 1 ? h.key.toUpperCase() : h.key;
   if (mac) return [...new Set(MAC_ORDER.filter((m) => h.modifiers.includes(m)).map((m) => MAC_SYMBOL[m]))].join('') + key;
   return [...new Set(PC_ORDER.filter((m) => h.modifiers.includes(m)).map((m) => PC_NAME[m])), key].join('+');
+}
+
+/**
+ * Is this key press that hotkey? Letters and digits are read from `code`: with ⌥ held,
+ * macOS reports `key` as the character it types (⌥M → µ).
+ */
+export function eventMatchesHotkey(e: Pick<KeyboardEvent, 'key' | 'code' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey'>, h: Hotkey, mac: boolean): boolean {
+  const m = h.modifiers;
+  if (e.ctrlKey !== (m.includes('Ctrl') || (!mac && m.includes('Mod')))) return false;
+  if (e.metaKey !== (m.includes('Meta') || (mac && m.includes('Mod')))) return false;
+  if (e.altKey !== m.includes('Alt') || e.shiftKey !== m.includes('Shift')) return false;
+  const key = h.key.toUpperCase();
+  if (/^[A-Z]$/.test(key)) return e.code === `Key${key}`;
+  if (/^[0-9]$/.test(key)) return e.code === `Digit${key}`;
+  return e.key.toUpperCase() === key;
 }
 
 export function sameHotkey(a: Hotkey, b: Hotkey): boolean {
@@ -67,7 +84,7 @@ export function hotkeyConflict(app: App, hotkey: Hotkey, except = ADD_COMMENT_CO
   return null;
 }
 
-/** Bind ⌘⇧K for the user. Refuses (and names the command) when it is already taken. */
+/** Bind ⌘⌥M for the user. Refuses (and names the command) when it is already taken. */
 export function bindSuggestedHotkey(app: App): { ok: true } | { ok: false; conflict?: string } {
   const hm = internals(app).hotkeyManager;
   if (!hm?.setHotkeys) return { ok: false };

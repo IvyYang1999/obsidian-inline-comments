@@ -59,6 +59,13 @@ async function run() {
     check('面板无多余内边距', widths.padL === '0px' && widths.padR === '0px', `${widths.padL}/${widths.padR}`);
     check('卡片占满面板宽度（≥ 面板 − 20）', widths.card >= widths.panel - 20, `panel=${widths.panel} scrollbar=${widths.scrollbar} card=${widths.card} body=${widths.body}`);
 
+    // 管理成员 sits in the panel header, one click away
+    await page.locator('.ilc-panel-header .ilc-members-btn').click();
+    const membersFromHeader = await page.waitForSelector('.ilc-members-modal', { timeout: 5000 }).then(() => true, () => false);
+    check('面板顶栏有「管理成员」按钮，点开成员弹窗', membersFromHeader);
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('.ilc-members-modal', { state: 'detached', timeout: 5000 }).catch(() => {});
+
     // Refreshes that overlap (a save fires modify + layout-change together) must not pile up copies of every card
     {
       await page.evaluate(() => { const v = app.workspace.getLeavesOfType('ilc-comments-panel')[0].view; v.refresh(); v.refresh(); v.refresh(); });
@@ -716,7 +723,8 @@ async function run() {
       await sleep(400);
     }
 
-    // ── Hotkey: none by default (store rule); the empty panel offers a one-click ⌘⇧K that really works
+    // ── Hotkey: none by default (store rule); the empty panel offers a one-click ⌘⌥M that really works
+    // (it used to offer ⌘⇧K, the editor's own "delete line": the selected line went away as the comment opened)
     {
       const CMD = 'inline-comments:add-inline-comment';
       await page.evaluate(async () => {
@@ -728,21 +736,40 @@ async function run() {
         hint: document.querySelector('.ilc-empty')?.textContent ?? '',
         bound: app.hotkeyManager.getHotkeys(id) ?? app.hotkeyManager.getDefaultHotkeys(id) ?? [],
       }), CMD);
-      check('默认不带快捷键，空面板不再写死 ⌘⇧K', before.bound.length === 0 && !before.hint.includes('按 ⌘⇧K') && before.hint.includes('右键'), before.hint);
+      check('默认不带快捷键，空面板不写死快捷键', before.bound.length === 0 && !before.hint.includes('按 ⌘') && before.hint.includes('右键'), before.hint);
       await page.locator('.ilc-hotkey-bind').click();
       await sleep(500);
       const after = await page.evaluate((id) => ({ hint: document.querySelector('.ilc-empty')?.textContent ?? '', keys: app.hotkeyManager.getHotkeys(id) ?? [] }), CMD);
-      check('点「设为 ⌘⇧K」后成为用户自己的快捷键，提示显示实际按键', after.keys.length === 1 && after.keys[0].key === 'K' && after.hint.includes('按 ⌘⇧K'), `${JSON.stringify(after.keys)} ${after.hint}`);
+      check('点「设为 ⌘⌥M」后成为用户自己的快捷键，提示显示实际按键', after.keys.length === 1 && after.keys[0].key === 'M' && after.hint.includes('按 ⌘⌥M'), `${JSON.stringify(after.keys)} ${after.hint}`);
       await page.evaluate(() => {
         const leaf = app.workspace.getLeavesOfType('markdown')[0];
         app.workspace.setActiveLeaf(leaf, { focus: true });
         leaf.view.editor.focus();
         leaf.view.editor.setSelection({ line: 0, ch: 0 }, { line: 0, ch: 4 });
       });
-      await page.keyboard.press('Meta+Shift+K');
+      const docBefore = await page.evaluate(() => app.workspace.getLeavesOfType('markdown')[0].view.editor.getValue());
+      await page.keyboard.press('Meta+Alt+KeyM');
       const drafted = await page.waitForSelector('.ilc-card-draft', { timeout: 3000 }).then(() => true, () => false);
-      check('按 ⌘⇧K 真的能添加评论（草稿卡片出现）', drafted);
+      const docAfter = await page.evaluate(() => app.workspace.getLeavesOfType('markdown')[0].view.editor.getValue());
+      check('按 ⌘⌥M 真的能添加评论（草稿卡片出现），选中的文字还在', drafted && docAfter === docBefore, JSON.stringify(docAfter));
       if (drafted) { await page.keyboard.press('Escape'); await sleep(200); }
+      // Someone who bound ⌘⇧K before: the comment opens and the editor's "delete line" no longer runs too
+      const kept = await page.evaluate(async (id) => {
+        const hm = app.hotkeyManager;
+        const mine = hm.getHotkeys(id);
+        hm.setHotkeys(id, [{ modifiers: ['Mod', 'Shift'], key: 'K' }]);
+        const leaf = app.workspace.getLeavesOfType('markdown')[0];
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        leaf.view.editor.focus();
+        leaf.view.editor.setSelection({ line: 0, ch: 0 }, { line: 0, ch: 4 });
+        return { mine, doc: leaf.view.editor.getValue() };
+      }, CMD);
+      await page.keyboard.press('Meta+Shift+K');
+      const draftedK = await page.waitForSelector('.ilc-card-draft', { timeout: 3000 }).then(() => true, () => false);
+      const docK = await page.evaluate(() => app.workspace.getLeavesOfType('markdown')[0].view.editor.getValue());
+      check('之前绑了 ⌘⇧K 的：按下去开评论，不再顺手删掉这一行', draftedK && docK === kept.doc, JSON.stringify(docK));
+      if (draftedK) { await page.keyboard.press('Escape'); await sleep(200); }
+      await page.evaluate(([id, mine]) => app.hotkeyManager.setHotkeys(id, mine), [CMD, kept.mine]);
       const hkFile = path.join(WORK, 'vault', '.obsidian', 'hotkeys.json');
       const saved = fs.existsSync(hkFile) ? JSON.parse(fs.readFileSync(hkFile, 'utf8'))[CMD] : null;
       check('快捷键写进 vault 的 hotkeys.json（重启后还在）', Array.isArray(saved) && saved.length === 1, JSON.stringify(saved));
@@ -755,7 +782,7 @@ async function run() {
         app.setting.close();
         return desc;
       });
-      check('设置页显示当前快捷键', settingDesc.includes('⌘⇧K'), settingDesc);
+      check('设置页显示当前快捷键', settingDesc.includes('⌘⌥M'), settingDesc);
     }
 
     // ── Any harness: the dialog lists only installed CLIs; a Codex member answers every @
@@ -785,6 +812,20 @@ async function run() {
       await page.waitForSelector('.ilc-newsession-harness select:not(.is-measuring)', { timeout: 5000 });
       const options = await page.locator('.ilc-newsession-harness select:not(.is-measuring) option').evaluateAll((os) => os.map((o) => o.value));
       check('Harness 下拉只列本机装了的（Claude Code、Codex，没有 Gemini）', JSON.stringify(options) === '["claude","codex"]', JSON.stringify(options));
+      // A CLI installed while Obsidian runs shows up the next time the dialog opens, no reload
+      const fakeGemini = path.join(WORK, 'bin', 'gemini');
+      fs.writeFileSync(fakeGemini, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('.ilc-newsession-modal', { state: 'detached', timeout: 5000 }).catch(() => {});
+      await box.fill('');
+      await box.click();
+      await page.keyboard.type('@');
+      await page.waitForSelector('.ilc-at-new', { timeout: 5000 });
+      await page.locator('.ilc-at-new').click();
+      await page.waitForSelector('.ilc-newsession-harness select:not(.is-measuring)', { timeout: 5000 });
+      const optionsLater = await page.locator('.ilc-newsession-harness select:not(.is-measuring) option').evaluateAll((os) => os.map((o) => o.value));
+      check('装好 Gemini 后再开「新会话」：不用重载就列出来', JSON.stringify(optionsLater) === '["claude","codex","gemini"]', JSON.stringify(optionsLater));
+      fs.rmSync(fakeGemini);
       await page.locator('.ilc-newsession-harness select:not(.is-measuring)').selectOption('codex');
       await page.locator('.ilc-newsession-modal input').first().fill('码农甲');
       await page.locator('.ilc-newsession-modal button.mod-cta').click();
@@ -857,6 +898,11 @@ async function run() {
       check('……这行是淡色的收尾，没有按钮', await page.evaluate(() => [...document.querySelectorAll('.ilc-delivery-done')].length > 0) && (await lineOf('再看一眼'))?.action === '');
 
       let rows = await atRows();
+      const repliedRow = rows.find((r) => r.name === '码农甲');
+      check('Codex 在后台回复过：不再说它没登录（哪怕找不到它的登录文件）', !!repliedRow?.role.includes('在后台回复') && repliedRow.fix === '', JSON.stringify(repliedRow));
+      // Before any run it is a guess: its files, then `codex login status`
+      await page.evaluate(async () => { const p = app.plugins.plugins['inline-comments']; p.settings.harnessSignedIn = {}; await p.saveSettings(); });
+      rows = await atRows();
       const coderRow = rows.find((r) => r.name === '码农甲');
       check('@ 列表写明怎么收到：Codex 没登录 → 收不到 +「去登录」', !!coderRow?.role.includes('好像还没登录') && coderRow.fix === '去登录' && coderRow.cls.includes('status-offline'), JSON.stringify(coderRow));
       check('这条讨论里回复过的成员带标记', coderRow?.here === true);
@@ -1039,6 +1085,11 @@ async function run() {
       check('……@ 下面写「它开着，但收不到直送，下次说话时会看到」', await waitFor(async () => !!(await lineOf('开着但没有收信口'))?.text.includes('它开着，但收不到直送')), JSON.stringify(await lineOf('开着但没有收信口')));
       check('……不弹第二个终端，信留在信箱（未读）', !deskLaunched()
         && !!deskLetter().find((l) => l.includes('开着但没有收信口'))?.includes('status: 未读') && inboxLines.length === 0);
+
+      // It had an inbox, but the socket file was deleted (a cleaned-up temp folder): say that, and how to fix it
+      fs.writeFileSync(path.join(sessions, `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: SID, cwd: path.join(WORK, 'vault'), kind: 'interactive', entrypoint: 'cli', messagingSocketPath: path.join(WORK, 'cc-socks', 'gone.sock') }));
+      const goneRow = (await atRows()).find((r) => r.name === '桌面助理');
+      check('收信口文件被删了：@ 列表写「收信口文件不见了…重开这个会话」，不是「没开着」', !!goneRow?.role.includes('收信口文件不见了') && goneRow.role.includes('重开这个会话') && goneRow.cls.includes('status-idle'), JSON.stringify(goneRow));
 
       await new Promise((r) => inbox.close(r));
       fs.rmSync(path.join(sessions, `${process.pid}.json`));
