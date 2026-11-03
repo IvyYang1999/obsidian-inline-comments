@@ -18,6 +18,12 @@ async function pickFolder(title: string, start: string): Promise<string | null> 
   return res.canceled ? null : res.filePaths[0] ?? null;
 }
 
+/** A path too long for its box: show its end (the folder name) and the whole path on hover */
+function showPathEnd(input: HTMLInputElement): void {
+  input.title = input.value;
+  window.requestAnimationFrame(() => { input.scrollLeft = input.scrollWidth; });
+}
+
 /** Installed harnesses, in table order; on mobile nothing can be detected, so Claude Code is assumed */
 async function installedHarnesses(refresh = false): Promise<HarnessId[]> {
   if (!Platform.isDesktopApp) return ['claude'];
@@ -102,7 +108,9 @@ export class NewSessionModal extends Modal {
       .addText((txt) => {
         cwdText = txt;
         txt.inputEl.addClass('ilc-newsession-cwd');
-        txt.setValue(this.cwd).onChange((v) => { this.cwd = v.trim() || defaultSessionCwd(this.app); });
+        txt.setValue(this.cwd).onChange((v) => { this.cwd = v.trim() || defaultSessionCwd(this.app); txt.inputEl.title = this.cwd; });
+        showPathEnd(txt.inputEl);
+        txt.inputEl.addEventListener('blur', () => showPathEnd(txt.inputEl));
       });
     if (Platform.isDesktopApp) {
       cwdSetting.addButton((b) => b.setButtonText(t('选择…')).onClick(async () => {
@@ -110,6 +118,7 @@ export class NewSessionModal extends Modal {
         if (!dir) return;
         this.cwd = dir;
         cwdText?.setValue(dir);
+        if (cwdText) showPathEnd(cwdText.inputEl);
       }));
     }
 
@@ -134,7 +143,7 @@ export class NewSessionModal extends Modal {
     this.harness = preferred ?? installed[0];
     const describe = (id: HarnessId) => setting.setDesc(HARNESSES.find((h) => h.id === id)?.mode === 'terminal'
       ? t('在终端里打开，之后可以继续在终端或评论里跟它聊')
-      : t('在后台回复，每封留言都接着同一个会话；想接着聊可以在成员列表里点「终端」'));
+      : t('在后台回复，每封留言都接着同一个会话；想接着聊，在成员列表里点它的 ⋯ →「在终端里接着聊」'));
     describe(this.harness);
     setting.addDropdown((d) => {
       for (const id of installed) d.addOption(id, HARNESSES.find((h) => h.id === id)!.label);

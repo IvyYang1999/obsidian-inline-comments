@@ -1391,7 +1391,7 @@ class ILCSettingTab extends PluginSettingTab {
     void (async () => {
       const st = await this.plugin.hookStatus();
       if (!st) { hookSetting.setDesc(t('仅桌面端可用。')); return; }
-      hookSetting.setDesc(t('{0} · {1}', [st.installed ? (st.stale ? '已安装（路径已变，建议重装）' : '已安装') : '未安装', st.settingsPath]));
+      hookSetting.setDesc(t('{0} · {1}', [st.installed ? (st.stale ? t('已安装（路径已变，建议重装）') : t('已安装')) : t('未安装'), st.settingsPath]));
       hookSetting.addButton((b) =>
         b.setButtonText(st.installed ? t('重新安装') : t('安装')).setCta().onClick(async () => {
           await this.plugin.installHooks();
@@ -1547,7 +1547,7 @@ class ILCSettingTab extends PluginSettingTab {
           type: 'text',
           value: agent.sessionId ?? '',
           title: t('会话 ID'),
-          placeholder: t('claude session id（填了才能 @它回应）'),
+          placeholder: t('会话 ID（填了才能 @它回应）'),
         },
       }) as HTMLInputElement;
       sessionIn.addEventListener('change', async () => {

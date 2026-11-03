@@ -35,9 +35,9 @@ body {
   --ilc-shadow-focus: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 16%, transparent);
 
   /* Typography */
-  --ilc-font-body:  13px;
-  --ilc-font-meta:  12px;
-  --ilc-font-small: 11px;
+  --ilc-font-body:  14px;
+  --ilc-font-meta:  12.5px;
+  --ilc-font-small: 11.5px;
   --ilc-font-badge: 11px;
 
   /* Geometry */
@@ -127,7 +127,8 @@ body {
 }
 .ilc-panel-bg-editor .ilc-panel-header { background: var(--background-primary); }
 .ilc-panel-count strong { color: var(--text-normal); font-weight: 600; }
-.ilc-panel-unread { color: var(--text-error, #e5484d); }
+/* the count stays calm; the red dots on avatars mark what is unread */
+.ilc-panel-unread { color: var(--text-accent); }
 
 /* Absolute-positioned card container - height set by JS */
 .ilc-cards-zone { position: relative; }
@@ -198,9 +199,10 @@ body {
   border-color: var(--ilc-hairline-strong);
   box-shadow: var(--ilc-shadow-sm);
 }
+/* The focused card lifts off its neighbours: its type colour on the edge, a deeper shadow */
 .ilc-card-active {
-  border-color: var(--ilc-hairline-strong);
-  box-shadow: var(--ilc-shadow-sm);
+  border-color: color-mix(in srgb, var(--ilc-accent, var(--interactive-accent)) 55%, var(--ilc-hairline-strong));
+  box-shadow: var(--ilc-shadow-md);
   z-index: 1;
 }
 /* Reply input is rendered for every card but visible only while focused. */
@@ -242,7 +244,7 @@ body {
 
 .ilc-entry {
   position: relative;
-  padding: 6px var(--ilc-gutter);
+  padding: 8px var(--ilc-gutter);
 }
 /* connector line between avatars */
 .ilc-entry-has-prev::before,
@@ -253,8 +255,8 @@ body {
   width: 1px;
   background: var(--ilc-hairline-soft);
 }
-.ilc-entry-has-prev::before { top: 0; height: 6px; }
-.ilc-entry-has-next::after  { top: calc(6px + var(--ilc-avatar)); bottom: 0; }
+.ilc-entry-has-prev::before { top: 0; height: 8px; }
+.ilc-entry-has-next::after  { top: calc(8px + var(--ilc-avatar)); bottom: 0; }
 
 /* A reply continuing the same author's message: no avatar / name / date of its own */
 .ilc-entry-cont { padding-top: 0; }
@@ -340,7 +342,7 @@ body {
 .ilc-entry-date {
   margin-left: auto;
   font-size: var(--ilc-font-small);
-  color: var(--text-faint);
+  color: var(--text-muted);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -356,7 +358,7 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 3px 0 0 calc(var(--ilc-indent) - 6px);
+  margin: 6px 0 0 var(--ilc-indent);
 }
 
 /* ─── Pending entry ───────────────────────────────────────────────────────────── */
@@ -1153,6 +1155,7 @@ body {
 }
 
 /* ─── Mark-as-read action ────────────────────────────────────────────────── */
+/* Small outlined buttons: they look as clickable as Send and Sign in next to them */
 .ilc-read-btn,
 .ilc-delivery-action,
 .ilc-at-fix {
@@ -1161,19 +1164,19 @@ body {
   line-height: 1.4;
   font-size: var(--ilc-font-small);
   font-weight: 500;
-  color: var(--interactive-accent) !important;
-  background: none !important;
-  border: none !important;
+  color: var(--text-accent) !important;
+  background: var(--ilc-surface) !important;
+  border: 1px solid var(--ilc-hairline) !important;
   box-shadow: none !important;
   outline: none !important;
-  padding: 3px 6px;
-  border-radius: 4px;
+  padding: 2px 9px;
+  border-radius: var(--ilc-radius-btn);
   cursor: pointer;
-  transition: background var(--ilc-trans-fast);
+  transition: background var(--ilc-trans-fast), border-color var(--ilc-trans-fast);
 }
 .ilc-read-btn:hover,
 .ilc-delivery-action:hover,
-.ilc-at-fix:hover { background: var(--background-modifier-hover) !important; }
+.ilc-at-fix:hover { background: var(--background-modifier-hover) !important; border-color: var(--ilc-hairline-strong) !important; }
 .ilc-delivery-action:disabled { opacity: 0.5; cursor: default; }
 
 /* ─── Delivery line under an @（已送进… / 没送到…） ─────────────────────────────── */
@@ -1185,7 +1188,7 @@ body {
   margin: 4px 0 0 var(--ilc-indent);
   font-size: var(--ilc-font-small);
   line-height: 1.45;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 .ilc-delivery-dot {
   flex: 0 0 6px;
@@ -1196,7 +1199,7 @@ body {
 }
 /* In a narrow card the button drops under the text instead of squeezing it into a thin column */
 .ilc-delivery-text { flex: 1 1 14em; min-width: 0; }
-.ilc-delivery .ilc-delivery-action { flex: none; margin-left: auto; padding: 0 6px; margin-top: -1px; }
+.ilc-delivery .ilc-delivery-action { flex: none; margin-left: auto; padding: 0 8px; margin-top: -2px; }
 .ilc-delivery-busy .ilc-delivery-dot { background: var(--interactive-accent); animation: ilc-pulse 1.4s ease-in-out infinite; }
 .ilc-delivery-warn { color: var(--text-muted); }
 .ilc-delivery-warn .ilc-delivery-dot { background: #f0b429; }
@@ -1229,7 +1232,7 @@ body {
 .ilc-members-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); opacity: 0.5; flex-shrink: 0; }
 .ilc-members-dot.is-on { background: #34d058; opacity: 1; box-shadow: 0 0 0 3px color-mix(in srgb, #34d058 18%, transparent); }
 .ilc-members-action { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.ilc-members-name { width: 9em; height: 26px !important; min-height: 0 !important; padding: 0 8px !important; font-size: var(--ilc-font-meta); border-radius: var(--ilc-radius-btn) !important; border: 1px solid var(--ilc-hairline) !important; background: var(--ilc-surface-sunken) !important; box-shadow: none !important; }
+.ilc-members-name { width: 9em; height: 26px !important; min-height: 0 !important; padding: 0 8px !important; font-size: var(--ilc-font-meta); border-radius: var(--ilc-radius-btn) !important; border: 1px solid var(--ilc-hairline-strong) !important; background: var(--ilc-surface) !important; box-shadow: none !important; }
 .ilc-members-name:focus { border-color: var(--ilc-hairline-strong) !important; background: var(--ilc-surface) !important; outline: none; }
 .ilc-members-join, .ilc-members-open, .ilc-members-refresh, .ilc-members-remove {
   height: 26px !important; min-height: 0 !important; padding: 0 12px !important; font-size: var(--ilc-font-meta);
@@ -1239,6 +1242,25 @@ body {
 .ilc-members-open, .ilc-members-refresh { background: transparent !important; color: var(--text-normal) !important; border: 1px solid var(--ilc-hairline) !important; }
 .ilc-members-open { display: inline-block; vertical-align: middle; margin: 0 2px; }
 .ilc-members-remove { background: transparent !important; color: var(--text-muted) !important; border: none !important; }
+/* Terminal / Remove live behind ⋯ so a row shows at most one button besides it */
+.ilc-members-more { flex: none; height: 26px !important; padding: 0 4px !important; color: var(--text-muted); }
+
+/* New comment without a shortcut yet: a quiet offer under the buttons */
+.ilc-draft-hotkey {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 var(--ilc-gutter) 10px;
+  font-size: var(--ilc-font-small);
+  color: var(--text-muted);
+}
+.ilc-panel .ilc-draft-hotkey-bind {
+  height: auto !important; min-height: 0 !important; padding: 1px 8px !important;
+  font-size: var(--ilc-font-small); color: var(--text-accent) !important;
+  background: var(--ilc-surface) !important; border: 1px solid var(--ilc-hairline) !important;
+  border-radius: var(--ilc-radius-btn); box-shadow: none !important; cursor: pointer;
+}
 .ilc-members-remove:hover { color: var(--text-error) !important; background: var(--background-modifier-hover) !important; }
 .ilc-members-joined { font-size: var(--ilc-font-small); color: var(--text-muted); }
 .ilc-members-empty { padding: 14px 12px; color: var(--text-faint); font-size: var(--ilc-font-small); }

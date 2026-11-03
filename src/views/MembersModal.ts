@@ -1,5 +1,5 @@
 import { statusLabel, t } from '../i18n.ts';
-import { App, Modal, Notice, Platform } from 'obsidian';
+import { App, Menu, Modal, Notice, Platform, setIcon } from 'obsidian';
 import { loadRoster, memberReach, type RosterEntry } from '../atSelector.ts';
 import { levelHint, type Reach } from '../reach.ts';
 import { readRegistry, removeAgent, upsertAgent, validateName } from '../registry.ts';
@@ -175,17 +175,26 @@ export class MembersModal extends Modal {
         await this.renderMembers();
       });
     }
-    if (headless && e.threadId) {
-      const term = row.createEl('button', { cls: 'ilc-members-resume', text: t('终端') });
-      term.setAttribute('title', t('在终端里打开这个会话，接着跟它聊'));
-      term.addEventListener('click', () => this.plugin?.resumeInTerminal?.(e.sessionId, e.cwd, e.harness, e.threadId));
-    }
-    if (e.source === 'registry') {
-      const del = row.createEl('button', { cls: 'ilc-members-remove', text: t('移除') });
-      del.addEventListener('click', async () => {
-        await removeAgent(this.app, e.name);
-        new Notice(t('已移除「{0}」', [e.name]));
-        await Promise.all([this.renderMembers(), this.renderSessions()]);
+    // Opening its session and removing it are occasional: behind ⋯, so the row keeps one button at most
+    const canOpen = headless && !!e.threadId;
+    if (canOpen || e.source === 'registry') {
+      const more = row.createEl('button', { cls: 'clickable-icon ilc-members-more', attr: { 'aria-label': t('更多操作') } });
+      setIcon(more, 'more-horizontal');
+      more.addEventListener('click', (ev) => {
+        const menu = new Menu();
+        if (canOpen) {
+          menu.addItem((item) => item.setTitle(t('在终端里接着聊')).setIcon('terminal')
+            .onClick(() => this.plugin?.resumeInTerminal?.(e.sessionId, e.cwd, e.harness, e.threadId)));
+        }
+        if (e.source === 'registry') {
+          if (canOpen) menu.addSeparator();
+          menu.addItem((item) => item.setTitle(t('移除')).setIcon('user-minus').setWarning(true).onClick(async () => {
+            await removeAgent(this.app, e.name);
+            new Notice(t('已移除「{0}」', [e.name]));
+            await Promise.all([this.renderMembers(), this.renderSessions()]);
+          }));
+        }
+        menu.showAtMouseEvent(ev);
       });
     }
   }
@@ -260,12 +269,13 @@ export class MembersModal extends Modal {
 
     const main = row.createEl('div', { cls: 'ilc-members-main' });
     const line1 = main.createEl('div', { cls: 'ilc-members-line' });
-    line1.createEl('span', { cls: 'ilc-at-source', text: s.harness });
+    line1.createEl('span', { cls: 'ilc-at-source', text: harnessDef(s.harness)?.label ?? s.harness });
     line1.createEl('span', { cls: 'ilc-members-title', text: s.title ?? shortCwd(s.cwd) ?? s.shortId });
     const line2 = main.createEl('div', { cls: 'ilc-members-sub' });
     const bits = [s.running ? t('运行中') : timeAgo(s.lastActive), shortCwd(s.cwd), s.shortId].filter(Boolean);
     line2.setText(bits.join(' · '));
-    if (this.inboxGone.has(s.sessionId.toLowerCase())) {
+    // A joined session says how it gets letters in its member row above; saying it again here doubled it
+    if (joinedAs) { /* status shown with the member */ } else if (this.inboxGone.has(s.sessionId.toLowerCase())) {
       const warn = main.createEl('div', { cls: 'ilc-members-sub ilc-members-holds', text: t('它的收信口文件不见了：@ 它要等它下次说话；重开这个会话就能直接送到') });
       warn.setAttribute('title', t('会话开着，但 Claude Code 放收信口的临时文件夹被清理掉了（有的系统会定期清理临时文件）。Claude Code 只在会话启动时建收信口，所以要重开这个会话。'));
     } else if (this.noInbox.has(s.sessionId.toLowerCase())) {

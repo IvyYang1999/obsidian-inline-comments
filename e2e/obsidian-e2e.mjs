@@ -650,6 +650,19 @@ async function run() {
         // Esc must work with focus still on the chip (not only in the textarea)
         check('草稿卡片与划线文字对齐（±6px）', draftState.textTop !== null && Math.abs(draftState.cardTop - draftState.textTop) <= 6, `card=${Math.round(draftState.cardTop)} text=${draftState.textTop === null ? '?' : Math.round(draftState.textTop)}`);
         await shot(page, '05-draft-card', '.workspace-leaf-content[data-type="ilc-comments-panel"]');
+        // No shortcut yet: the draft offers one; taking it keeps what was typed
+        const offer = await page.locator('.ilc-card-draft .ilc-draft-hotkey-bind').textContent().catch(() => null);
+        await page.locator('.ilc-card-draft .ilc-draft-input').fill('写了一半');
+        await page.locator('.ilc-card-draft .ilc-draft-hotkey-bind').click().catch(() => {});
+        await sleep(300);
+        const afterOffer = await page.evaluate(() => ({
+          hint: document.querySelector('.ilc-card-draft .ilc-draft-hotkey')?.textContent ?? null,
+          typed: document.querySelector('.ilc-card-draft .ilc-draft-input')?.value ?? null,
+          keys: app.hotkeyManager.getHotkeys('inline-comments:add-inline-comment') ?? [],
+        }));
+        check('还没快捷键时，新评论卡片底部提供「设为 ⌘⌥M」，点了就绑好、写了一半的字还在', offer === '设为 ⌘⌥M' && afterOffer.keys.length === 1 && afterOffer.keys[0].key === 'M' && afterOffer.typed === '写了一半' && (afterOffer.hint ?? '').includes('已设好'), JSON.stringify({ offer, ...afterOffer }));
+        await page.evaluate(() => app.hotkeyManager.setHotkeys('inline-comments:add-inline-comment', [])); // the hotkey section below starts unbound
+        await page.locator('.ilc-card-draft .ilc-draft-input').focus();
         await page.keyboard.press('Escape');
         await sleep(150);
         const hlGone = (await page.locator('.cm-editor .ilc-draft-highlight').count()) === 0;
@@ -1202,6 +1215,11 @@ async function run() {
 
       await cardDo(5, "card.querySelector('.ilc-card-preview .ilc-more-btn:last-child').dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 900, clientY: 300 }))");
       await sleep(300);
+      const menu = await page.evaluate(() => {
+        const m = document.querySelector('.menu');
+        return { items: [...m.querySelectorAll('.menu-item-title')].map((e) => e.textContent), lastWarning: !!m.querySelector('.menu-item:last-child.is-warning'), separator: !!m.querySelector('.menu-separator') };
+      });
+      check('卡片 ⋯ 菜单：常用的在前，「删除」隔开放最后、标红，「隐藏」不带长说明', menu.items[0] === '标为已解决' && menu.items.at(-1) === '删除整条评论' && menu.items.includes('隐藏') && menu.lastWarning && menu.separator, JSON.stringify(menu));
       await page.evaluate(() => [...document.querySelectorAll('.menu .menu-item')].find((m) => m.textContent.includes('隐藏'))?.click());
       await sleep(500);
       const hid = await page.evaluate(() => ({ gone: ![...document.querySelectorAll('.ilc-panel .ilc-card')].some((c) => c.querySelector('.ilc-card-preview-text')?.textContent === '密集划线5'), toggle: document.querySelector('.ilc-hidden-toggle')?.textContent ?? null }));

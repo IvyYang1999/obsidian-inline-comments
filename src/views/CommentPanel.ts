@@ -1,5 +1,5 @@
 import { t } from '../i18n.ts';
-import { ItemView, MarkdownRenderer, MarkdownView, Menu, Platform, TFile, WorkspaceLeaf, setIcon } from 'obsidian';
+import { ItemView, MarkdownRenderer, MarkdownView, Menu, Notice, Platform, TFile, WorkspaceLeaf, setIcon } from 'obsidian';
 import { EditorView } from '@codemirror/view';
 import type { Annotation, CommentEntry } from '../types.ts';
 import { COMMENT_TYPE_META, UNREAD_TYPES } from '../types.ts';
@@ -29,7 +29,7 @@ import { MENTION_RE } from '../mentionDelivery.ts';
 import { deliveryLine, deliverySlot, type DeliveryRecord } from '../deliveryStatus.ts';
 import { harnessDef } from '../harnesses.ts';
 import { countUnreadRuns, runHeads } from '../threadGroups.ts';
-import { SUGGESTED_HOTKEY, boundHotkeys, formatHotkey } from '../hotkeys.ts';
+import { SUGGESTED_HOTKEY, bindSuggestedHotkey, boundHotkeys, formatHotkey } from '../hotkeys.ts';
 import { localIsoDate } from '../localDate.ts';
 
 export const VIEW_TYPE_COMMENTS = 'ilc-comments-panel';
@@ -787,7 +787,7 @@ export class CommentPanel extends ItemView {
       } else {
         idealTop = estimateTop;
       }
-      estimateTop = idealTop + h + 8;
+      estimateTop = idealTop + h + 12;
 
       items.push({ id: ann.id, idealTop, el: cardEl, height: h, actualTop: 0 });
     }
@@ -802,7 +802,7 @@ export class CommentPanel extends ItemView {
     items.sort((a, b) => a.idealTop - b.idealTop);
 
     // Pass 1 — no-overlap greedy: each card sits at its anchor or below the previous card
-    const GAP = 8;
+    const GAP = 12;
     const MIN_TOP = 8;
     let nextAvailable = MIN_TOP;
 
@@ -975,6 +975,22 @@ export class CommentPanel extends ItemView {
     cancelBtn.addEventListener('click', (e) => { e.stopPropagation(); this.cancelDraft(); });
     postBtn.addEventListener('click', (e) => { e.stopPropagation(); this.submitDraft(input.value); });
 
+    // No shortcut yet: offer one here, where a comment was just started without it (the empty
+    // panel and the settings page are the only other places, and a note with comments shows neither)
+    if (boundHotkeys(this.app).length === 0) {
+      const key = formatHotkey(SUGGESTED_HOTKEY, Platform.isMacOS);
+      const hint = card.createEl('div', { cls: 'ilc-draft-hotkey' });
+      hint.createEl('span', { text: t('下次想用快捷键？') });
+      const bind = hint.createEl('button', { cls: 'ilc-draft-hotkey-bind', text: t('设为 {0}', [key]) });
+      bind.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const res = bindSuggestedHotkey(this.app); // not the plugin's: its panel refresh would redraw this half-written draft
+        if (res.ok) { hint.setText(t('已设好：下次选中文字后按 {0}', [key])); return; }
+        new Notice(res.conflict ? t('{0} 已被「{1}」占用，请换一个', [key, res.conflict]) : t('没能自动设置，请自己选一个快捷键'));
+        this.plugin.openAddCommentHotkeySettings();
+      });
+    }
+
     this.resizeObserver?.observe(card);
 
     // Schedule layout
@@ -1109,7 +1125,14 @@ export class CommentPanel extends ItemView {
     cardMoreBtn.textContent = '⋯';
     cardMoreBtn.addEventListener('click', (e) => {
       e.stopPropagation();
+      // Most used first; deleting sits apart, in red
       const menu = new Menu();
+      menu.addItem((item) =>
+        item
+          .setTitle(resolved ? t('重新打开') : t('标为已解决'))
+          .setIcon(resolved ? 'rotate-ccw' : 'check')
+          .onClick(() => void setResolved(!resolved)),
+      );
       if (!resolved) {
         const isFolded = card.hasClass('ilc-card-collapsed');
         menu.addItem((item) =>
@@ -1121,20 +1144,16 @@ export class CommentPanel extends ItemView {
       }
       menu.addItem((item) =>
         item
-          .setTitle(t('隐藏（点正文里的划线可再显示）'))
+          .setTitle(t('隐藏'))
           .setIcon('eye-off')
           .onClick(() => this.hideCard(ann)),
       );
-      menu.addItem((item) =>
-        item
-          .setTitle(resolved ? t('重新打开') : t('标为已解决'))
-          .setIcon(resolved ? 'rotate-ccw' : 'check')
-          .onClick(() => void setResolved(!resolved)),
-      );
+      menu.addSeparator();
       menu.addItem((item) =>
         item
           .setTitle(t('删除整条评论'))
           .setIcon('trash-2')
+          .setWarning(true)
           .onClick(() => this.deleteWholeAnnotation(ann, file)),
       );
       menu.showAtMouseEvent(e);
