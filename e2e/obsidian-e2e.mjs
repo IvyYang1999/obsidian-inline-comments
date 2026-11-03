@@ -524,9 +524,61 @@ async function run() {
     const midOpen = await page.evaluate((id) => { const c = document.querySelector(`.ilc-card[data-annotation-id="${id}"]`); return { visible: [...c.querySelectorAll('.ilc-thread > .ilc-entry')].filter((e) => e.offsetParent !== null).length, btn: !!c.querySelector('.ilc-expand-btn') }; }, midInfo?.id);
     check('点「还有 N 条回复」：整串显示、按钮消失', midOpen.visible === midInfo?.total && !midOpen.btn, JSON.stringify(midOpen));
 
+    // ── The card's ✓ − ⋯ are there without hovering; a comment's own ☺ ⋯ show on the focused card
+    // and on the comment under the mouse, and stay out of the way (zero width) elsewhere
+    {
+      await page.mouse.move(5, 5);
+      await sleep(300);
+      const btns = await page.evaluate(() => {
+        const probe = document.createElement('span');
+        probe.style.color = 'var(--text-faint)';
+        document.body.appendChild(probe);
+        const faint = getComputedStyle(probe).color;
+        probe.remove();
+        const shown = (b) => b.getBoundingClientRect().width >= 10 && getComputedStyle(b).opacity === '1';
+        const cards = [...document.querySelectorAll('.ilc-panel .ilc-card:not(.ilc-card-draft):not(.ilc-card-resolved)')];
+        const idle = cards.filter((c) => !c.classList.contains('ilc-card-active'));
+        return {
+          cards: cards.length,
+          cardBtns: cards.every((c) => { const b = [...c.querySelectorAll('.ilc-card-preview .ilc-more-btn')]; return b.length === 3 && b.every(shown); }),
+          idleFaint: idle.length > 0 && idle.every((c) => getComputedStyle(c.querySelector('.ilc-card-preview .ilc-more-btn:last-child')).color === faint),
+          idleEntryHidden: idle.every((c) => [...c.querySelectorAll('.ilc-entry-more-btn')].every((b) => b.getBoundingClientRect().width === 0)),
+        };
+      });
+      check('卡片右上的 ✓ − ⋯ 不用悬停就看得到（淡色），评论自己的 ⋯ 平时不占位', btns.cards >= 3 && btns.cardBtns && btns.idleFaint && btns.idleEntryHidden, JSON.stringify(btns));
+
+      const hoverId = await page.evaluate((id) => {
+        const card = [...document.querySelectorAll('.ilc-panel .ilc-card:not(.ilc-card-active)')].find((c) => c.dataset.annotationId !== id && c.querySelector('.ilc-entry-body'));
+        card?.querySelector('.ilc-entry-body').scrollIntoView({ block: 'center' });
+        return card?.dataset.annotationId ?? null;
+      }, midInfo?.id);
+      await sleep(500);
+      const body = await page.evaluate((id) => {
+        const r = document.querySelector(`.ilc-card[data-annotation-id="${id}"] .ilc-entry-body`).getBoundingClientRect();
+        return { id, x: r.left + 10, y: r.top + r.height / 2 };
+      }, hoverId);
+      await page.mouse.move(body.x, body.y);
+      await sleep(300);
+      const hovered = await page.evaluate((id) => {
+        const entry = document.querySelector(`.ilc-card[data-annotation-id="${id}"] .ilc-entry`);
+        return [...entry.querySelectorAll('.ilc-entry-header .ilc-more-btn')].map((b) => Math.round(b.getBoundingClientRect().width));
+      }, body.id);
+      check('鼠标停在评论正文上（不必是标题行）：这条的 ⋯ 出现', hovered.length > 0 && hovered.every((w) => w >= 10), JSON.stringify(hovered));
+
+      await page.evaluate((id) => document.querySelector(`.ilc-card[data-annotation-id="${id}"] .ilc-thread`)?.click(), midInfo?.id);
+      await page.mouse.move(5, 5);
+      await sleep(600);
+      const focused = await page.evaluate((id) => {
+        const c = document.querySelector(`.ilc-card[data-annotation-id="${id}"]`);
+        const btn = [...c.querySelectorAll('.ilc-entry')].filter((e) => e.offsetParent !== null).map((e) => e.querySelector('.ilc-entry-more-btn'));
+        return { active: c.classList.contains('ilc-card-active'), widths: btn.map((b) => (b ? Math.round(b.getBoundingClientRect().width) : null)) };
+      }, midInfo?.id);
+      check('选中的卡片里每条评论的 ⋯ 都显示（触屏点一下卡片就能用）', focused.active && focused.widths.length >= 3 && focused.widths.every((w) => w >= 10), JSON.stringify(focused));
+    }
+
     // ── Resolve / reopen
     const noteCard = page.locator('.ilc-card', { hasText: '能同桌很暖' }).first();
-    await noteCard.locator('.ilc-resolve-btn').evaluate((b) => b.click()); // zero-width until hover, like ⋯
+    await noteCard.locator('.ilc-resolve-btn').click();
     await sleep(900);
     const resolvedDoc = await page.evaluate(() => app.vault.adapter.read('sample.md'));
     const resolvedCard = await page.locator('.ilc-card-resolved', { hasText: '能同桌很暖' }).count();
@@ -945,7 +997,7 @@ async function run() {
         const file = app.vault.getAbstractFileByPath('harness.md');
         const doc = await app.vault.read(file);
         const i = doc.indexOf('<<}', doc.lastIndexOf('{>>码农甲|')) + 3;
-        await app.vault.modify(file, `${doc.slice(0, i)}{>>码农甲|2026-10-28|reply: 补充一句<<}${doc.slice(i)}`);
+        await app.vault.modify(file, `${doc.slice(0, i)}{>>码农甲|2026-10-28|reply: 补充一句，这句写得长一点，好看它的按钮会不会压在字上<<}${doc.slice(i)}`);
       });
       const contEntry = () => page.evaluate(() => {
         const e = [...document.querySelectorAll('.ilc-entry-cont')].find((x) => x.textContent.includes('补充一句'));
@@ -960,6 +1012,20 @@ async function run() {
       await page.evaluate(() => [...document.querySelectorAll('.ilc-entry-cont')].find((x) => x.textContent.includes('补充一句'))?.querySelector('.ilc-read-btn')?.click());
       await sleep(300);
       check('……「标为已读」一次标掉整组', (await headerUnread()) < unreadBefore && (await contEntry())?.headUnread === false, `now=${await headerUnread()} ${JSON.stringify(await contEntry())}`);
+      // its ☺ ⋯ float at the top right of the text: on the focused card they must not sit on it
+      await page.evaluate(() => [...document.querySelectorAll('.ilc-entry-cont')].find((x) => x.textContent.includes('补充一句'))?.closest('.ilc-card')?.querySelector('.ilc-thread')?.click());
+      await page.mouse.move(5, 5);
+      await sleep(600);
+      const contBtns = await page.evaluate(() => {
+        const e = [...document.querySelectorAll('.ilc-card-active .ilc-entry-cont')].find((x) => x.textContent.includes('补充一句'));
+        if (!e) return null;
+        const btns = [...e.querySelectorAll('.ilc-entry-header .ilc-more-btn')].map((b) => b.getBoundingClientRect());
+        const range = document.createRange();
+        range.selectNodeContents(e.querySelector('.ilc-entry-body'));
+        const lines = [...range.getClientRects()];
+        return { widths: btns.map((b) => Math.round(b.width)), lines: lines.length, onText: btns.some((b) => lines.some((l) => l.right > b.left && l.left < b.right && l.bottom > b.top && l.top < b.bottom)) };
+      });
+      check('……选中卡片时，接着说的那条的 ⋯ 显示出来、不压在字上', !!contBtns && contBtns.widths.length > 0 && contBtns.widths.every((w) => w >= 10) && contBtns.lines >= 2 && !contBtns.onText, JSON.stringify(contBtns));
 
       // ── A Claude member whose session is open (here: a fake Claude app chat) gets the
       // letter through the session's own inbox; once the session is gone it falls back to Terminal

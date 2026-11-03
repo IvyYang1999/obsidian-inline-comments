@@ -262,7 +262,7 @@ body {
 .ilc-entry-cont { padding-top: 0; }
 .ilc-entry-cont.ilc-entry-has-prev::before { height: 100%; }
 .ilc-entry-cont.ilc-entry-has-next::after { top: 0; }
-.ilc-entry-cont .ilc-entry-header { position: absolute; top: 0; right: var(--ilc-gutter); min-height: 0; gap: 0; }
+.ilc-entry-cont .ilc-entry-header { position: absolute; top: 0; right: var(--ilc-gutter); min-height: 0; gap: 4px; }
 .ilc-entry-cont .ilc-entry-avatar,
 .ilc-entry-cont .ilc-entry-author,
 .ilc-entry-cont .ilc-entry-date { display: none; }
@@ -443,37 +443,44 @@ body {
 .ilc-draft-post:hover { opacity: 0.88; }
 
 /* ─── ⋯ menu button ──────────────────────────────────────────────────────────── */
+/* The card's ✓ − ⋯ are always there (faint until the card is hovered or focused), so they can be
+   found without hunting, and tapped on a touch screen. A comment's own ☺ ⋯ show on the focused card
+   and on the comment under the mouse. */
 .ilc-more-btn {
   flex-shrink: 0;
-  opacity: 0;
-  width: 0;
   height: 18px !important;
   min-height: 0 !important;
-  overflow: hidden;
   background: none !important;
   border: none !important;
   box-shadow: none !important;
   outline: none !important;
   cursor: pointer;
-  color: var(--text-faint);
   font-size: 14px;
-  padding: 0;
+  padding: 0 2px;
   line-height: 18px;
   transition: opacity var(--ilc-trans-std), color var(--ilc-trans-std);
-  margin-left: 0;
 }
+/* two classes, to outrank Obsidian's button:not(.clickable-icon) colour */
+.ilc-card .ilc-more-btn { color: var(--text-faint); }
+/* The rule follows the text height; the button is capped at 18px so it can't stretch the row */
 .ilc-card-preview .ilc-more-btn { align-self: flex-start; }
-/* The rule follows the text height; the ⋯ button is capped at 18px so it can't stretch the row */
-/* collapsed: cancel the flex gap so the date sits flush right */
-.ilc-entry-header .ilc-entry-more-btn,
-.ilc-entry-header .ilc-react-add { margin-left: -8px; }
-.ilc-card-preview:hover .ilc-more-btn,
-.ilc-entry-header:hover .ilc-entry-more-btn,
-.ilc-entry-header:hover .ilc-react-add,
-.ilc-entry-cont:hover .ilc-entry-more-btn,
-.ilc-entry-cont:hover .ilc-react-add,
-.ilc-pending-row:hover .ilc-entry-more-btn { opacity: 1; width: auto; padding: 0 2px; margin-left: 6px; }
-.ilc-more-btn:hover { opacity: 1 !important; color: var(--text-normal); }
+.ilc-card-preview .ilc-more-btn + .ilc-more-btn { margin-left: -6px; }
+.ilc-card:hover .ilc-card-preview .ilc-more-btn,
+.ilc-card-active .ilc-card-preview .ilc-more-btn { color: var(--text-muted); }
+/* hidden: zero width, cancelling the flex gap, so the date sits flush right */
+.ilc-entry-more-btn,
+.ilc-react-add { opacity: 0; width: 0; padding: 0; overflow: hidden; margin-left: -8px; }
+.ilc-card-active .ilc-entry-more-btn,
+.ilc-card-active .ilc-react-add,
+.ilc-entry:hover .ilc-entry-more-btn,
+.ilc-entry:hover .ilc-react-add { opacity: 1; width: auto; padding: 0 2px; margin-left: -2px; }
+.ilc-entry:hover .ilc-entry-more-btn,
+.ilc-entry:hover .ilc-react-add { color: var(--text-muted); }
+.ilc-more-btn:hover { color: var(--text-normal) !important; }
+/* A follow-up comment has no header row, so its ☺ ⋯ float at the top right of its text:
+   the focused card keeps that corner free, and elsewhere they cover the text on hover */
+.ilc-card-active .ilc-entry-cont .ilc-entry-body { padding-right: 34px; }
+.ilc-entry-cont:hover .ilc-entry-header { background: rgb(from var(--background-primary) r g b); padding-left: 4px; }
 
 /* ─── Hidden utility ─────────────────────────────────────────────────────────── */
 .ilc-hidden { display: none !important; }

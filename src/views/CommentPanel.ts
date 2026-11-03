@@ -1380,8 +1380,9 @@ export class CommentPanel extends ItemView {
           chip.addEventListener('click', (e) => { e.stopPropagation(); void toggle(emoji); });
         }
       }
-      // ☺ lives in the header next to ⋯ (both zero-width until hover) — never an invisible click target
-      const add = createEl('button', { cls: 'ilc-more-btn ilc-react-add', text: '☺', attr: { title: t('添加反应'), 'aria-label': t('添加反应') } });
+      // ☺ lives in the header next to ⋯ (both zero-width until shown) — never an invisible click target.
+      // U+FE0E asks for the plain glyph, not the colour emoji
+      const add = createEl('button', { cls: 'ilc-more-btn ilc-react-add', text: '☺︎', attr:{ title: t('添加反应'), 'aria-label': t('添加反应') } });
       header.insertBefore(add, moreBtn);
       const picker = entry.createEl('div', { cls: 'ilc-react-picker' });
       for (const emoji of ['👍', '❤️', '😂', '🙏', '👀']) {
