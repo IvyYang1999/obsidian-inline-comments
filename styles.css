@@ -165,6 +165,7 @@ body {
   gap: 14px;
   margin-top: 6px;
 }
+.ilc-empty-guide { display: inline-block; margin-top: 14px; font-size: var(--ilc-font-small); color: var(--text-muted); }
 
 /* Text links, not buttons: beat Obsidian's button{height;background;shadow} */
 .ilc-panel .ilc-empty-link {
@@ -582,10 +583,11 @@ body {
   border-color: var(--ilc-accent) !important;
   color: var(--text-normal) !important;
 }
+/* The chosen type reads as chosen whatever its colour (备注 is grey): its own border, tint and weight */
 .ilc-draft-type-active {
-  background: color-mix(in srgb, var(--ilc-accent) 12%, transparent) !important;
-  border-color: transparent !important;
-  color: var(--ilc-accent) !important;
+  background: color-mix(in srgb, var(--ilc-accent) 14%, transparent) !important;
+  border-color: var(--ilc-accent) !important;
+  color: var(--text-normal) !important;
   font-weight: 600;
 }
 .ilc-draft-type-emoji { display: none; }
@@ -1148,6 +1150,15 @@ body {
   font-size: var(--ilc-font-small);
   color: var(--text-muted);
 }
+/* nobody to @ yet: what a member is, above the two ways to get one */
+.ilc-at-intro {
+  padding: 8px 10px 6px;
+  font-size: var(--ilc-font-small);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.ilc-at-add-member .ilc-at-avatar { color: var(--interactive-accent); }
+.ilc-at-add-member .ilc-at-avatar svg { width: 14px; height: 14px; }
 
 .ilc-at-empty {
   padding: 14px 10px;
@@ -1268,7 +1279,7 @@ body {
 .ilc-members-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); opacity: 0.5; flex-shrink: 0; }
 .ilc-members-dot.is-on { background: #34d058; opacity: 1; box-shadow: 0 0 0 3px color-mix(in srgb, #34d058 18%, transparent); }
 .ilc-members-action { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.ilc-members-name { width: 9em; height: 26px !important; min-height: 0 !important; padding: 0 8px !important; font-size: var(--ilc-font-meta); border-radius: var(--ilc-radius-btn) !important; border: 1px solid var(--ilc-hairline-strong) !important; background: var(--ilc-surface) !important; box-shadow: none !important; }
+.ilc-members-name { width: 11em; height: 26px !important; min-height: 0 !important; padding: 0 8px !important; font-size: var(--ilc-font-meta); border-radius: var(--ilc-radius-btn) !important; border: 1px solid var(--ilc-hairline-strong) !important; background: var(--ilc-surface) !important; box-shadow: none !important; }
 .ilc-members-name:focus { border-color: var(--ilc-hairline-strong) !important; background: var(--ilc-surface) !important; outline: none; }
 .ilc-members-join, .ilc-members-open, .ilc-members-refresh, .ilc-members-remove {
   height: 26px !important; min-height: 0 !important; padding: 0 12px !important; font-size: var(--ilc-font-meta);
@@ -1300,6 +1311,16 @@ body {
 .ilc-members-remove:hover { color: var(--text-error) !important; background: var(--background-modifier-hover) !important; }
 .ilc-members-joined { font-size: var(--ilc-font-small); color: var(--text-muted); }
 .ilc-members-empty { padding: 14px 12px; color: var(--text-faint); font-size: var(--ilc-font-small); }
+.ilc-members-name-error { color: var(--text-error, #e5484d); white-space: normal; }
+.ilc-members-name.is-invalid { border-color: var(--text-error, #e5484d) !important; }
+/* sessions: this vault's first, other folders folded under their own line */
+.ilc-members-subhead { margin: 4px 0 6px; font-size: var(--ilc-font-small); font-weight: 600; color: var(--text-muted); }
+.ilc-members-elsewhere { margin-top: 10px; }
+.ilc-members-elsewhere > summary { cursor: pointer; }
+/* advanced: folded at the bottom; its line says when the hook needs attention */
+.ilc-members-advanced > summary { cursor: pointer; font-size: var(--ilc-font-small); color: var(--text-muted); }
+.ilc-members-advanced[open] > summary { margin-bottom: 8px; }
+.ilc-members-advanced-flag { color: var(--color-orange, #d9822b); }
 
 /* settings list badges */
 .ilc-registry-name { font-weight: 600; font-size: var(--ilc-font-meta); }

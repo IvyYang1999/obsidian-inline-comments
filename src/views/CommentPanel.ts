@@ -1,4 +1,4 @@
-import { t } from '../i18n.ts';
+import { getLocale, t } from '../i18n.ts';
 import { ItemView, MarkdownRenderer, MarkdownView, Menu, Notice, Platform, TFile, WorkspaceLeaf, setIcon } from 'obsidian';
 import { EditorView } from '@codemirror/view';
 import type { Annotation, CommentEntry } from '../types.ts';
@@ -57,7 +57,7 @@ interface DraftState {
   from:           number;
   selectedType:   string;
   typeChanged:    boolean;
-  onPost:         (markup: string) => void;
+  onPost:         (markup: string) => void | Promise<void>;
 }
 
 /** Accent colors for built-in types (fallback when settings carry no color) */
@@ -222,7 +222,7 @@ export class CommentPanel extends ItemView {
 
   // ── Public API ──────────────────────────────────────────────────────────────
 
-  showDraftCard(highlightText: string, from: number, onPost: (markup: string) => void): void {
+  showDraftCard(highlightText: string, from: number, onPost: (markup: string) => void | Promise<void>): void {
     this.cancelDraft();
 
     // A plain note unless the user picks a stance (备注 if the user kept it, else their first type)
@@ -236,6 +236,8 @@ export class CommentPanel extends ItemView {
       onPost,
     };
 
+    // "No comments yet" next to the comment being written reads as if it were not taken
+    this.cardsZone?.querySelector('.ilc-empty')?.remove();
     this.renderDraftCardEl();
     this.setEditorDraftRange({ from, to: from + highlightText.length, cls: `ilc-highlight ilc-hl-${defaultType}` });
     // The draft sits on its selection: following the note's scroll puts it level with the text
@@ -570,7 +572,7 @@ export class CommentPanel extends ItemView {
 
     const count = this.headerEl.createEl('span', { cls: 'ilc-panel-count' });
     count.createEl('strong', { text: String(total) });
-    count.appendText(t(' 条评论'));
+    count.appendText(getLocale() === 'en' && total === 1 ? ' comment' : t(' 条评论'));
     if (unread > 0) {
       this.headerEl.createEl('span', { cls: 'ilc-panel-unread', text: t('· {0} 未读', [unread]) });
     }
@@ -939,6 +941,7 @@ export class CommentPanel extends ItemView {
     for (const type of types) {
       const btn = typeRow.createEl('button', {
         cls: `ilc-draft-type-btn ilc-draft-type-${type.id}`,
+        attr: { 'aria-pressed': String(type.id === d.selectedType) },
       });
       btn.createEl('span', { cls: 'ilc-draft-type-label', text: t(type.label) });
       btn.setCssProps({ '--ilc-accent': this.typeAccent(type.id) });
@@ -951,9 +954,11 @@ export class CommentPanel extends ItemView {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         activeBtn?.removeClass('ilc-draft-type-active');
+        activeBtn?.setAttribute('aria-pressed', 'false');
         d.selectedType = type.id;
         d.typeChanged = true;
         btn.addClass('ilc-draft-type-active');
+        btn.setAttribute('aria-pressed', 'true');
         card.setCssProps({ '--ilc-accent': this.typeAccent(type.id) });
         this.setEditorDraftRange({ from: d.from, to: d.from + d.highlightText.length, cls: `ilc-highlight ilc-hl-${type.id}` });
         activeBtn = btn;
@@ -1020,11 +1025,11 @@ export class CommentPanel extends ItemView {
     ];
 
     const markup = buildAnnotationMarkup(this.draft.highlightText, entries);
-    this.draft.onPost(markup);
-    this.cancelDraft();
+    const posted = this.draft.onPost(markup);
+    this.cancelDraft(true);
 
-    // Force panel refresh after document modification so the new comment card appears immediately
-    window.setTimeout(() => this.refresh(), 150);
+    // The note is saved by then: the new card shows at once, not when Obsidian next saves on its own
+    void Promise.resolve(posted).catch((err) => console.error('[ilc] saving the new comment failed', err)).finally(() => this.refresh());
   }
 
   /** Show / clear the temporary "being commented" highlight in the editor */
@@ -1045,7 +1050,8 @@ export class CommentPanel extends ItemView {
     return scrollerRect.top - zoneTop;
   }
 
-  private cancelDraft(): void {
+  private cancelDraft(posted = false): void {
+    const hadDraft = !!this.draft;
     this.setEditorDraftRange(null);
     if (this.clickAwayHandler) {
       document.removeEventListener('mousedown', this.clickAwayHandler);
@@ -1055,14 +1061,21 @@ export class CommentPanel extends ItemView {
     this.draftEl = null;
     this.draftInputEl = null;
     this.draft = null;
+    // A draft given up in a note without comments: back to the empty state (it was hidden while writing)
+    if (hadDraft && !posted && this.annotations.length === 0 && this.cardsZone && !this.cardsZone.querySelector('.ilc-empty')) this.renderEmptyHint();
   }
 
   /** Empty state: the hotkey the user actually bound, or a way to bind one (plugins may not ship a default) */
   private renderEmptyHint(): void {
     const el = this.cardsZone.createEl('div', { cls: 'ilc-empty' });
     const keys = boundHotkeys(this.app);
+    const guide = () => el.createEl('a', {
+      cls: 'ilc-empty-guide', text: t('使用说明'),
+      href: getLocale() === 'en' ? 'https://agent-comments.yytyyf.com/en/' : 'https://agent-comments.yytyyf.com/',
+    });
     if (keys.length > 0) {
-      el.setText(t('暂无评论。选中文字后按 {0} 添加。', [formatHotkey(keys[0], Platform.isMacOS)]));
+      el.createEl('div', { text: t('暂无评论。选中文字后按 {0} 添加。', [formatHotkey(keys[0], Platform.isMacOS)]) });
+      guide();
       return;
     }
     el.createEl('div', { text: t('暂无评论。选中文字后右键「添加划线评论」。') });
@@ -1073,6 +1086,7 @@ export class CommentPanel extends ItemView {
     actions
       .createEl('button', { cls: 'ilc-empty-link ilc-hotkey-custom', text: t('自定义快捷键…') })
       .addEventListener('click', () => this.plugin.openAddCommentHotkeySettings());
+    guide();
   }
 
   // ── Annotation cards ──────────────────────────────────────────────────────────
@@ -1411,11 +1425,25 @@ export class CommentPanel extends ItemView {
       const add = createEl('button', { cls: 'ilc-more-btn ilc-react-add', text: '☺︎', attr:{ title: t('添加反应'), 'aria-label': t('添加反应') } });
       header.insertBefore(add, moreBtn);
       const picker = entry.createEl('div', { cls: 'ilc-react-picker' });
+      // Like a menu: Esc or a click anywhere else closes it
+      const onAway = (e: MouseEvent) => { if (!picker.contains(e.target as Node) && !add.contains(e.target as Node)) closePicker(); };
+      const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); closePicker(); } };
+      const closePicker = () => {
+        picker.removeClass('is-open');
+        document.removeEventListener('mousedown', onAway, true);
+        document.removeEventListener('keydown', onKey, true);
+      };
       for (const emoji of ['👍', '❤️', '😂', '🙏', '👀']) {
         const b = picker.createEl('button', { cls: 'ilc-react-option', text: emoji });
-        b.addEventListener('click', (e) => { e.stopPropagation(); picker.removeClass('is-open'); void toggle(emoji); });
+        b.addEventListener('click', (e) => { e.stopPropagation(); closePicker(); void toggle(emoji); });
       }
-      add.addEventListener('click', (e) => { e.stopPropagation(); picker.toggleClass('is-open', !picker.hasClass('is-open')); });
+      add.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (picker.hasClass('is-open')) { closePicker(); return; }
+        picker.addClass('is-open');
+        document.addEventListener('mousedown', onAway, true);
+        document.addEventListener('keydown', onKey, true);
+      });
     }
 
     // Unread replies from others: red dot on the run's avatar + "标为已读" under its last entry.

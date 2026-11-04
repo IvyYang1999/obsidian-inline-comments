@@ -1,5 +1,5 @@
 import { t } from './i18n.ts';
-import { type App, Notice, Platform } from 'obsidian';
+import { type App, Notice, Platform, setIcon } from 'obsidian';
 import { REGISTRY_PATH, readRegistry } from './registry.ts';
 import { MembersModal } from './views/MembersModal.ts';
 import { NewSessionModal, createSessionMember, defaultHarness, defaultSessionCwd } from './views/NewSessionModal.ts';
@@ -26,6 +26,8 @@ export interface RosterEntry {
   mailbox?: string;
   /** When true, this item is a UI action (e.g. "管理成员"), not a real agent. */
   isAction?: boolean;
+  /** The action that opens 管理成员 (else an action answers with a new session) */
+  isManage?: boolean;
   /** Working directory for auto-start / resume */
   cwd?: string;
   /** Plugin-created session: start it in a terminal when a letter arrives */
@@ -236,6 +238,17 @@ const newSessionAction = (next: string, harness: HarnessId | null, ready: boolea
   isAction: true,
 });
 
+/** With nobody to @ yet, the first choice: add a member (a new session in a terminal is the second) */
+const addMemberAction = (): RosterEntry => ({
+  name: t('添加第一个成员…'),
+  shortId: '',
+  role: t('从这台电脑上的会话里选一个，起个名字'),
+  status: '在线',
+  source: 'registry',
+  isAction: true,
+  isManage: true,
+});
+
 /** Strip a leading role prefix like "@审计员" so the role column reads as a job title, not a mention */
 function cleanRole(role: string): string {
   return role.replace(/^@/, '').trim();
@@ -289,6 +302,7 @@ export function attachAtSelector(
   };
 
   const insertMention = (entry: RosterEntry, atPos = activeAtPos, notifyOn = notifyCb?.checked ?? true) => {
+    if (entry.isManage) { dismiss(); new MembersModal(app).open(); return; }
     if (entry.isAction) { void createAndMention(nextAutoSessionName(allEntries.map((e) => e.name))); return; }
     if (atPos < 0) return;
     const notify = notifyOn ? '?notify' : '';
@@ -319,6 +333,11 @@ export function attachAtSelector(
     // "用新会话回答" leads the list whenever nothing specific is typed (or the label itself matches)
     const action = newSessionAction(nextAutoSessionName(allEntries.map((e) => e.name)), newHarness, newHarnessReady);
     visible = !q || action.name.includes(query.trim()) ? [action, ...matches] : matches;
+    // Nobody to @ yet: say what a member is, and lead with adding one — not with opening a terminal
+    if (!q && allEntries.length === 0) {
+      listEl.createEl('div', { cls: 'ilc-at-intro', text: t('还没有可以 @ 的成员。成员是这台电脑上的一个 AI 会话（Claude Code 或 Codex）：加进来以后 @ 它，它会读到这条评论，把回复写回来。') });
+      visible = [addMemberAction(), action];
+    }
     if (!q && reach.size > 0 && allEntries.length > 0 && ![...reach.values()].some((r) => r.level === 'now')) {
       listEl.createEl('div', { cls: 'ilc-at-tip', text: t('现在没有能马上回复的会话，可以用新会话回答') });
     }
@@ -349,10 +368,11 @@ export function attachAtSelector(
       const r = entry.isAction ? undefined : reach.get(entry.name);
       const statusCls = r ? LEVEL_CLS[r.level] : STATUS_CLS[entry.status];
       const item = listEl!.createEl('div', {
-        cls: `ilc-at-item ilc-at-status-${statusCls}${i === activeIndex ? ' is-active' : ''}${entry.isAction ? ' ilc-at-newsession' : ''}${entry.isAction && !(newHarness && newHarnessReady) ? ' is-disabled' : ''}`,
+        cls: `ilc-at-item ilc-at-status-${statusCls}${i === activeIndex ? ' is-active' : ''}${entry.isManage ? ' ilc-at-add-member' : entry.isAction ? ' ilc-at-newsession' : ''}${entry.isAction && !entry.isManage && !(newHarness && newHarnessReady) ? ' is-disabled' : ''}`,
       });
 
-      const avatar = item.createEl('span', { cls: `ilc-at-avatar${entry.isAction ? ' ilc-at-avatar-new' : ''}`, text: entry.isAction ? '＋' : entry.name.charAt(0) });
+      const avatar = item.createEl('span', { cls: `ilc-at-avatar${entry.isAction ? ' ilc-at-avatar-new' : ''}`, text: entry.isManage ? '' : entry.isAction ? '＋' : entry.name.charAt(0) });
+      if (entry.isManage) setIcon(avatar, 'user-plus');
       if (!entry.isAction) {
         avatar.setCssStyles({ background: avatarColor(entry.name) });
         const dot = avatar.createEl('span', { cls: `ilc-at-dot ilc-at-dot-${statusCls}` });

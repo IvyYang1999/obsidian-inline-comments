@@ -59,12 +59,13 @@ async function readHead(file: string, bytes = 1024 * 1024): Promise<string> {
   }
 }
 
-function cleanTitle(s: string | undefined): string | undefined {
+export function cleanTitle(s: string | undefined): string | undefined {
   if (!s) return undefined;
   const t = s.replace(/\s+/g, ' ').replace(/^<[^>]+>\s*/g, '').trim();
   if (!t) return undefined;
-  // compaction / resume / harness boilerplate says nothing about the session
-  if (/^This session is being continued|^<system-reminder>|^Caveat:|^<local-command|^<command-|^\[Image|^MemoraX|^Base directory|^You are|^# |^\{|^Filesystem sandboxing|^<environment_context>|^<user_instructions>|^<permissions/i.test(t)) return undefined;
+  // compaction / resume / harness boilerplate says nothing about the session (Codex opens with its
+  // skills and AGENTS.md as markdown headings, so every Codex session was titled "## Skills A skill is…")
+  if (/^This session is being continued|^<system-reminder>|^Caveat:|^<local-command|^<command-|^\[Image|^MemoraX|^Base directory|^You are|^#{1,6} |^\{|^Filesystem sandboxing|^<environment_context>|^<user_instructions>|^<permissions|^Auto mode lets Claude/i.test(t)) return undefined;
   if (/^[a-z0-9_-]{6,}$/i.test(t)) return undefined; // ids / slugs
   return t.length > 48 ? `${t.slice(0, 48)}…` : t;
 }

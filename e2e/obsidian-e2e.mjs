@@ -63,6 +63,8 @@ async function run() {
     await page.locator('.ilc-panel-header .ilc-members-btn').click();
     const membersFromHeader = await page.waitForSelector('.ilc-members-modal', { timeout: 5000 }).then(() => true, () => false);
     check('面板顶栏有「管理成员」按钮，点开成员弹窗', membersFromHeader);
+    const ribbon = await page.evaluate(() => [...document.querySelectorAll('.side-dock-ribbon-action')].map((b) => b.getAttribute('aria-label')).find((l) => l?.includes('评论面板')) ?? null);
+    check('左侧栏图标的提示带产品名 Agent Comments', !!ribbon?.includes('Agent Comments'), ribbon ?? 'none');
     await page.keyboard.press('Escape');
     await page.waitForSelector('.ilc-members-modal', { state: 'detached', timeout: 5000 }).catch(() => {});
 
@@ -915,7 +917,10 @@ async function run() {
       const drafted = await page.waitForSelector('.ilc-card-draft', { timeout: 3000 }).then(() => true, () => false);
       const docAfter = await page.evaluate(() => app.workspace.getLeavesOfType('markdown')[0].view.editor.getValue());
       check('按 ⌘⌥M 真的能添加评论（草稿卡片出现），选中的文字还在', drafted && docAfter === docBefore, JSON.stringify(docAfter));
-      if (drafted) { await page.keyboard.press('Escape'); await sleep(200); }
+      const emptyWhileDraft = await page.evaluate(() => !!document.querySelector('.ilc-panel .ilc-empty'));
+      if (drafted) { await page.locator('.ilc-card-draft .ilc-draft-cancel').click(); await sleep(200); }
+      const emptyAfterCancel = await page.evaluate(() => !!document.querySelector('.ilc-panel .ilc-empty'));
+      check('写第一条评论时旁边不再写「暂无评论」；取消后又回来', drafted && !emptyWhileDraft && emptyAfterCancel, `while=${emptyWhileDraft} after=${emptyAfterCancel}`);
       // Someone who bound ⌘⇧K before: the comment opens and the editor's "delete line" no longer runs too
       const kept = await page.evaluate(async (id) => {
         const hm = app.hotkeyManager;
@@ -946,6 +951,89 @@ async function run() {
         return desc;
       });
       check('设置页显示当前快捷键', settingDesc.includes('⌘⌥M'), settingDesc);
+
+      // The first comment in the note: its card shows as soon as it is sent. The note is saved then —
+      // the panel reads it from disk, and Obsidian's own save comes a second or more later
+      await page.evaluate(() => {
+        const leaf = app.workspace.getLeavesOfType('markdown')[0];
+        app.workspace.setActiveLeaf(leaf, { focus: true });
+        leaf.view.editor.focus();
+        leaf.view.editor.setSelection({ line: 0, ch: 0 }, { line: 0, ch: 4 });
+      });
+      await page.keyboard.press('Meta+Alt+KeyM');
+      await page.waitForSelector('.ilc-card-draft', { timeout: 3000 }).catch(() => {});
+      await page.locator('.ilc-card-draft .ilc-draft-input').fill('第一条评论');
+      await page.locator('.ilc-card-draft .ilc-draft-post').click();
+      await sleep(300);
+      const first = await page.evaluate(async () => ({
+        cards: document.querySelectorAll('.ilc-panel .ilc-card:not(.ilc-card-draft)').length,
+        empty: !!document.querySelector('.ilc-panel .ilc-empty'),
+        header: document.querySelector('.ilc-panel-count')?.textContent ?? null,
+        saved: (await app.vault.adapter.read('empty.md')).includes('第一条评论'),
+      }));
+      check('第一条评论：点发送后 0.3 秒内卡片就在面板里、文件已保存，顶栏写「1 条评论」', first.cards === 1 && !first.empty && first.saved && first.header === '1 条评论', JSON.stringify(first));
+
+      // ── Day 0 for @: a vault with nobody to @ and no _os/ folder at all
+      const osDir = path.join(WORK, 'vault', '_os');
+      const osAside = path.join(WORK, 'os-aside');
+      fs.renameSync(osDir, osAside);
+      try {
+        await page.evaluate(() => document.querySelector('.ilc-panel .ilc-card:not(.ilc-card-draft) .ilc-thread')?.click());
+        await sleep(400);
+        const box = page.locator('.ilc-card-active .ilc-reply-input');
+        await box.click();
+        await page.keyboard.type('@');
+        await page.waitForSelector('.ilc-at-dropdown', { timeout: 5000 }).catch(() => {});
+        await sleep(400);
+        const at0 = await page.evaluate(() => ({
+          intro: document.querySelector('.ilc-at-dropdown .ilc-at-intro')?.textContent ?? null,
+          items: [...document.querySelectorAll('.ilc-at-dropdown .ilc-at-item')].map((i) => ({ name: i.querySelector('.ilc-at-name')?.textContent, active: i.classList.contains('is-active') })),
+        }));
+        check('没有成员时 @：先说「还没有可以 @ 的成员」和成员是什么，默认选中的是「添加第一个成员…」，开终端的新会话排第二',
+          !!at0.intro?.includes('还没有可以 @ 的成员') && at0.items[0]?.name === '添加第一个成员…' && at0.items[0].active && at0.items[1]?.name === '用新会话回答' && !at0.items[1].active,
+          JSON.stringify(at0));
+        await page.keyboard.press('Enter');
+        const opened = await page.waitForSelector('.ilc-members-modal', { timeout: 5000 }).then(() => true, () => false);
+        await sleep(1500);
+        const m0 = await page.evaluate(() => ({
+          empty: document.querySelector('.ilc-members-modal .ilc-members-list .ilc-members-empty')?.textContent ?? null,
+          advancedOpen: document.querySelector('.ilc-members-advanced')?.open ?? null,
+          firstSection: document.querySelector('.ilc-members-modal .ilc-members-section h3')?.textContent ?? null,
+          placeholder: document.querySelector('.ilc-members-modal .ilc-members-name')?.getAttribute('placeholder') ?? null,
+          rows: document.querySelectorAll('.ilc-members-modal .ilc-members-session').length,
+        }));
+        check('……回车打开管理成员：成员在最前，投递和 hook 收进「高级」，名字框写明 2–12 个字',
+          opened && m0.firstSection === '可以 @ 的成员' && m0.advancedOpen === false && m0.placeholder === '名字（2–12 个字）' && !!m0.empty?.includes('起个名字'),
+          JSON.stringify(m0));
+        if (m0.rows > 0) {
+          const name = page.locator('.ilc-members-modal .ilc-members-session .ilc-members-name').first();
+          const add = page.locator('.ilc-members-modal .ilc-members-session .ilc-members-join').first();
+          await name.fill('A');
+          await add.click();
+          await sleep(300);
+          const bad = await page.evaluate(() => {
+            const row = document.querySelector('.ilc-members-modal .ilc-members-session');
+            const err = row?.querySelector('.ilc-members-name-error');
+            return { text: err && !err.classList.contains('ilc-hidden') ? err.textContent : null, invalid: !!row?.querySelector('.ilc-members-name.is-invalid') };
+          });
+          check('……名字太短：错误写在这一行下面（不只弹一下提示）', bad.text === '名字 2–12 个字' && bad.invalid, JSON.stringify(bad));
+          await name.fill('首个成员');
+          await add.click();
+          await sleep(1200);
+          const reg = path.join(osDir, 'comment-agents.json');
+          const saved = fs.existsSync(reg) ? JSON.parse(fs.readFileSync(reg, 'utf8')) : null;
+          const listed = await page.evaluate(() => document.querySelector('.ilc-members-modal .ilc-members-list')?.textContent ?? '');
+          const toast = await page.evaluate(() => [...document.querySelectorAll('.notice')].map((n) => n.textContent).find((x) => x.includes('首个成员')) ?? null);
+          check('……没有 _os/ 的新 vault 也能加入：名单写进文件，成员马上出现在列表里，提示「输入 @首个成员」',
+            !!saved?.agents?.some((a) => a.name === '首个成员') && listed.includes('首个成员') && !!toast?.includes('@首个成员'),
+            `${JSON.stringify(saved?.agents?.map((a) => a.name))} | ${toast}`);
+        } else console.log('  (no local sessions on this machine: first-member add not exercised)');
+        await page.keyboard.press('Escape');
+        await sleep(300);
+      } finally {
+        fs.rmSync(osDir, { recursive: true, force: true });
+        fs.renameSync(osAside, osDir);
+      }
     }
 
     // ── Any harness: the dialog lists only installed CLIs; a Codex member answers every @

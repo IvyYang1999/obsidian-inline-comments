@@ -11,7 +11,7 @@ export async function renderAgentRegistrySection(
 ): Promise<void> {
   new Setting(containerEl).setName(t('评论 @ 成员')).setHeading();
   const desc = containerEl.createEl('p', { cls: 'setting-item-description' });
-  desc.appendText(t('可以在评论里 @ 的 AI 会话。添加、移除和自动发现本机会话，都在 '));
+  desc.appendText(t('在评论里输入 @ 时，列出的就是这份名单：这台电脑上加进来的 AI 会话。添加、移除和自动发现本机会话，都在 '));
   const openBtn = desc.createEl('button', { cls: 'ilc-members-open', text: t('成员管理…') });
   openBtn.addEventListener('click', () => new MembersModal(app).open());
   desc.appendText(t(' 里。'));

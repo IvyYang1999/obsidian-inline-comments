@@ -47,10 +47,8 @@ export class MembersModal extends Modal {
     contentEl.createEl('h2', { text: t('评论 @ 成员') });
     contentEl.createEl('p', {
       cls: 'ilc-members-intro',
-      text: t('在评论里输入 @ 可以点名一个 AI 会话。勾选「通知对方」，插件会把这条评论写成一封信放进它的信箱，它看到后会把回复写回这里。'),
+      text: t('成员是这台电脑上的一个 AI 会话（Claude Code 或 Codex）。把它加进来，以后在评论里 @ 它，它就会读到这条评论，把回复写回这里。'),
     });
-    const status = contentEl.createEl('div', { cls: 'ilc-members-hint ilc-members-delivery' });
-    void this.renderDeliveryStatus(status);
 
     // ── Members
     const s1 = contentEl.createEl('section', { cls: 'ilc-members-section' });
@@ -71,13 +69,16 @@ export class MembersModal extends Modal {
     const refresh = tools.createEl('button', { cls: 'ilc-members-refresh', text: t('刷新') });
     s2.createEl('p', {
       cls: 'ilc-members-hint',
-      text: t('自动发现最近活跃的 Claude Code / Codex 会话。给它起个名字点「加入」，之后就能在评论里 @ 它。'),
+      text: t('最近 48 小时用过的 Claude Code / Codex 会话。选一个，起个名字（2–12 个字），点「加入」。在这个 vault 里工作的排在前面。'),
     });
-    this.sessionsEl = s2.createEl('div', { cls: 'ilc-members-list' });
+    this.sessionsEl = s2.createEl('div', { cls: 'ilc-members-sessions' });
     refresh.addEventListener('click', () => void this.renderSessions());
 
-    // ── Other ways
-    const s3 = contentEl.createEl('section', { cls: 'ilc-members-section ilc-members-section-muted' });
+    // ── Advanced: how letters travel, the wake hook, other ways to join — folded, a first member needs none of it
+    const s3 = contentEl.createEl('details', { cls: 'ilc-members-section ilc-members-section-muted ilc-members-advanced' });
+    const summary = s3.createEl('summary', { text: t('高级：投递、唤醒 hook、其他加入方式') });
+    const status = s3.createEl('div', { cls: 'ilc-members-hint ilc-members-delivery' });
+    void this.renderDeliveryStatus(status, summary);
     s3.createEl('h3', { text: t('其他加入方式') });
     const ul = s3.createEl('ul');
     ul.createEl('li', { text: t('在任意 Claude Code / Codex 会话里输入 /comment-join，会话会自己起名并加入。') });
@@ -95,8 +96,9 @@ export class MembersModal extends Modal {
   }
 
   /** "投递 … · 唤醒 hook …" line with an install button when needed */
-  private async renderDeliveryStatus(el: HTMLElement): Promise<void> {
+  private async renderDeliveryStatus(el: HTMLElement, summary?: HTMLElement): Promise<void> {
     el.empty();
+    summary?.querySelector('.ilc-members-advanced-flag')?.remove();
     const plugin = this.plugin;
     const root: string = plugin?.settings?.mailboxRoot || DEFAULT_MAILBOX_ROOT;
     const enabled: boolean = plugin?.settings?.enableMentionDelivery ?? true;
@@ -115,11 +117,13 @@ export class MembersModal extends Modal {
       return;
     }
     el.createEl('span', { cls: 'ilc-members-warn', text: st.installed ? t('需要重装') : t('未安装') });
+    // Folded away, but not hidden: the summary says the hook needs attention
+    summary?.createEl('span', { cls: 'ilc-members-advanced-flag', text: st.installed ? t(' · 唤醒 hook 需要重装') : t(' · 唤醒 hook 未安装') });
     const btn = el.createEl('button', { cls: 'ilc-members-join', text: st.installed ? t('重装') : t('安装') });
     btn.setAttribute('title', t('写入 {0}（只加自己的条目，先备份）', [st.settingsPath]));
     btn.addEventListener('click', async () => {
       await plugin.installHooks();
-      await this.renderDeliveryStatus(el);
+      await this.renderDeliveryStatus(el, summary);
     });
     el.createEl('div', {
       cls: 'ilc-members-warn-hint',
@@ -134,7 +138,7 @@ export class MembersModal extends Modal {
     el.empty();
     const entries = (await loadRoster(this.app)).filter((e) => !e.isAction);
     if (entries.length === 0) {
-      el.createEl('div', { cls: 'ilc-members-empty', text: t('还没有成员。从下面的会话里加一个，或让会话自己运行 /comment-join。') });
+      el.createEl('div', { cls: 'ilc-members-empty', text: t('还没有成员。在下面选一个会话，起个名字，点「加入」。') });
       return;
     }
     const reach = await memberReach(this.app, entries);
@@ -245,12 +249,12 @@ export class MembersModal extends Modal {
     this.renderSessionRows();
   }
 
-  /** Render the discovered sessions through the search filter */
+  /** Render the discovered sessions through the search filter: this vault's first, the rest folded */
   private renderSessionRows(): void {
     const el = this.sessionsEl;
     el.empty();
     if (this.sessions.length === 0) {
-      el.createEl('div', { cls: 'ilc-members-empty', text: t('最近 48 小时没有发现 Claude Code / Codex 会话。') });
+      el.createEl('div', { cls: 'ilc-members-list' }).createEl('div', { cls: 'ilc-members-empty', text: t('最近 48 小时没有发现 Claude Code / Codex 会话。') });
       return;
     }
     const q = (this.searchEl?.value ?? '').trim().toLowerCase();
@@ -259,11 +263,30 @@ export class MembersModal extends Modal {
         .some((v) => v && v.toLowerCase().includes(q));
     const rows = this.sessions.filter(hit);
     if (rows.length === 0) {
-      el.createEl('div', { cls: 'ilc-members-empty', text: t('没有匹配「{0}」的会话', [q]) });
+      el.createEl('div', { cls: 'ilc-members-list' }).createEl('div', { cls: 'ilc-members-empty', text: t('没有匹配「{0}」的会话', [q]) });
       return;
     }
     const { joined, left } = this.registrySnapshot;
-    for (const s of rows) this.renderSessionRow(el, s, joined.get(s.sessionId.toLowerCase()), left.get(s.sessionId.toLowerCase()));
+    const render = (list: HTMLElement, s: LocalSession) => this.renderSessionRow(list, s, joined.get(s.sessionId.toLowerCase()), left.get(s.sessionId.toLowerCase()));
+    // A session working in (or above) this vault is the likely one to add; others are other projects
+    const vault: string | null = this.plugin?.vaultBasePath?.() ?? null;
+    const inVault = (cwd?: string) => !!vault && !!cwd && (cwd === vault || cwd.startsWith(`${vault}/`) || vault.startsWith(`${cwd}/`));
+    const here = rows.filter((s) => inVault(s.cwd));
+    const elsewhere = rows.filter((s) => !inVault(s.cwd));
+    if (here.length > 0) {
+      el.createEl('div', { cls: 'ilc-members-subhead', text: t('在这个 vault 里工作的会话') });
+      const list = el.createEl('div', { cls: 'ilc-members-list' });
+      for (const s of here) render(list, s);
+    }
+    if (elsewhere.length === 0) return;
+    const box = el.createEl('details', { cls: 'ilc-members-elsewhere' });
+    box.open = here.length === 0 || !!q;
+    box.createEl('summary', {
+      cls: 'ilc-members-subhead',
+      text: here.length > 0 ? t('其他文件夹里的会话（{0}）', [elsewhere.length]) : t('这个 vault 里没有会话，下面是其他文件夹里的（{0}）', [elsewhere.length]),
+    });
+    const list = box.createEl('div', { cls: 'ilc-members-list' });
+    for (const s of elsewhere) render(list, s);
   }
 
   private renderSessionRow(container: HTMLElement, s: LocalSession, joinedAs?: string, leftAs?: string): void {
@@ -305,22 +328,40 @@ export class MembersModal extends Modal {
       }
       return;
     }
+    // The rule is in the box before anyone types; a wrong name is said under the row, not in a toast
     const input = action.createEl('input', {
       cls: 'ilc-members-name',
-      attr: { type: 'text', placeholder: t('起个名字'), maxlength: '12', value: leftAs ?? '' },
+      attr: { type: 'text', placeholder: t('名字（2–12 个字）'), maxlength: '12', value: leftAs ?? '' },
     }) as HTMLInputElement;
     const btn = action.createEl('button', { cls: 'ilc-members-join mod-cta', text: t('加入') });
+    const error = main.createEl('div', { cls: 'ilc-members-sub ilc-members-name-error ilc-hidden' });
+    const fail = (msg: string) => {
+      error.setText(msg);
+      error.removeClass('ilc-hidden');
+      input.addClass('is-invalid');
+      input.focus();
+    };
+    input.addEventListener('input', () => { error.addClass('ilc-hidden'); input.removeClass('is-invalid'); });
     const submit = async () => {
       const err = validateName(input.value);
-      if (err) { new Notice(err); input.focus(); return; }
-      const res = await upsertAgent(this.app, { name: input.value, sessionId: s.sessionId, harness: s.harness });
-      if (!res.ok) { new Notice(res.error); input.focus(); return; }
-      new Notice(t('「{0}」已加入，评论里输入 @ 即可点名', [input.value.trim()]));
+      if (err) { fail(err); return; }
+      const name = input.value.trim();
+      btn.disabled = true;
+      try {
+        const res = await upsertAgent(this.app, { name, sessionId: s.sessionId, harness: s.harness });
+        if (!res.ok) { fail(res.error); return; }
+      } catch (e) {
+        fail(t('没能加入：{0}', [String((e as Error)?.message ?? e)]));
+        return;
+      } finally {
+        btn.disabled = false;
+      }
+      new Notice(t('「{0}」已加入：在评论里输入 @{0} 就能点名它', [name]));
       await Promise.all([this.renderMembers(), this.renderSessions()]);
       // First member ever → offer the hook right away so the loop closes
       const st = await this.plugin?.hookStatus?.();
       if (st && !st.installed && s.harness === 'claude') {
-        new Notice(t('提示：装上「唤醒 hook」后，这个会话下一次说话时就会自动看到你的留言（弹窗顶部可安装）'), 8000);
+        new Notice(t('提示：装上「唤醒 hook」后，这个会话下一次说话时就会自动看到你的留言（在弹窗底部的「高级」里安装）'), 8000);
       }
     };
     btn.addEventListener('click', () => void submit());

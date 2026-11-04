@@ -41,6 +41,9 @@ export async function readRegistry(app: App): Promise<RegistryFile> {
 }
 
 export async function writeRegistry(app: App, data: RegistryFile): Promise<void> {
+  // A new vault has no _os/ yet, and writing a file does not create its folder: the first member was lost
+  const dir = REGISTRY_PATH.slice(0, REGISTRY_PATH.lastIndexOf('/'));
+  if (!(await app.vault.adapter.exists(dir))) await app.vault.adapter.mkdir(dir);
   await app.vault.adapter.write(REGISTRY_PATH, JSON.stringify(data, null, 2));
 }
 

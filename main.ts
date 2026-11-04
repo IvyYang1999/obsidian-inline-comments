@@ -207,7 +207,8 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     });
 
     // Ribbon icon
-    this.addRibbonIcon('message-square', t('评论面板'), async () => {
+    // The product's name in the tooltip: "Comments" alone reads like a core Obsidian feature
+    this.addRibbonIcon('message-square', t('Agent Comments 评论面板'), async () => {
       await this.activatePanel();
     });
 
@@ -685,10 +686,15 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     if (!panel) return;
 
     const to = from + sel.length;
-    panel.showDraftCard(sel, from, (markup: string) => {
+    panel.showDraftCard(sel, from, async (markup: string) => {
       const fromPos = editor.offsetToPos(from);
       const toPos   = editor.offsetToPos(to);
       editor.replaceRange(markup, fromPos, toPos);
+      // Save now: the panel (and a quick reply to this comment) reads the note from disk, and
+      // Obsidian's own save comes a second or more later — until then the card would not be there
+      const view = this.app.workspace.getLeavesOfType('markdown').map((l) => l.view)
+        .find((v): v is MarkdownView => v instanceof MarkdownView && v.editor === editor);
+      await view?.save();
     });
   }
 
@@ -1256,6 +1262,12 @@ class ILCSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
+    // Where to read how it all works, before the knobs
+    const guide = containerEl.createEl('p', { cls: 'setting-item-description ilc-settings-guide' });
+    guide.appendText(t('第一次用？先看看 '));
+    guide.createEl('a', { text: t('使用说明'), href: getLocale() === 'en' ? 'https://agent-comments.yytyyf.com/en/' : 'https://agent-comments.yytyyf.com/' });
+    guide.appendText(t('：怎么加评论、怎么 @ 一个 AI 会话让它回复。'));
+
     // ── Author ──
     new Setting(containerEl)
       .setName(t('默认署名'))
@@ -1320,10 +1332,13 @@ class ILCSettingTab extends PluginSettingTab {
       }),
     );
 
-    // ── AI agents ──
-    new Setting(containerEl).setName(t('AI 助手')).setHeading();
+    // ── Agent registry (评论互动成员): what @ uses, so it comes first ──
+    renderAgentRegistrySection(containerEl, this.app);
+
+    // ── AI agents: how AI authors look (and the older 「请它回应」) — not who can be @-ed ──
+    new Setting(containerEl).setName(t('AI 作者的头像')).setHeading();
     containerEl.createEl('p', {
-      text: t('当评论作者名与此处配置的 AI 名称匹配时，会显示对应的头像和颜色。'),
+      text: t('评论作者名和这里的名字一样时，显示这里的头像和颜色；填了 Claude 会话 ID 的，评论里提到它时会出现「请它回应」。在评论里 @ 谁，用的是上面的「评论 @ 成员」，和这里无关。'),
       cls: 'setting-item-description',
     });
 
@@ -1374,9 +1389,6 @@ class ILCSettingTab extends PluginSettingTab {
         });
         return drop;
       });
-
-    // ── Agent registry (评论互动成员) ──
-    renderAgentRegistrySection(containerEl, this.app);
 
     // ── Language ──
     new Setting(containerEl)
@@ -1583,8 +1595,8 @@ class ILCSettingTab extends PluginSettingTab {
         attr: {
           type: 'text',
           value: agent.sessionId ?? '',
-          title: t('会话 ID'),
-          placeholder: t('会话 ID（填了才能 @它回应）'),
+          title: t('Claude 会话 ID。填了以后，评论里提到它时可以点「请它回应」；@ 点名不用这里'),
+          placeholder: t('会话 ID（可选）'),
         },
       }) as HTMLInputElement;
       sessionIn.addEventListener('change', async () => {
