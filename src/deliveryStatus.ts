@@ -11,8 +11,8 @@ import { HOLD_MS } from './claudeInbox.ts';
 
 export type DeliveryState = 'sending' | 'mailbox' | 'handed' | 'failed';
 /** How a handed letter reached the session */
-export type DeliveryRoute = 'inbox' | 'terminal' | 'background' | 'hook';
-export type DeliveryReason = 'held' | 'no-inbox' | 'not-autostart' | 'not-logged-in' | 'missing-cli' | 'error';
+export type DeliveryRoute = 'inbox' | 'terminal' | 'background' | 'hook' | 'copied';
+export type DeliveryReason = 'held' | 'no-inbox' | 'not-autostart' | 'no-terminal' | 'not-logged-in' | 'missing-cli' | 'error';
 
 export interface DeliveryRecord {
   /** The mention's key (mentionDelivery.mentionKey) */
@@ -39,7 +39,7 @@ export interface DeliveryRecord {
 export interface DeliveryLine {
   text: string;
   tone: 'info' | 'busy' | 'warn' | 'error' | 'done';
-  action?: 'retry' | 'hook' | 'login' | 'open';
+  action?: 'retry' | 'hook' | 'login' | 'open' | 'copy';
 }
 
 /** A handed letter with no reply after this long gets "还没回复 · 打开它的会话" */
@@ -57,7 +57,7 @@ function doneLine(r: DeliveryRecord, now: number): DeliveryLine {
   const when = clock(r.at, now);
   const how = r.state !== 'handed' ? t('{0} 放进信箱', [when])
     : r.route === 'background' ? t('{0} 交给后台', [when])
-      : r.route === 'terminal' ? t('{0} 在终端打开', [when])
+      : r.route === 'terminal' || r.route === 'copied' ? t('{0} 在终端打开', [when])
         : r.route === 'hook' ? t('{0} 由 hook 递过去', [when])
           : t('{0} 送进会话', [when]);
   return { text: t('已回复 · {0}', [how]), tone: 'done' };
@@ -72,6 +72,8 @@ export function deliveryLine(r: DeliveryRecord, ctx: { replied: boolean; now: nu
     // Held at the session's door: switching its mode lets it in, no restart needed
     if (r.reason === 'held' && ctx.now - r.at < HOLD_MS) return { text: t('{0} 跳过了权限确认，留言在门口等：5 分钟内把它换个权限模式就直接送进去', [who]), tone: 'info', action: 'open' };
     if (r.reason === 'not-autostart') return { text: t('已放进 {0} 的信箱，但 {1} 会话不会自己看信箱', [who, ctx.label]), tone: 'warn' };
+    // The plugin cannot open a terminal here (Linux, Windows): the user runs the start command
+    if (r.reason === 'no-terminal') return { text: t('{0} 没开着，插件在这台电脑上打不开终端：复制启动命令，粘到终端里运行，它就会收到这条', [who]), tone: 'warn', action: 'copy' };
     if (!ctx.hookInstalled) return { text: t('已放进 {0} 的信箱，但它看不到：没装唤醒 hook', [who]), tone: 'warn', action: 'hook' };
     if (r.reason === 'held') return { text: t('已放进 {0} 的信箱：它跳过了权限确认，下次说话时会看到；换了权限模式可以重试', [who]), tone: 'info', action: 'retry' };
     if (r.reason === 'no-inbox') return { text: t('已放进 {0} 的信箱：它开着，但收不到直送，下次说话时会看到', [who]), tone: 'info' };
@@ -79,6 +81,8 @@ export function deliveryLine(r: DeliveryRecord, ctx: { replied: boolean; now: nu
   }
   if (r.state === 'handed') {
     if (ctx.now - r.at > STALE_MS) return { text: t('{0} 还没回复', [who]), tone: 'warn', action: 'open' };
+    // Nothing runs until the user pastes it: say so, and keep the button in case the clipboard moved on
+    if (r.route === 'copied') return { text: t('启动命令已复制：在终端里运行后，{0} 就会收到这条', [who]), tone: 'info', action: 'copy' };
     const text = r.route === 'background' ? t('{0} 正在后台回复…', [who])
       : r.route === 'terminal' ? t('已在终端打开 {0}，处理中…', [who])
         : r.route === 'hook' ? t('{0} 已看到留言，处理中…', [who])

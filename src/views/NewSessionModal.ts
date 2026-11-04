@@ -4,6 +4,7 @@ import { readRegistry, upsertAgent, validateName } from '../registry.ts';
 import type { RosterEntry } from '../atSelector.ts';
 import { electronRemote } from '../node.ts';
 import { HARNESSES, detectHarnesses, type HarnessId } from '../harnesses.ts';
+import { canOpenTerminal } from '../sessionLauncher.ts';
 
 /** Native folder picker; null when cancelled or unavailable. `ILC_PICK_FOLDER` answers for it in e2e. */
 async function pickFolder(title: string, start: string): Promise<string | null> {
@@ -141,9 +142,11 @@ export class NewSessionModal extends Modal {
       return;
     }
     this.harness = preferred ?? installed[0];
-    const describe = (id: HarnessId) => setting.setDesc(HARNESSES.find((h) => h.id === id)?.mode === 'terminal'
-      ? t('在终端里打开，之后可以继续在终端或评论里跟它聊')
-      : t('在后台回复，每封留言都接着同一个会话；想接着聊，在成员列表里点它的 ⋯ →「在终端里接着聊」'));
+    const describe = (id: HarnessId) => setting.setDesc(HARNESSES.find((h) => h.id === id)?.mode !== 'terminal'
+      ? t('在后台回复，每封留言都接着同一个会话；想接着聊，在成员列表里点它的 ⋯ →「在终端里接着聊」')
+      : canOpenTerminal()
+        ? t('在终端里打开，之后可以继续在终端或评论里跟它聊')
+        : t('插件在这台电脑上打不开终端：@ 它以后，在卡片上复制启动命令，到终端里运行'));
     describe(this.harness);
     setting.addDropdown((d) => {
       for (const id of installed) d.addOption(id, HARNESSES.find((h) => h.id === id)!.label);

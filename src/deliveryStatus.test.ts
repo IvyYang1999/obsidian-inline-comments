@@ -27,6 +27,11 @@ describe('deliveryLine', () => {
     expect(deliveryLine(rec({ reason: 'no-inbox' }), ctx())?.text).toContain('它开着，但收不到直送');
     expect(deliveryLine(rec({ reason: 'not-autostart' }), ctx({ label: 'Codex' }))).toMatchObject({ tone: 'warn', text: expect.stringContaining('Codex 会话不会自己看信箱') });
   });
+  it('no terminal to open (Linux, Windows): offers the start command, and keeps offering it once copied', () => {
+    expect(deliveryLine(rec({ reason: 'no-terminal' }), ctx({ hookInstalled: false }))).toMatchObject({ tone: 'warn', action: 'copy', text: expect.stringContaining('复制启动命令') });
+    expect(deliveryLine(rec({ state: 'handed', route: 'copied' }), ctx())).toMatchObject({ tone: 'info', action: 'copy', text: expect.stringContaining('在终端里运行后，助理 就会收到') });
+    expect(deliveryLine(rec({ state: 'handed', route: 'copied' }), ctx({ now: 1000 + STALE_MS + 1 }))).toMatchObject({ action: 'open', text: '助理 还没回复' });
+  });
   it('handed: says how it got there, then turns into 还没回复 with a way to look', () => {
     expect(deliveryLine(rec({ state: 'handed', route: 'inbox' }), ctx())).toMatchObject({ tone: 'busy', text: expect.stringContaining('已送进 助理 的会话') });
     expect(deliveryLine(rec({ state: 'handed', route: 'background' }), ctx())?.text).toContain('后台');

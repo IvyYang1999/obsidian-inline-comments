@@ -7,6 +7,7 @@ import { validateName, nextAutoSessionName } from './registry.ts';
 import { HARNESSES, detectHarnesses, harnessDef, type HarnessId } from './harnesses.ts';
 import { claudeInboxHolds, findClaudeSession } from './claudeInbox.ts';
 import { REACH_ORDER, decideReach, harnessLoggedIn, legacyReach, levelHint, unknownHarnessReach, type Reach } from './reach.ts';
+import { canOpenTerminal } from './sessionLauncher.ts';
 
 export { REGISTRY_PATH };
 
@@ -171,7 +172,7 @@ export async function memberReach(app: App, entries: RosterEntry[]): Promise<Map
       harness: h.id, label: h.label, headless: h.mode === 'headless', autoStart: !!e.autoStart,
       open, noInbox, inboxGone, holds, desktop, hookInstalled: !!hookInstalled, cliInstalled: !!bins[h.id],
       loggedIn: h.mode === 'headless' ? await signedIn(app, h.id) : true,
-      canOpenTerminal: process.platform === 'darwin',
+      canOpenTerminal: canOpenTerminal(),
     }));
   }));
   return out;
@@ -194,9 +195,10 @@ function newSessionHint(name: string, harness: HarnessId | null, signedIn = true
   const h = harness ? HARNESSES.find((x) => x.id === harness) : undefined;
   if (!h) return t('本机没找到 Claude Code、Codex 或 Gemini CLI');
   if (!signedIn) return t('会用 {0} 开「{1}」，但 {0} 好像还没登录', [h.label, name]);
-  return h.mode === 'terminal'
+  if (h.mode !== 'terminal') return t('用 {0} 在后台开「{1}」回复，之后 @{1} 都接着它聊', [h.label, name]);
+  return canOpenTerminal()
     ? t('用 {0} 在终端里开「{1}」，之后 @{1} 都接着它聊', [h.label, name])
-    : t('用 {0} 在后台开「{1}」回复，之后 @{1} 都接着它聊', [h.label, name]);
+    : t('给你一条启动「{1}」的命令，在终端里用 {0} 运行；之后 @{1} 都接着它聊', [h.label, name]);
 }
 
 const LEVEL_CLS: Record<Reach['level'], string> = { now: 'online', later: 'idle', none: 'offline' };
@@ -328,8 +330,10 @@ export function attachAtSelector(
         const item = listEl.createEl('div', { cls: 'ilc-at-item ilc-at-create is-active' });
         item.createEl('span', { cls: 'ilc-at-avatar ilc-at-avatar-new', text: '＋' });
         const main = item.createEl('span', { cls: 'ilc-at-main' });
-        main.createEl('span', { cls: 'ilc-at-name', text: t('创建新会话「{0}」并 @ 它', [createCandidate]) });
-        main.createEl('span', { cls: 'ilc-at-role', text: newSessionHint(createCandidate, newHarness, newHarnessReady) });
+        const createName = t('创建新会话「{0}」并 @ 它', [createCandidate]);
+        const createHint = newSessionHint(createCandidate, newHarness, newHarnessReady);
+        main.createEl('span', { cls: 'ilc-at-name', text: createName, attr: { title: createName } });
+        main.createEl('span', { cls: 'ilc-at-role', text: createHint, attr: { title: createHint } });
         item.addEventListener('mousedown', (e) => e.preventDefault());
         item.addEventListener('click', (e) => { e.stopPropagation(); void createAndMention(createCandidate!); });
       } else {

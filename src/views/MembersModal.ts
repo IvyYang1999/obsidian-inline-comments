@@ -7,6 +7,7 @@ import { discoverLocalSessions, shortCwd, timeAgo, type LocalSession } from '../
 import { DEFAULT_MAILBOX_ROOT } from '../mentionDelivery.ts';
 import { harnessDef } from '../harnesses.ts';
 import { claudeInboxHolds, findClaudeSession } from '../claudeInbox.ts';
+import { canOpenTerminal } from '../sessionLauncher.ts';
 
 const STATUS_CLS: Record<string, string> = { '在线': 'online', '闲置': 'idle', '离线': 'offline' };
 const LEVEL_CLS: Record<Reach['level'], string> = { now: 'online', later: 'idle', none: 'offline' };
@@ -64,7 +65,7 @@ export class MembersModal extends Modal {
     const tools = h2.createEl('div', { cls: 'ilc-members-tools' });
     this.searchEl = tools.createEl('input', {
       cls: 'ilc-members-search',
-      attr: { type: 'search', placeholder: t('搜标题 / 目录 / 短 id'), spellcheck: 'false' },
+      attr: { type: 'search', placeholder: t('搜索会话'), title: t('按标题、目录或短 id 搜'), spellcheck: 'false' },
     }) as HTMLInputElement;
     this.searchEl.addEventListener('input', () => this.renderSessionRows());
     const refresh = tools.createEl('button', { cls: 'ilc-members-refresh', text: t('刷新') });
@@ -158,13 +159,17 @@ export class MembersModal extends Modal {
       const tag = line1.createEl('span', { cls: 'ilc-at-source ilc-at-source-muted', text: t('自动启动') });
       tag.setAttribute('title', headless
         ? t('有留言时，插件在后台接着这个会话回复')
-        : t('有留言且它没在运行时，插件会在终端里启动/恢复这个会话并把留言交给它'));
+        : canOpenTerminal()
+          ? t('有留言且它没在运行时，插件会在终端里启动/恢复这个会话并把留言交给它')
+          : t('有留言且它没在运行时，卡片上会给你一条启动命令，到终端里运行就把留言交给它'));
     }
-    line1.createEl('span', { cls: 'ilc-members-status', text: reach?.text ?? statusLabel(e.status) });
+    const status = reach?.text ?? statusLabel(e.status);
+    line1.createEl('span', { cls: 'ilc-members-status', text: status, attr: { title: status } });
     const line2 = main.createEl('div', { cls: 'ilc-members-sub' });
     line2.appendText(e.source === 'registry' ? t('自己加入的会话') : t('花名册在编'));
     if (e.role) line2.appendText(` · ${e.role.replace(/^@/, '')}`);
     line2.appendText(` · ${e.shortId}`);
+    line2.setAttribute('title', line2.textContent ?? '');
 
     if (reach?.fix) {
       const fix = reach.fix;
@@ -270,10 +275,12 @@ export class MembersModal extends Modal {
     const main = row.createEl('div', { cls: 'ilc-members-main' });
     const line1 = main.createEl('div', { cls: 'ilc-members-line' });
     line1.createEl('span', { cls: 'ilc-at-source', text: harnessDef(s.harness)?.label ?? s.harness });
-    line1.createEl('span', { cls: 'ilc-members-title', text: s.title ?? shortCwd(s.cwd) ?? s.shortId });
+    const title = s.title ?? shortCwd(s.cwd) ?? s.shortId;
+    line1.createEl('span', { cls: 'ilc-members-title', text: title, attr: { title: s.title ?? s.cwd ?? s.shortId } });
     const line2 = main.createEl('div', { cls: 'ilc-members-sub' });
     const bits = [s.running ? t('运行中') : timeAgo(s.lastActive), shortCwd(s.cwd), s.shortId].filter(Boolean);
     line2.setText(bits.join(' · '));
+    if (s.cwd) line2.setAttribute('title', s.cwd);
     // A joined session says how it gets letters in its member row above; saying it again here doubled it
     if (joinedAs) { /* status shown with the member */ } else if (this.inboxGone.has(s.sessionId.toLowerCase())) {
       const warn = main.createEl('div', { cls: 'ilc-members-sub ilc-members-holds', text: t('它的收信口文件不见了：@ 它要等它下次说话；重开这个会话就能直接送到') });
@@ -291,7 +298,9 @@ export class MembersModal extends Modal {
       action.createEl('span', { cls: 'ilc-members-joined', text: t('已加入 · {0}', [joinedAs]) });
       if (!s.running && s.harness === 'claude') {
         const resume = action.createEl('button', { cls: 'ilc-members-resume', text: t('在终端恢复') });
-        resume.setAttribute('title', t('打开终端运行 claude --resume，恢复的是这个会话本身；它一启动就会收到未读留言'));
+        resume.setAttribute('title', canOpenTerminal()
+          ? t('打开终端运行 claude --resume，恢复的是这个会话本身；它一启动就会收到未读留言')
+          : t('复制 claude --resume 命令，到终端里运行，恢复的是这个会话本身；它一启动就会收到未读留言'));
         resume.addEventListener('click', () => this.plugin?.resumeInTerminal?.(s.sessionId, s.cwd));
       }
       return;

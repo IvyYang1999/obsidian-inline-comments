@@ -22,6 +22,10 @@ describe('decideReach: Claude Code', () => {
     expect(decideReach(claude({ autoStart: true, cliInstalled: true }))).toMatchObject({ level: 'now' });
     expect(decideReach(claude({ autoStart: true, cliInstalled: false })).level).not.toBe('now');
   });
+  it('where no terminal can be opened, the start command is offered instead (even without the hook)', () => {
+    expect(decideReach(claude({ autoStart: true, cliInstalled: true, canOpenTerminal: false }))).toMatchObject({ level: 'later', text: expect.stringContaining('复制启动命令') });
+    expect(decideReach(claude({ autoStart: true, cliInstalled: true, canOpenTerminal: false })).fix).toBeUndefined();
+  });
   it('bypass or closed sessions wait for the hook', () => {
     expect(decideReach(claude({ open: true, holds: true, hookInstalled: true }))).toMatchObject({ level: 'later', text: expect.stringContaining('跳过了权限确认') });
     expect(decideReach(claude({ open: true, holds: true, hookInstalled: true })).text).toContain('换个权限模式');

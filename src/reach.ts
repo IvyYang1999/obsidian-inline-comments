@@ -70,6 +70,8 @@ export function decideReach(f: ReachFacts): Reach {
   }
   if (f.open && !f.holds) return { level: 'now', text: f.desktop ? t('开着（Claude 客户端），直接送进去') : t('开着（终端），直接送进去') };
   if (!f.open && f.autoStart && f.cliInstalled && f.canOpenTerminal) return { level: 'now', text: t('没开着，@ 时会在终端里打开它') };
+  // No terminal the plugin can open (Linux, Windows): the card hands the user the start command
+  if (!f.open && f.autoStart && f.cliInstalled) return { level: 'later', text: t('没开着：@ 后在卡片上复制启动命令，到终端里运行它就会收到') };
   // A session that skips permission prompts holds letters from other programs; switching its
   // mode takes effect at once (no restart), so the text says so
   if (f.hookInstalled) return { level: 'later', text: f.open ? t('它跳过了权限确认，要等它下次说话；换个权限模式就能直接送到') : t('没开着，下次打开它时会看到') };

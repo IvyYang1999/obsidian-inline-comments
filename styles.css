@@ -238,6 +238,8 @@ body {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+/* The card you are working in shows more of the passage it is about */
+.ilc-card-active .ilc-card-preview-text { -webkit-line-clamp: 6; }
 
 /* ─── Thread ─────────────────────────────────────────────────────────────────── */
 .ilc-thread { padding: 2px 0 6px; }
@@ -262,7 +264,7 @@ body {
 .ilc-entry-cont { padding-top: 0; }
 .ilc-entry-cont.ilc-entry-has-prev::before { height: 100%; }
 .ilc-entry-cont.ilc-entry-has-next::after { top: 0; }
-.ilc-entry-cont .ilc-entry-header { position: absolute; top: 0; right: var(--ilc-gutter); min-height: 0; gap: 4px; }
+.ilc-entry-cont .ilc-entry-header { position: absolute; top: 0; right: var(--ilc-gutter); min-height: 0; gap: 8px; }
 .ilc-entry-cont .ilc-entry-avatar,
 .ilc-entry-cont .ilc-entry-author,
 .ilc-entry-cont .ilc-entry-date { display: none; }
@@ -324,12 +326,22 @@ body {
   border: 2px solid var(--ilc-surface);
 }
 
+/* On a narrow panel the header row runs out of room: the type chip gives way first, then a long
+   name is cut with …; a name never breaks one character per line */
 .ilc-entry-author {
   font-size: var(--ilc-font-meta);
   font-weight: 600;
   color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 2.2em;
 }
 .ilc-entry-chip {
+  flex-shrink: 4;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 10.5px;
   font-weight: 600;
   line-height: 1;
@@ -341,6 +353,7 @@ body {
 }
 .ilc-entry-date {
   margin-left: auto;
+  flex-shrink: 0;
   font-size: var(--ilc-font-small);
   color: var(--text-muted);
   white-space: nowrap;
@@ -421,6 +434,7 @@ body {
 .ilc-reply-btn-row {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 6px;
 }
 .ilc-reply-submit,
@@ -447,6 +461,7 @@ body {
    found without hunting, and tapped on a touch screen. A comment's own ☺ ⋯ show on the focused card
    and on the comment under the mouse. */
 .ilc-more-btn {
+  position: relative;
   flex-shrink: 0;
   height: 18px !important;
   min-height: 0 !important;
@@ -460,11 +475,14 @@ body {
   line-height: 18px;
   transition: opacity var(--ilc-trans-std), color var(--ilc-trans-std);
 }
+/* The glyph is small; what takes the click is bigger (30px tall, out to half the gap on each side),
+   so a near miss still hits the button rather than the text under it */
+.ilc-more-btn::after { content: ''; position: absolute; inset: -6px -3px; }
 /* two classes, to outrank Obsidian's button:not(.clickable-icon) colour */
 .ilc-card .ilc-more-btn { color: var(--text-faint); }
 /* The rule follows the text height; the button is capped at 18px so it can't stretch the row */
 .ilc-card-preview .ilc-more-btn { align-self: flex-start; }
-.ilc-card-preview .ilc-more-btn + .ilc-more-btn { margin-left: -6px; }
+.ilc-card-preview .ilc-more-btn + .ilc-more-btn { margin-left: -4px; }
 .ilc-card:hover .ilc-card-preview .ilc-more-btn,
 .ilc-card-active .ilc-card-preview .ilc-more-btn { color: var(--text-muted); }
 /* hidden: zero width, cancelling the flex gap, so the date sits flush right */
@@ -473,14 +491,22 @@ body {
 .ilc-card-active .ilc-entry-more-btn,
 .ilc-card-active .ilc-react-add,
 .ilc-entry:hover .ilc-entry-more-btn,
-.ilc-entry:hover .ilc-react-add { opacity: 1; width: auto; padding: 0 2px; margin-left: -2px; }
+.ilc-entry:hover .ilc-react-add { opacity: 1; width: auto; padding: 0 2px; margin-left: -2px; overflow: visible; }
 .ilc-entry:hover .ilc-entry-more-btn,
 .ilc-entry:hover .ilc-react-add { color: var(--text-muted); }
 .ilc-more-btn:hover { color: var(--text-normal) !important; }
 /* A follow-up comment has no header row, so its ☺ ⋯ float at the top right of its text:
    the focused card keeps that corner free, and elsewhere they cover the text on hover */
-.ilc-card-active .ilc-entry-cont .ilc-entry-body { padding-right: 34px; }
+.ilc-card-active .ilc-entry-cont .ilc-entry-body { padding-right: 40px; }
 .ilc-entry-cont:hover .ilc-entry-header { background: rgb(from var(--background-primary) r g b); padding-left: 4px; }
+/* Fingers need more: on a touch screen the buttons sit further apart and take a ~40px tap */
+@media (pointer: coarse) {
+  .ilc-more-btn::after { inset: -11px -6px; }
+  .ilc-card-preview .ilc-more-btn + .ilc-more-btn { margin-left: 2px; }
+  .ilc-card-active .ilc-entry-more-btn,
+  .ilc-card-active .ilc-react-add { margin-left: 4px; }
+  .ilc-card-active .ilc-entry-cont .ilc-entry-body { padding-right: 46px; }
+}
 
 /* ─── Hidden utility ─────────────────────────────────────────────────────────── */
 .ilc-hidden { display: none !important; }
@@ -1104,15 +1130,18 @@ body {
 .ilc-at-item.ilc-at-status-offline .ilc-at-name { color: var(--text-muted); font-weight: 500; }
 .ilc-at-item.ilc-at-status-offline .ilc-at-avatar { opacity: 0.55; }
 
-/* How the member gets the letter is the point of the row: wrap to two lines rather than cut it */
+/* How the member gets the letter is the point of the row: wrap rather than cut it (the full text
+   is also the row's tooltip) */
 .ilc-at-item .ilc-at-role {
   white-space: normal;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   line-height: 1.35;
 }
 .ilc-at-item.is-disabled { opacity: 0.55; }
+/* 「创建新会话「…」并 @ 它」 is a sentence, not a name: let it wrap */
+.ilc-at-create .ilc-at-name { white-space: normal; }
 .ilc-at-fix { flex: none; padding: 2px 6px; }
 .ilc-at-tip {
   padding: 6px 10px 4px;
@@ -1356,13 +1385,39 @@ body {
 .ilc-panel .ilc-suggest-accept { background: var(--interactive-accent) !important; border-color: var(--interactive-accent) !important; color: var(--text-on-accent) !important; }
 .ilc-panel .ilc-suggest-accept:hover { filter: brightness(0.95); }
 .ilc-panel .ilc-suggest-decline:hover { border-color: var(--ilc-hairline-strong) !important; }
-.ilc-suggest-toggle {
-  display: inline-flex; align-items: center; gap: 5px;
+/* 回复 | 修改建议: a two-way switch, the chosen side raised */
+.ilc-reply-mode {
+  display: inline-flex;
   margin-right: auto;
-  font-size: var(--ilc-font-small); color: var(--text-muted);
-  cursor: pointer; user-select: none;
+  padding: 2px;
+  gap: 2px;
+  border-radius: 7px;
+  background: var(--ilc-surface-sunken);
 }
-.ilc-suggest-toggle input { margin: 0; }
+.ilc-panel .ilc-reply-mode-opt {
+  height: 24px;
+  padding: 0 9px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  box-shadow: none;
+  font-size: var(--ilc-font-small);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.ilc-panel .ilc-reply-mode-opt:hover { color: var(--text-normal); }
+.ilc-panel .ilc-reply-mode-opt.is-on {
+  background: rgb(from var(--background-primary) r g b);
+  color: var(--text-normal);
+  font-weight: 600;
+  box-shadow: var(--ilc-shadow-sm);
+}
+.ilc-panel .ilc-reply-mode-suggest.is-on { color: var(--interactive-accent); }
+.ilc-reply-suggest-hint {
+  margin-bottom: -2px;
+  font-size: var(--ilc-font-small);
+  color: var(--interactive-accent);
+}
 .ilc-reply-suggest .ilc-reply-input { border-color: color-mix(in srgb, var(--interactive-accent) 45%, var(--ilc-hairline)) !important; }
 
 /* ─── Markdown inside comment bodies ─────────────────────────────────────────── */
@@ -1471,6 +1526,7 @@ body {
 }
 .ilc-card-fold-count { min-width: 16px; padding: 0 5px; border-radius: var(--ilc-radius-pill); background: var(--background-modifier-hover); text-align: center; line-height: 16px; }
 .ilc-card-fold-unread { width: 6px; height: 6px; border-radius: 50%; background: var(--text-error, #e5484d); }
+.ilc-toggle-unread { display: inline-block; width: 6px; height: 6px; margin-left: 5px; vertical-align: 1px; border-radius: 50%; background: var(--text-error, #e5484d); }
 .ilc-fold-btn { font-size: 15px !important; }
 
 /* ─── Reading view ───────────────────────────────────────────────────────────── */

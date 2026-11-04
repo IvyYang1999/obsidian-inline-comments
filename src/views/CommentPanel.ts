@@ -543,6 +543,12 @@ export class CommentPanel extends ItemView {
     return BUILTIN_TYPE_COLORS[typeId] ?? 'var(--text-muted)';
   }
 
+  /** A header toggle whose comments are out of sight but hold unread replies: a dot, and the tooltip says so */
+  private markUnreadInside(btn: HTMLElement): void {
+    btn.createEl('span', { cls: 'ilc-toggle-unread' });
+    btn.setAttribute('title', `${btn.getAttribute('title') ?? ''}${t('（里面有未读回复）')}`);
+  }
+
   /** Render "N 条评论 · M 未读" above the cards */
   private updateHeader(file: TFile): void {
     this.headerEl.empty();
@@ -554,14 +560,13 @@ export class CommentPanel extends ItemView {
     this.headerEl.removeClass('ilc-hidden');
 
     const tracker = this.plugin.settings.enableUnreadSignal ? this.plugin.unreadTracker : undefined;
+    const unreadOf = (ann: Annotation) => countUnreadRuns(ann.comments, (i) => {
+      const c = ann.comments[i];
+      if (!UNREAD_TYPES.has(c.type) || !tracker?.isTrackable(c.author)) return false;
+      return !tracker.isRead(computeReadKey(file.path, ann.highlightText, c.author, c.date, c.text));
+    });
     let unread = 0;
-    for (const ann of this.annotations) {
-      unread += countUnreadRuns(ann.comments, (i) => {
-        const c = ann.comments[i];
-        if (!UNREAD_TYPES.has(c.type) || !tracker?.isTrackable(c.author)) return false;
-        return !tracker.isRead(computeReadKey(file.path, ann.highlightText, c.author, c.date, c.text));
-      });
-    }
+    for (const ann of this.annotations) unread += unreadOf(ann);
 
     const count = this.headerEl.createEl('span', { cls: 'ilc-panel-count' });
     count.createEl('strong', { text: String(total) });
@@ -574,6 +579,8 @@ export class CommentPanel extends ItemView {
       const show = this.plugin.settings.showResolved;
       const tog = this.headerEl.createEl('button', { cls: 'ilc-resolved-toggle', text: t('已解决 {0}', [resolvedN]), attr: { title: show ? t('点击隐藏已解决的评论') : t('点击显示已解决的评论') } });
       tog.toggleClass('is-off', !show);
+      // The unread count includes comments out of sight: say where they are
+      if (!show && this.annotations.some((a) => isResolved(a) && unreadOf(a) > 0)) this.markUnreadInside(tog);
       tog.addEventListener('click', async (e) => {
         e.stopPropagation();
         this.plugin.settings.showResolved = !show;
@@ -584,6 +591,7 @@ export class CommentPanel extends ItemView {
     const hidden = this.annotations.filter((a) => this.plugin.cardPrefs.get(a) === 'hidden' && (!isResolved(a) || this.plugin.settings.showResolved));
     if (hidden.length > 0) {
       const btn = this.headerEl.createEl('button', { cls: 'ilc-resolved-toggle ilc-hidden-toggle', text: t('已隐藏 {0}', [hidden.length]), attr: { title: t('点击重新显示隐藏的评论') } });
+      if (hidden.some((a) => unreadOf(a) > 0)) this.markUnreadInside(btn);
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         for (const a of hidden) this.plugin.cardPrefs.set(a, null);
@@ -894,7 +902,8 @@ export class CommentPanel extends ItemView {
     const draftPreviewText = stripMarkdown(d.highlightText);
     previewBar.createEl('span', {
       cls: 'ilc-card-preview-text',
-      text: draftPreviewText.slice(0, 50) + (draftPreviewText.length > 50 ? '…' : ''),
+      text: draftPreviewText.length > 400 ? `${draftPreviewText.slice(0, 400)}…` : draftPreviewText,
+      attr: { title: draftPreviewText },
     });
     const cardMoreBtn = previewBar.createEl('button', {
       cls: 'ilc-more-btn',
@@ -1089,10 +1098,12 @@ export class CommentPanel extends ItemView {
     // Preview with card-level ⋯ menu
     const preview = card.createEl('div', { cls: 'ilc-card-preview' });
     preview.createEl('span', { cls: 'ilc-card-quote-rule' });
+    // Cut by lines in CSS (two, more on the focused card), not mid-word here; the whole passage is the tooltip
     const previewText = stripMarkdown(ann.highlightText);
     preview.createEl('span', {
       cls: 'ilc-card-preview-text',
-      text: previewText.slice(0, 60) + (previewText.length > 60 ? '…' : ''),
+      text: previewText.length > 400 ? `${previewText.slice(0, 400)}…` : previewText,
+      attr: { title: previewText },
     });
     // Shown only while the card is folded: how many comments, and whether any is unread
     const foldMeta = preview.createEl('span', { cls: 'ilc-card-fold-meta' });
@@ -1203,16 +1214,31 @@ export class CommentPanel extends ItemView {
       attr: { placeholder: t('写下回复…'), rows: '2' },
     });
     const btnRow = inputRow.createEl('div', { cls: 'ilc-reply-btn-row' });
-    // 「作为修改建议」— the reply text becomes a proposed replacement for the passage
-    const suggestLabel = btnRow.createEl('label', { cls: 'ilc-suggest-toggle', attr: { title: t('把这条回复作为对划线原文的修改建议，对方可一键采纳') } });
-    const suggestBox = suggestLabel.createEl('input', { attr: { type: 'checkbox' } });
-    suggestLabel.appendText(t('作为修改建议'));
-    suggestBox.addEventListener('change', () => {
-      input.placeholder = suggestBox.checked ? t('输入替换后的原文…') : t('写下回复…');
-      inputRow.toggleClass('ilc-reply-suggest', suggestBox.checked);
-      input.focus();
+    // 回复 | 修改建议 — in the second, the text is a proposed replacement for the passage.
+    // Two visible choices (and a line saying what happens), so the mode can't go unnoticed
+    const suggestHint = createEl('div', { cls: 'ilc-reply-suggest-hint ilc-hidden', text: t('写替换后的原文；对方点「采纳」后，划线的这段才会改') });
+    inputRow.insertBefore(suggestHint, input);
+    const modeSwitch = btnRow.createEl('div', { cls: 'ilc-reply-mode', attr: { role: 'radiogroup', 'aria-label': t('这条回复是') } });
+    const replyOpt = modeSwitch.createEl('button', { cls: 'ilc-reply-mode-opt is-on', text: t('回复'), attr: { role: 'radio', 'aria-checked': 'true' } });
+    const suggestOpt = modeSwitch.createEl('button', {
+      cls: 'ilc-reply-mode-opt ilc-reply-mode-suggest', text: t('修改建议'),
+      attr: { role: 'radio', 'aria-checked': 'false', title: t('把这条回复作为对划线原文的修改建议，对方可一键采纳') },
     });
-    suggestLabel.addEventListener('click', (e) => e.stopPropagation());
+    let suggesting = false;
+    const setSuggesting = (on: boolean) => {
+      suggesting = on;
+      replyOpt.toggleClass('is-on', !on);
+      suggestOpt.toggleClass('is-on', on);
+      replyOpt.setAttribute('aria-checked', String(!on));
+      suggestOpt.setAttribute('aria-checked', String(on));
+      input.placeholder = on ? t('输入替换后的原文…') : t('写下回复…');
+      inputRow.toggleClass('ilc-reply-suggest', on);
+      suggestHint.toggleClass('ilc-hidden', !on);
+      input.focus();
+      window.requestAnimationFrame(() => this.layoutCards());
+    };
+    replyOpt.addEventListener('click', (e) => { e.stopPropagation(); setSuggesting(false); });
+    suggestOpt.addEventListener('click', (e) => { e.stopPropagation(); setSuggesting(true); });
     const submitBtn = btnRow.createEl('button', { cls: 'ilc-reply-submit mod-cta ilc-hidden', text: t('发送') });
 
     // Show submit button only when input has content
@@ -1231,7 +1257,7 @@ export class CommentPanel extends ItemView {
       const text = input.value.trim();
       if (!text) return;
       const today = localIsoDate();
-      const reply: CommentEntry = { author: this.plugin.settings.authorName, date: today, type: suggestBox.checked ? 'suggest' : 'reply', text };
+      const reply: CommentEntry = { author: this.plugin.settings.authorName, date: today, type: suggesting ? 'suggest' : 'reply', text };
       const currentContent = await this.app.vault.read(file);
       await this.app.vault.modify(file, appendReply(currentContent, ann.from, reply));
     });
@@ -1440,7 +1466,7 @@ export class CommentPanel extends ItemView {
     el.createEl('span', { cls: 'ilc-delivery-text', text: line.text });
     const action = line.action;
     if (!action) return;
-    const labels = { retry: t('重试'), hook: t('安装 hook'), login: t('去登录'), open: t('打开它的会话') };
+    const labels = { retry: t('重试'), hook: t('安装 hook'), login: t('去登录'), open: t('打开它的会话'), copy: t('复制启动命令') };
     const btn = el.createEl('button', { cls: 'ilc-delivery-action', text: labels[action] });
     btn.addEventListener('click', (e) => {
       e.stopPropagation();

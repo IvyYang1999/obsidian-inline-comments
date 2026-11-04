@@ -21,14 +21,14 @@ import { DEFAULT_MAILBOX_ROOT } from './src/mentionDelivery.ts';
 import { MentionDelivery } from './src/mentionDeliveryService.ts';
 import { getHookStatus, installClaudeHooks, uninstallClaudeHooks, type HookStatus } from './src/hookInstaller.ts';
 import { HOOK_SCRIPT_NAME } from './src/hookScript.ts';
-import { buildLaunchPlan, buildLaunchPrompt, launchInTerminal, openExternalUrl, runningClaudeIds, sessionFileExists, writePromptFile } from './src/sessionLauncher.ts';
+import { buildLaunchPlan, buildLaunchPrompt, canOpenTerminal, launchInTerminal, openExternalUrl, runningClaudeIds, sessionFileExists, writePromptFile, type LaunchPlan } from './src/sessionLauncher.ts';
 import type { Candidate } from './src/mentionDelivery.ts';
 import { renderAgentRegistrySection } from './src/settings/agentRegistrySection.ts';
 import { type HarnessDef, type HarnessId, codexSignedIn, detectHarnesses, harnessDef, headlessArgs, looksUnauthenticated, resumeShell, runHeadless } from './src/harnesses.ts';
 import { harnessLoggedIn } from './src/reach.ts';
 import { readRegistry, setAgentThread } from './src/registry.ts';
 import { HOLD_MS, type ClaudeInbox, claudeInboxGate, claudeInboxQueued, findClaudeSession, sendToClaudeInbox } from './src/claudeInbox.ts';
-import { DeliveryLog, type DeliveryLine } from './src/deliveryStatus.ts';
+import { DeliveryLog, type DeliveryLine, type DeliveryRecord } from './src/deliveryStatus.ts';
 import { CardPrefs } from './src/cardPrefs.ts';
 import type { DeliveredMention } from './src/mentionDeliveryService.ts';
 import { SUGGESTED_HOTKEY, bindSuggestedHotkey, boundHotkeys, eventMatchesHotkey, formatHotkey, openHotkeySettings, sameHotkey } from './src/hotkeys.ts';
@@ -82,6 +82,9 @@ interface ILCSettings {
   /** What each CLI's last background run showed: it answered, or was turned away for credentials */
   harnessSignedIn: Partial<Record<HarnessId, boolean>>;
 }
+
+/** A letter the plugin put in a start command: the hook must not inject it again */
+const LETTER_STARTED = 'status: 已读（启动代标）';
 
 const DEFAULT_SETTINGS: ILCSettings = {
   authorName:     'user',
@@ -323,7 +326,17 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       ? { mode: 'resume' as const, sessionId, cwd: dir, shell: resumeShell(h.id, dir, threadId ?? sessionId) }
       : buildLaunchPlan({ sessionId, cwd: dir, exists: await sessionFileExists(sessionId) });
     const r = await launchInTerminal(plan);
-    if (r === 'unsupported') new Notice(t('仅 macOS 支持在终端启动会话'));
+    if (r === 'unsupported') await this.copyTerminalCommand(plan.shell);
+  }
+
+  /** Where the plugin cannot open a terminal itself (Linux, Windows): the command goes on the clipboard to paste into one */
+  async copyTerminalCommand(shell: string): Promise<boolean> {
+    let copied = false;
+    try { await navigator.clipboard.writeText(shell); copied = true; } catch { /* the notice shows it instead */ }
+    new Notice(copied
+      ? t('插件在这台电脑上打不开终端。命令已复制，粘到终端里运行：\n{0}', [shell])
+      : t('插件在这台电脑上打不开终端，请在终端里运行：\n{0}', [shell]), 15000);
+    return copied;
   }
 
   /** One click: bind ⌘⌥M to 添加划线评论 as the user's own hotkey (refused if another command holds it) */
@@ -403,6 +416,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     const c = await this.mentionDelivery.candidate(rec.shortId);
     if (!c) { new Notice(t('找不到成员「{0}」了', [rec.name])); return; }
     if (action === 'open') { await this.openMemberSession(c); return; }
+    if (action === 'copy') { await this.copyStartCommand(c, rec); return; }
     try {
       const raw = await this.app.vault.adapter.read(rec.letter);
       await this.app.vault.adapter.write(rec.letter, raw.replace(/^status: .*$/m, 'status: 未读'));
@@ -437,7 +451,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
     const shell = h.id === 'codex' ? `${q(bin)} login` : q(bin);
     const r = await launchInTerminal({ mode: 'new', sessionId: '', cwd: this.vaultBasePath() || process.cwd(), shell });
-    if (r === 'unsupported') new Notice(t('请在终端里运行 {0} 登录', [h.id === 'codex' ? 'codex login' : 'gemini']));
+    if (r === 'unsupported') await this.copyTerminalCommand(shell);
   }
 
   /** The wake hook marks a letter it handed over: tell the card */
@@ -523,25 +537,25 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       void next.finally(() => { if (this.headlessRuns.get(c.sessionId) === next) this.headlessRuns.delete(c.sessionId); });
       return;
     }
-    const started = 'status: 已读（启动代标）';
+    const started = LETTER_STARTED;
     try {
       const running = await runningClaudeIds();
       if (running.has(c.sessionId.toLowerCase())) return;
       const adapter = this.app.vault.adapter;
       const raw = await adapter.read(letterPath);
       if (!raw.includes('status: 未读')) return; // already handed over by the hook
+      if (!canOpenTerminal()) {
+        // Nothing can be started from here: the card offers the start command, the letter waits until then
+        this.logDelivery(key, { state: 'mailbox', reason: 'no-terminal' });
+        new Notice(t('「{0}」没开着。在评论卡片上点「复制启动命令」，粘到终端里运行，它就会收到这条', [c.name]), 10000);
+        return;
+      }
       await adapter.write(letterPath, raw.replace('status: 未读', started));
-      const body = raw.split('\n---\n').slice(1).join('\n---\n');
-      const cwd = c.cwd || this.vaultBasePath() || process.cwd();
-      const prompt = buildLaunchPrompt(c.name, body, localIsoDate(), getLocale(), this.vaultDirFor(cwd));
-      const promptFile = await writePromptFile(c.sessionId, prompt);
-      const exists = await sessionFileExists(c.sessionId);
-      const plan = buildLaunchPlan({ sessionId: c.sessionId, cwd, promptFile, exists });
+      const plan = await this.startPlan(c, raw);
       const r = await launchInTerminal(plan);
       if (r === 'unsupported') {
         // nothing was started: the letter waits in the mailbox
         await this.restoreUnread(letterPath, started);
-        new Notice(t('「{0}」未在运行，且当前平台不支持自动启动', [c.name]));
         return;
       }
       this.logDelivery(key, { state: 'handed', route: 'terminal' });
@@ -552,6 +566,29 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       this.logDelivery(key, { state: 'failed', reason: 'error', detail: shortError(err) });
       new Notice(t('自动启动「{0}」失败：{1}', [c.name, String((err as Error)?.message ?? err)]));
     }
+  }
+
+  /** How to start (new) or resume (known) the member's session with the letter as its first message */
+  private async startPlan(c: Candidate, letter: string): Promise<LaunchPlan> {
+    const body = letter.split('\n---\n').slice(1).join('\n---\n');
+    const cwd = c.cwd || this.vaultBasePath() || process.cwd();
+    const prompt = buildLaunchPrompt(c.name, body, localIsoDate(), getLocale(), this.vaultDirFor(cwd));
+    const promptFile = await writePromptFile(c.sessionId, prompt);
+    return buildLaunchPlan({ sessionId: c.sessionId, cwd, promptFile, exists: await sessionFileExists(c.sessionId) });
+  }
+
+  /**
+   * The card's 「复制启动命令」 where no terminal can be opened: the command that starts the session
+   * with this letter goes on the clipboard, and the letter counts as handed over, so the hook
+   * does not inject it a second time when that session starts.
+   */
+  private async copyStartCommand(c: Candidate, rec: DeliveryRecord): Promise<void> {
+    let raw: string;
+    try { raw = await this.app.vault.adapter.read(rec.letter); } catch { new Notice(t('这封信已经不在信箱里了')); return; }
+    const plan = await this.startPlan(c, raw);
+    if (!(await this.copyTerminalCommand(plan.shell))) return;
+    if (raw.includes('status: 未读')) await this.app.vault.adapter.write(rec.letter, raw.replace('status: 未读', LETTER_STARTED));
+    this.logDelivery(rec.key, { state: 'handed', route: 'copied' });
   }
 
   /** The vault folder, when a session working in `cwd` cannot reach notes by their vault-relative path */

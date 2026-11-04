@@ -64,7 +64,7 @@ Obsidian → Settings → Community plugins → Browse → search **Agent Commen
 
 Pre-release builds: [BRAT](https://github.com/TfTHacker/obsidian42-brat) → *Add a beta plugin* → `IvyYang1999/obsidian-inline-comments`.
 
-Obsidian 1.8+, desktop and mobile. Session discovery, the hook, and *Answer with a new session* are desktop features; starting Claude Code in Terminal is macOS only for now.
+Obsidian 1.8+, desktop and mobile. Session discovery, the hook, and *Answer with a new session* are desktop features. The plugin opens Terminal itself on macOS; on Linux and Windows it copies the command for you to paste into a terminal.
 
 ## Using @
 
@@ -116,7 +116,7 @@ Design notes live in [`DESIGN.md`](DESIGN.md). Releases are built by CI from a v
 - **评论再多也看得清。** 卡片全部展开、竖着往下排，长的评论串只显示第一条和最新一条，中间的点一下就展开；点卡片，正文滚过来和它对齐；点正文里的划线，卡片移过去和它对齐。暂时不用看的卡片可以折叠成一行（选中时会展开），也可以隐藏，直到再点它在正文里的划线。
 - **编辑与阅读视图、桌面与手机。** 阅读视图里同款高亮 + 角标，原始标记隐藏；超长线程折叠成预览。
 
-**安装**：Obsidian 设置 → 第三方插件 → 浏览，搜 **Agent Comments**；或直接打开 <a href="obsidian://show-plugin?id=inline-comments">obsidian://show-plugin?id=inline-comments</a>。Obsidian 1.8 以上，桌面与手机；会话发现、hook、「用新会话回答」是桌面能力，其中在终端里开 Claude Code 目前仅 macOS。预发布版用 BRAT 添加 `IvyYang1999/obsidian-inline-comments`。
+**安装**：Obsidian 设置 → 第三方插件 → 浏览，搜 **Agent Comments**；或直接打开 <a href="obsidian://show-plugin?id=inline-comments">obsidian://show-plugin?id=inline-comments</a>。Obsidian 1.8 以上，桌面与手机；会话发现、hook、「用新会话回答」是桌面能力；macOS 上插件直接打开终端，Linux 和 Windows 上把命令复制给你，粘到终端里运行。预发布版用 BRAT 添加 `IvyYang1999/obsidian-inline-comments`。
 
 官网中文版：https://agent-comments.yytyyf.com
 

@@ -234,6 +234,66 @@ async function run() {
     const newBox = path.join(WORK, 'vault', 'Agent协作空间', '信箱', newShort);
     const newLetter = fs.existsSync(newBox) ? fs.readdirSync(newBox).find((f) => f.endsWith('.md')) : null;
     check('信标为 已读（启动代标），hook 不会重复注入', !!newLetter && fs.readFileSync(path.join(newBox, newLetter), 'utf8').includes('status: 已读（启动代标）'));
+
+    // ── Where the plugin can't open a terminal (Linux, Windows; ILC_NO_TERMINAL here) the card hands
+    // over the start command instead, and every "open a terminal" button copies its command
+    {
+      const clip = () => page.evaluate(async () => {
+        try { return await navigator.clipboard.readText(); } catch { return window.require('electron').clipboard.readText(); }
+      });
+      // put the note and the roster back afterwards: later checks count members and replies
+      const noteBefore = await page.evaluate(() => app.vault.adapter.read('sample.md'));
+      const registryFile = path.join(WORK, 'vault', '_os', 'comment-agents.json');
+      const registryBefore = fs.readFileSync(registryFile, 'utf8');
+      await page.evaluate(() => { process.env.ILC_NO_TERMINAL = '1'; navigator.clipboard.writeText('').catch(() => {}); });
+      const launchesBefore = fs.existsSync(launchLog) ? fs.readFileSync(launchLog, 'utf8').trim().split('\n').length : 0;
+      await page.locator('.ilc-card').nth(1).click();
+      await page.waitForSelector('.ilc-card-active .ilc-reply-input', { state: 'visible', timeout: 5000 });
+      const ta = page.locator('.ilc-card-active .ilc-reply-input');
+      await ta.fill('');
+      await ta.click();
+      await page.keyboard.type('@新人乙');
+      await page.waitForSelector('.ilc-at-create', { timeout: 5000 });
+      const hint = await page.locator('.ilc-at-create .ilc-at-role').textContent();
+      await page.keyboard.press('Enter');
+      await sleep(400);
+      const short = (await ta.inputValue()).match(/\[@新人乙\]\(agent:([0-9a-f]{8})\?notify\)/)?.[1] ?? '';
+      await page.keyboard.type(' 没有终端也要能交给它');
+      await page.locator('.ilc-card-active .ilc-reply-submit').click();
+      await sleep(3500);
+      const box2 = path.join(WORK, 'vault', 'Agent协作空间', '信箱', short);
+      const letter2 = () => { const f = fs.existsSync(box2) ? fs.readdirSync(box2).find((x) => x.endsWith('.md')) : null; return f ? fs.readFileSync(path.join(box2, f), 'utf8') : ''; };
+      const line = () => page.evaluate(() => {
+        const d = [...document.querySelectorAll('.ilc-delivery')].find((x) => x.textContent.includes('新人乙'));
+        return d ? { text: d.querySelector('.ilc-delivery-text')?.textContent, btn: d.querySelector('.ilc-delivery-action')?.textContent ?? null } : null;
+      });
+      const waiting = await line();
+      const launchesAfter = fs.existsSync(launchLog) ? fs.readFileSync(launchLog, 'utf8').trim().split('\n').length : 0;
+      check('打不开终端时：新会话的提示说会给一条启动命令', /启动「新人乙」的命令/.test(hint ?? ''), hint);
+      check('……@ 后不开终端，卡片说明并给「复制启动命令」，信还是未读', launchesAfter === launchesBefore && waiting?.btn === '复制启动命令' && /打不开终端/.test(waiting.text ?? '') && letter2().includes('status: 未读'), JSON.stringify(waiting));
+      await page.evaluate(() => [...document.querySelectorAll('.ilc-delivery')].find((x) => x.textContent.includes('新人乙'))?.querySelector('.ilc-delivery-action')?.click());
+      await sleep(800);
+      const copied = await clip();
+      const reg3 = JSON.parse(fs.readFileSync(path.join(WORK, 'vault', '_os', 'comment-agents.json'), 'utf8'));
+      const yi = reg3.agents.find((a) => a.name === '新人乙');
+      const promptFile = copied.match(/\$\(cat '([^']+)'\)/)?.[1];
+      check('……点了：剪贴板里是带着这条留言启动它的命令，信标为已交出，卡片说「在终端里运行后它就会收到」',
+        !!yi && copied.includes(`--session-id '${yi.sessionId}'`) && !!promptFile && fs.readFileSync(promptFile, 'utf8').includes('没有终端也要能交给它')
+          && letter2().includes('status: 已读（启动代标）') && /在终端里运行后，新人乙 就会收到/.test((await line())?.text ?? ''),
+        copied.slice(0, 140));
+
+      // what 在终端里接着聊 / 在终端恢复 / 打开它的会话 call: the resume command goes on the clipboard
+      await page.evaluate(() => navigator.clipboard.writeText('').catch(() => {}));
+      await page.evaluate((id) => app.plugins.plugins['inline-comments'].resumeInTerminal(id, '/tmp/e2e-cwd'), yi?.sessionId);
+      await sleep(500);
+      const resumeCmd = await clip();
+      const notice = await page.evaluate(() => [...document.querySelectorAll('.notice')].map((n) => n.textContent).reverse().find((x) => x.includes('打不开终端')) ?? null);
+      check('……「在终端里接着聊」这类按钮：命令复制到剪贴板，并提示粘到终端里', !!yi && resumeCmd.includes(`cd '/tmp/e2e-cwd'`) && resumeCmd.includes(yi.sessionId) && !!notice && notice.includes('命令已复制'), `${resumeCmd.slice(0, 100)} | ${notice}`);
+      await page.evaluate(() => { delete process.env.ILC_NO_TERMINAL; });
+      fs.writeFileSync(registryFile, registryBefore);
+      await page.evaluate((doc) => app.vault.adapter.write('sample.md', doc), noteBefore);
+      await sleep(1200);
+    }
     await page.locator('.ilc-card').nth(0).click();
     await sleep(300);
 
@@ -476,8 +536,31 @@ async function run() {
     check('建议条目渲染为 原文 → 替换文', !!sugText && sugText.old === '需老板在场做' && sugText.neu === '需老板到场做', JSON.stringify(sugText));
     const hasActs = (await page.locator('.ilc-suggest-accept').count()) === 1 && (await page.locator('.ilc-suggest-decline').count()) === 1;
     check('待处理建议有「采纳 / 不采纳」', hasActs);
-    const toggle = await page.locator('.ilc-suggest-toggle input').count();
-    check('回复框有「作为修改建议」开关', toggle >= 1, `toggles=${toggle}`);
+    const toggle = await page.locator('.ilc-reply-mode .ilc-reply-mode-opt').count();
+    check('回复框有「回复 | 修改建议」两段切换', toggle >= 2, `options=${toggle}`);
+    {
+      // Switching is plain to see: the chosen side is raised, a line says what happens, the placeholder changes
+      const mode = () => page.evaluate(() => {
+        const row = document.querySelector('.ilc-card-active .ilc-reply-input-row');
+        return {
+          on: [...row.querySelectorAll('.ilc-reply-mode-opt.is-on')].map((b) => b.textContent),
+          hint: row.querySelector('.ilc-reply-suggest-hint')?.offsetParent !== null,
+          placeholder: row.querySelector('.ilc-reply-input').placeholder,
+        };
+      });
+      await page.locator('.ilc-card', { hasText: '需老板' }).first().locator('.ilc-thread').click();
+      await sleep(400);
+      const before = await mode();
+      await page.locator('.ilc-card-active .ilc-reply-mode-suggest').click();
+      await sleep(200);
+      const sug = await mode();
+      await page.locator('.ilc-card-active .ilc-reply-mode-opt:not(.ilc-reply-mode-suggest)').click();
+      await sleep(200);
+      const back = await mode();
+      check('点「修改建议」：它变成选中的一边，回复框上方说明「采纳后才会改」，提示语变成替换原文',
+        before.on.join() === '回复' && !before.hint && sug.on.join() === '修改建议' && sug.hint && sug.placeholder === '输入替换后的原文…' && back.on.join() === '回复' && !back.hint,
+        JSON.stringify({ before, sug, back }));
+    }
     await page.locator('.ilc-suggest-accept').click();
     await sleep(900);
     const after = await page.evaluate(() => app.vault.adapter.read('sample.md'));
@@ -574,6 +657,21 @@ async function run() {
         return { active: c.classList.contains('ilc-card-active'), widths: btn.map((b) => (b ? Math.round(b.getBoundingClientRect().width) : null)) };
       }, midInfo?.id);
       check('选中的卡片里每条评论的 ⋯ 都显示（触屏点一下卡片就能用）', focused.active && focused.widths.length >= 3 && focused.widths.every((w) => w >= 10), JSON.stringify(focused));
+
+      // A near miss still lands on the button: 4px under the glyph, and just outside its side
+      await page.evaluate((id) => document.querySelector(`.ilc-card[data-annotation-id="${id}"] .ilc-card-preview`)?.scrollIntoView({ block: 'center' }), midInfo?.id);
+      await sleep(500);
+      const near = await page.evaluate((id) => {
+        const c = document.querySelector(`.ilc-card[data-annotation-id="${id}"]`);
+        const probe = (b) => {
+          const r = b.getBoundingClientRect();
+          return [[r.left + r.width / 2, r.bottom + 4], [r.right + 1, r.top + r.height / 2]].every(([x, y]) => document.elementFromPoint(x, y) === b);
+        };
+        const cardBtns = [...c.querySelectorAll('.ilc-card-preview .ilc-more-btn')];
+        const entryBtns = [...c.querySelectorAll('.ilc-entry-header .ilc-more-btn')].filter((b) => b.getBoundingClientRect().width > 0);
+        return { card: cardBtns.map(probe), entry: entryBtns.slice(0, 2).map(probe) };
+      }, midInfo?.id);
+      check('按钮的可点范围比字形大：点偏 4px 仍点在按钮上', near.card.length === 3 && near.card.every(Boolean) && near.entry.length >= 2 && near.entry.every(Boolean), JSON.stringify(near));
     }
 
     // ── Resolve / reopen
@@ -1288,8 +1386,9 @@ async function run() {
       check('卡片 ⋯ 菜单：常用的在前，「删除」隔开放最后、标红，「隐藏」不带长说明', menu.items[0] === '标为已解决' && menu.items.at(-1) === '删除整条评论' && menu.items.includes('隐藏') && menu.lastWarning && menu.separator, JSON.stringify(menu));
       await page.evaluate(() => [...document.querySelectorAll('.menu .menu-item')].find((m) => m.textContent.includes('隐藏'))?.click());
       await sleep(500);
-      const hid = await page.evaluate(() => ({ gone: ![...document.querySelectorAll('.ilc-panel .ilc-card')].some((c) => c.querySelector('.ilc-card-preview-text')?.textContent === '密集划线5'), toggle: document.querySelector('.ilc-hidden-toggle')?.textContent ?? null }));
+      const hid = await page.evaluate(() => ({ gone: ![...document.querySelectorAll('.ilc-panel .ilc-card')].some((c) => c.querySelector('.ilc-card-preview-text')?.textContent === '密集划线5'), toggle: document.querySelector('.ilc-hidden-toggle')?.textContent ?? null, dot: !!document.querySelector('.ilc-hidden-toggle .ilc-toggle-unread') }));
       check('隐藏：卡片从侧栏消失，顶部写「已隐藏 1」', hid.gone && hid.toggle === '已隐藏 1', JSON.stringify(hid));
+      check('……藏起来的那条有未读回复：「已隐藏 1」带红点（未读数里算着它，这里说明它在哪）', hid.dot, JSON.stringify(hid));
       await shot(page, '09-folded-hidden', '.workspace-leaf-content[data-type="ilc-comments-panel"]');
 
       // Survives a full refresh (it is stored per comment, not per card element)

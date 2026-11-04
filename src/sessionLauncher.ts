@@ -97,14 +97,22 @@ export async function writePromptFile(sessionId: string, prompt: string): Promis
   return file;
 }
 
+/**
+ * Can the plugin open a terminal and run a command in it? Only Terminal.app on macOS; elsewhere
+ * the user gets the command to paste. `ILC_NO_TERMINAL` makes a Mac answer no (e2e).
+ */
+export function canOpenTerminal(): boolean {
+  return process.platform === 'darwin' && !process.env.ILC_NO_TERMINAL;
+}
+
 /** Open Terminal.app and run the plan (or log it when ILC_LAUNCH_LOG is set) */
 export async function launchInTerminal(plan: LaunchPlan): Promise<'launched' | 'logged' | 'unsupported'> {
+  if (!canOpenTerminal()) return 'unsupported';
   const log = process.env.ILC_LAUNCH_LOG;
   if (log) {
     await nodeFsp().appendFile(log, JSON.stringify({ ...plan, at: new Date().toISOString() }) + '\n', 'utf8');
     return 'logged';
   }
-  if (process.platform !== 'darwin') return 'unsupported';
   const asq = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   const script = `tell application "Terminal"
   activate

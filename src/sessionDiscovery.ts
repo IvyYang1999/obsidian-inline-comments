@@ -202,10 +202,12 @@ export function timeAgo(ts: number, now = Date.now()): string {
   return t('{0} 天前', [Math.round(h / 24)]);
 }
 
-export function shortCwd(cwd: string | undefined): string | undefined {
+/** A folder for a narrow line: where it starts and its last two folders, the middle elided (~/vaults/…/项目/评论插件) */
+export function shortCwd(cwd: string | undefined, home = nodeOs().homedir()): string | undefined {
   if (!cwd) return undefined;
-  const home = nodeOs().homedir();
   const p = cwd.startsWith(home) ? `~${cwd.slice(home.length)}` : cwd;
   const parts = p.split('/').filter(Boolean);
-  return parts.length > 3 ? `…/${parts.slice(-2).join('/')}` : p;
+  const head = parts.slice(0, p.startsWith('~') ? 2 : 1);
+  if (parts.length <= head.length + 3) return p;
+  return `${p.startsWith('/') ? '/' : ''}${head.join('/')}/…/${parts.slice(-2).join('/')}`;
 }
