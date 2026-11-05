@@ -237,8 +237,8 @@ async function run() {
     const newLetter = fs.existsSync(newBox) ? fs.readdirSync(newBox).find((f) => f.endsWith('.md')) : null;
     check('信标为 已读（启动代标），hook 不会重复注入', !!newLetter && fs.readFileSync(path.join(newBox, newLetter), 'utf8').includes('status: 已读（启动代标）'));
 
-    // ── Where the plugin can't open a terminal (Linux, Windows; ILC_NO_TERMINAL here) the card hands
-    // over the start command instead, and every "open a terminal" button copies its command
+    // ── Where the plugin can't open a terminal (Linux, Windows; ILC_NO_TERMINAL here) a plugin-created
+    // Claude member answers in the background (claude -p), and every "open a terminal" button copies its command
     {
       const clip = () => page.evaluate(async () => {
         try { return await navigator.clipboard.readText(); } catch { return window.require('electron').clipboard.readText(); }
@@ -265,24 +265,44 @@ async function run() {
       await sleep(3500);
       const box2 = path.join(WORK, 'vault', 'Agent协作空间', '信箱', short);
       const letter2 = () => { const f = fs.existsSync(box2) ? fs.readdirSync(box2).find((x) => x.endsWith('.md')) : null; return f ? fs.readFileSync(path.join(box2, f), 'utf8') : ''; };
-      const line = () => page.evaluate(() => {
-        const d = [...document.querySelectorAll('.ilc-delivery')].find((x) => x.textContent.includes('新人乙'));
-        return d ? { text: d.querySelector('.ilc-delivery-text')?.textContent, btn: d.querySelector('.ilc-delivery-action')?.textContent ?? null } : null;
-      });
-      const waiting = await line();
-      const launchesAfter = fs.existsSync(launchLog) ? fs.readFileSync(launchLog, 'utf8').trim().split('\n').length : 0;
-      check('打不开终端时：新会话的提示说会给一条启动命令', /启动「新人乙」的命令/.test(hint ?? ''), hint);
-      check('……@ 后不开终端，卡片说明并给「复制启动命令」，信还是未读', launchesAfter === launchesBefore && waiting?.btn === '复制启动命令' && /打不开终端/.test(waiting.text ?? '') && letter2().includes('status: 未读'), JSON.stringify(waiting));
-      await page.evaluate(() => [...document.querySelectorAll('.ilc-delivery')].find((x) => x.textContent.includes('新人乙'))?.querySelector('.ilc-delivery-action')?.click());
+      const runs = () => { const f = path.join(WORK, 'claude-runs.log'); return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []; };
+      const noteHas = (s) => page.evaluate((x) => app.vault.adapter.read('sample.md').then((d) => d.includes(x)), s);
+      const waitFor = async (fn, ms = 8000) => {
+        for (const end = Date.now() + ms; Date.now() < end; await sleep(250)) if (await fn()) return true;
+        return false;
+      };
+      const replied = await waitFor(() => noteHas('假 Claude 后台第一次回复'));
       await sleep(800);
-      const copied = await clip();
-      const reg3 = JSON.parse(fs.readFileSync(path.join(WORK, 'vault', '_os', 'comment-agents.json'), 'utf8'));
+      const launchesAfter = fs.existsSync(launchLog) ? fs.readFileSync(launchLog, 'utf8').trim().split('\n').length : 0;
+      const reg3 = JSON.parse(fs.readFileSync(registryFile, 'utf8'));
       const yi = reg3.agents.find((a) => a.name === '新人乙');
-      const promptFile = copied.match(/\$\(cat '([^']+)'\)/)?.[1];
-      check('……点了：剪贴板里是带着这条留言启动它的命令，信标为已交出，卡片说「在终端里运行后它就会收到」',
-        !!yi && copied.includes(`--session-id '${yi.sessionId}'`) && !!promptFile && fs.readFileSync(promptFile, 'utf8').includes('没有终端也要能交给它')
-          && letter2().includes('status: 已读（启动代标）') && /在终端里运行后，新人乙 就会收到/.test((await line())?.text ?? ''),
-        copied.slice(0, 140));
+      const run1 = runs()[0];
+      check('打不开终端时：新会话的提示说会在后台回复', /在后台开「新人乙」回复/.test(hint ?? ''), hint);
+      check('……@ 后不开终端、不用贴命令：在后台跑 claude -p（只许改文件），用成员自己的会话 id，信从 stdin 交给它',
+        launchesAfter === launchesBefore && !!yi && !!run1 && run1.args.includes('-p') && run1.args.join(' ').includes('--permission-mode acceptEdits')
+          && run1.args.join(' ').includes(`--session-id ${yi.sessionId}`) && run1.prompt.includes('没有终端也要能交给它'),
+        JSON.stringify(run1?.args));
+      const done = await page.evaluate(() => {
+        const entry = [...document.querySelectorAll('.ilc-card .ilc-entry')].reverse().find((e) => e.querySelector('.ilc-entry-body')?.textContent?.includes('没有终端也要能交给它'));
+        return entry?.querySelector('.ilc-delivery .ilc-delivery-text')?.textContent ?? null;
+      });
+      check('……回复写进笔记，信标为已交给 Claude Code，卡片说「已回复 · 交给后台」',
+        replied && letter2().includes('status: 已读（已交给 Claude Code）') && /已回复 · .*交给后台/.test(done ?? ''), `${done} | replied=${replied} | ${letter2().match(/status: .*/)?.[0]}`);
+
+      // the next letter continues the same session
+      await page.locator('.ilc-card').nth(1).click();
+      await page.waitForSelector('.ilc-card-active .ilc-reply-input', { state: 'visible', timeout: 5000 });
+      await ta.fill('');
+      await ta.click();
+      await page.keyboard.type('@新人乙');
+      await sleep(600);
+      await page.keyboard.press('Enter');
+      await sleep(400);
+      await page.keyboard.type(' 再说一句');
+      await page.locator('.ilc-card-active .ilc-reply-submit').click();
+      const again = await waitFor(() => noteHas('假 Claude 后台接着回复'));
+      const run2 = runs()[1];
+      check('……第二次 @ 接着同一个会话（--resume），还是在后台', again && !!yi && !!run2 && run2.args.join(' ').includes(`--resume ${yi.sessionId}`), JSON.stringify(run2?.args));
 
       // what 在终端里接着聊 / 在终端恢复 / 打开它的会话 call: the resume command goes on the clipboard
       await page.evaluate(() => navigator.clipboard.writeText('').catch(() => {}));
@@ -1001,10 +1021,15 @@ async function run() {
           firstSection: document.querySelector('.ilc-members-modal .ilc-members-section h3')?.textContent ?? null,
           placeholder: document.querySelector('.ilc-members-modal .ilc-members-name')?.getAttribute('placeholder') ?? null,
           rows: document.querySelectorAll('.ilc-members-modal .ilc-members-session').length,
+          elsewhereOpen: document.querySelector('.ilc-members-modal .ilc-members-elsewhere')?.open ?? null,
+          newBtn: document.querySelector('.ilc-members-modal .ilc-members-section .ilc-members-new')?.textContent ?? null,
         }));
         check('……回车打开管理成员：成员在最前，投递和 hook 收进「高级」，名字框写明 2–12 个字',
           opened && m0.firstSection === '可以 @ 的成员' && m0.advancedOpen === false && m0.placeholder === '名字（2–12 个字）' && !!m0.empty?.includes('起个名字'),
           JSON.stringify(m0));
+        check('……这个 vault 里没有会话时，其他文件夹的会话也收着；成员区有「+ 新会话」',
+          m0.elsewhereOpen !== true && m0.newBtn === '+ 新会话' && !!m0.empty?.includes('新会话'), JSON.stringify(m0));
+        await page.evaluate(() => { const d = document.querySelector('.ilc-members-modal .ilc-members-elsewhere'); if (d) d.open = true; });
         if (m0.rows > 0) {
           const name = page.locator('.ilc-members-modal .ilc-members-session .ilc-members-name').first();
           const add = page.locator('.ilc-members-modal .ilc-members-session .ilc-members-join').first();
@@ -1028,6 +1053,17 @@ async function run() {
             !!saved?.agents?.some((a) => a.name === '首个成员') && listed.includes('首个成员') && !!toast?.includes('@首个成员'),
             `${JSON.stringify(saved?.agents?.map((a) => a.name))} | ${toast}`);
         } else console.log('  (no local sessions on this machine: first-member add not exercised)');
+        // 「+ 新会话」 from the dialog: the same New session dialog, ending in 「创建」 (nothing to @ yet)
+        await page.locator('.ilc-members-modal .ilc-members-new').click();
+        await page.waitForSelector('.ilc-newsession-modal', { timeout: 5000 });
+        await sleep(600);
+        const submit = await page.evaluate(() => [...document.querySelectorAll('.ilc-newsession-modal button.mod-cta')].map((b) => b.textContent).pop() ?? null);
+        await page.locator('.ilc-newsession-modal input[type=text]').first().fill('新建成员');
+        await page.locator('.ilc-newsession-modal button.mod-cta').last().click();
+        await sleep(1200);
+        const listedNew = await page.evaluate(() => document.querySelector('.ilc-members-modal .ilc-members-list')?.textContent ?? '');
+        check('……成员区「+ 新会话」：新会话弹窗的按钮是「创建」，建好后成员马上出现在列表里',
+          submit === '创建' && listedNew.includes('新建成员'), `${submit} | ${listedNew.slice(0, 80)}`);
         await page.keyboard.press('Escape');
         await sleep(300);
       } finally {
@@ -1044,7 +1080,10 @@ async function run() {
         return false;
       };
       const docHas = (text) => page.evaluate(async (text) => (await app.vault.adapter.read('harness.md')).includes(text), text);
-      const calls = () => (fs.existsSync(HARNESS_LOG) ? fs.readFileSync(HARNESS_LOG, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
+      // Calls from this block on: 审计员 (a Codex member joined by hand) was answered in the background earlier
+      const allCalls = () => (fs.existsSync(HARNESS_LOG) ? fs.readFileSync(HARNESS_LOG, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
+      const callsBefore = allCalls().length;
+      const calls = () => allCalls().slice(callsBefore);
       const registry = () => JSON.parse(fs.readFileSync(path.join(WORK, 'vault', '_os', 'comment-agents.json'), 'utf8'));
       await page.evaluate(async () => {
         const f = app.vault.getAbstractFileByPath('harness.md')
@@ -1175,6 +1214,46 @@ async function run() {
       }), JSON.stringify(await lineOf('失败一次')));
       await clickLineAction('失败一次');
       check('点「重试」重新送出，收到回复后变成「已回复」', await waitFor(async () => (await docCount('假 Codex 第二次回复')) === 2 && !!(await lineOf('失败一次'))?.text.startsWith('已回复 ·')), JSON.stringify(await lineOf('失败一次')));
+
+      // A Codex session added from the session list (not New session) answers too, continuing that very session
+      {
+        const docBefore = await page.evaluate(() => app.vault.adapter.read('harness.md'));
+        const registryFile = path.join(WORK, 'vault', '_os', 'comment-agents.json');
+        const registryBefore = fs.readFileSync(registryFile, 'utf8');
+        const codexHome = path.join(WORK, 'home', '.codex');
+        const thread = 'c0dec0de-1111-4222-8333-444455556666';
+        const rollout = path.join(codexHome, 'sessions', '2026', '11', '05', `rollout-2026-11-05T08-00-00-${thread}.jsonl`);
+        fs.mkdirSync(path.dirname(rollout), { recursive: true });
+        fs.writeFileSync(rollout, `${JSON.stringify({ type: 'session_meta', payload: { id: thread, cwd: path.join(WORK, 'vault') } })}\n${JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '整理一下这个 vault 的笔记' }] } })}\n`);
+        await page.evaluate((h) => { process.env.CODEX_HOME = h; }, codexHome);
+        await page.evaluate(() => app.commands.executeCommandById('inline-comments:manage-comment-members'));
+        await page.waitForSelector('.ilc-members-modal', { timeout: 5000 });
+        const row = page.locator('.ilc-members-modal .ilc-members-session', { hasText: thread.slice(0, 8) }).first();
+        await row.waitFor({ state: 'visible', timeout: 8000 });
+        await row.locator('.ilc-members-name').fill('码农丙');
+        await row.locator('.ilc-members-join').click();
+        await sleep(1500);
+        const added = JSON.parse(fs.readFileSync(registryFile, 'utf8')).agents.find((a) => a.name === '码农丙');
+        const status = await page.evaluate(() => [...document.querySelectorAll('.ilc-members-modal .ilc-members-row')].find((r) => r.querySelector('.ilc-at-name')?.textContent === '码农丙')?.querySelector('.ilc-members-status')?.textContent ?? null);
+        check('从会话列表加 Codex：记下它自己的会话和目录，成员行写「在后台回复」（不再「收不到」）',
+          added?.threadId === thread && added?.cwd === path.join(WORK, 'vault') && status === '在后台回复', `${JSON.stringify(added)} | ${status}`);
+        await page.keyboard.press('Escape');
+        await sleep(300);
+        const before = calls().length;
+        await page.locator('.ilc-card').first().click();
+        await page.waitForSelector('.ilc-card-active .ilc-reply-input', { state: 'visible', timeout: 5000 });
+        await page.locator('.ilc-card-active .ilc-reply-input').fill(`[@码农丙](agent:${thread.slice(0, 8)}?notify) 你也看看`);
+        await page.locator('.ilc-card-active .ilc-reply-submit').click();
+        const ran = await waitFor(async () => calls().length > before && (await docHas('{>>码农丙|')));
+        const run = calls()[before];
+        check('……@ 它：在后台接着那个会话（codex exec resume 它的 id）回复，回复写进笔记',
+          ran && run?.args[0] === 'exec' && run.args[1] === 'resume' && run.args.includes(thread) && run.cwd === fs.realpathSync(path.join(WORK, 'vault')), `${JSON.stringify(run?.args)} | ${run?.cwd} | ran=${ran}`);
+        await page.evaluate(() => { delete process.env.CODEX_HOME; });
+        fs.rmSync(path.join(codexHome, 'sessions'), { recursive: true, force: true });
+        fs.writeFileSync(registryFile, registryBefore);
+        await page.evaluate((doc) => app.vault.adapter.write('harness.md', doc), docBefore);
+        await sleep(1200);
+      }
 
       // C: two replies in a row from 码农甲 read as one message and count as one unread
       const headerUnread = () => page.evaluate(() => Number(document.querySelector('.ilc-panel-unread')?.textContent?.match(/\d+/)?.[0] ?? 0));

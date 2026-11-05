@@ -64,7 +64,7 @@ Obsidian → Settings → Community plugins → Browse → search **Agent Commen
 
 Pre-release builds: [BRAT](https://github.com/TfTHacker/obsidian42-brat) → *Add a beta plugin* → `IvyYang1999/obsidian-inline-comments`.
 
-Obsidian 1.8+, desktop and mobile. Session discovery, the hook, and *Answer with a new session* are desktop features. The plugin opens Terminal itself on macOS; on Linux and Windows it copies the command for you to paste into a terminal.
+Obsidian 1.8+, desktop and mobile. Session discovery, the hook, and *Answer with a new session* are desktop features. On macOS the plugin opens Terminal itself. On Linux and Windows, where it can't open a terminal, a Claude Code member it created answers in the background (`claude -p`, allowed to edit files only, like Codex), and buttons that would open a terminal copy the command for you to paste instead. If you start a session yourself in a new folder, accept Claude Code's folder-trust prompt, and don't run it in a permission mode that blocks file edits, or it can't write its reply into the note.
 
 ## Using @
 
@@ -116,7 +116,7 @@ Design notes live in [`DESIGN.md`](DESIGN.md). Releases are built by CI from a v
 - **评论再多也看得清。** 卡片全部展开、竖着往下排，长的评论串只显示第一条和最新一条，中间的点一下就展开；点卡片，正文滚过来和它对齐；点正文里的划线，卡片移过去和它对齐。暂时不用看的卡片可以折叠成一行（选中时会展开），也可以隐藏，直到再点它在正文里的划线。
 - **编辑与阅读视图、桌面与手机。** 阅读视图里同款高亮 + 角标，原始标记隐藏；超长线程折叠成预览。
 
-**安装**：Obsidian 设置 → 第三方插件 → 浏览，搜 **Agent Comments**；或直接打开 <a href="obsidian://show-plugin?id=inline-comments">obsidian://show-plugin?id=inline-comments</a>。Obsidian 1.8 以上，桌面与手机；会话发现、hook、「用新会话回答」是桌面能力；macOS 上插件直接打开终端，Linux 和 Windows 上把命令复制给你，粘到终端里运行。预发布版用 BRAT 添加 `IvyYang1999/obsidian-inline-comments`。
+**安装**：Obsidian 设置 → 第三方插件 → 浏览，搜 **Agent Comments**；或直接打开 <a href="obsidian://show-plugin?id=inline-comments">obsidian://show-plugin?id=inline-comments</a>。Obsidian 1.8 以上，桌面与手机；会话发现、hook、「用新会话回答」是桌面能力；macOS 上插件直接打开终端；Linux 和 Windows 上插件开不了终端，它新建的 Claude Code 成员在后台回复（`claude -p`，和 Codex 一样只许改文件），要开终端的按钮改成把命令复制给你、粘到终端里运行。自己在新文件夹里启动会话时，要先在 Claude Code 里点「信任」这个文件夹，权限模式也不能挡住改文件，否则它没法把回复写进笔记。预发布版用 BRAT 添加 `IvyYang1999/obsidian-inline-comments`。
 
 官网中文版：https://agent-comments.yytyyf.com
 

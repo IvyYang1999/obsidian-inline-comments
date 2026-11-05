@@ -90,6 +90,7 @@ export async function upsertAgent(
     ...(agent.mailbox ? { mailbox: agent.mailbox } : {}),
     ...(agent.cwd ? { cwd: agent.cwd } : {}),
     ...(agent.autoStart ? { autoStart: true } : {}),
+    ...(agent.threadId ? { threadId: agent.threadId } : {}),
   };
   const idx = data.agents.findIndex((a) => a.sessionId === agent.sessionId);
   if (idx >= 0) data.agents[idx] = { ...data.agents[idx], ...entry };

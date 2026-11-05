@@ -27,6 +27,14 @@ describe('headlessArgs', () => {
       ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', 'sandbox_mode="workspace-write"', '-c', 'sandbox_workspace_write.writable_roots=["/v"]', 'T1', '-'],
     );
   });
+  it('runs Claude Code in print mode with the member id as its session, then resumes it', () => {
+    expect(headlessArgs('claude', { sessionId: ID }, 'hi')).toEqual(
+      ['-p', '--output-format', 'json', '--permission-mode', 'acceptEdits', '--session-id', ID],
+    );
+    expect(headlessArgs('claude', { sessionId: ID, threadId: ID, extraDir: '/v' }, 'hi')).toEqual(
+      ['-p', '--output-format', 'json', '--permission-mode', 'acceptEdits', '--add-dir', '/v', '--resume', ID],
+    );
+  });
   it('gives Gemini the member id as its session id, then resumes it', () => {
     expect(headlessArgs('gemini', { sessionId: ID }, 'hi')).toEqual(
       ['--session-id', ID, '--approval-mode', 'auto_edit', '--skip-trust', '-o', 'json', '-p', 'hi'],
@@ -51,6 +59,13 @@ describe('parseHeadlessOutput', () => {
     const r = parseHeadlessOutput('codex', out, 1, ID);
     expect(r).toEqual({ ok: false, threadId: 'T1', error: 'unexpected status 401 Unauthorized' });
     expect(looksUnauthenticated(r.error)).toBe(true);
+  });
+  it('reads the Claude Code result; an error result fails even with exit 0', () => {
+    expect(parseHeadlessOutput('claude', `{"type":"result","subtype":"success","is_error":false,"result":"done","session_id":"${ID}"}`, 0, ID))
+      .toEqual({ ok: true, threadId: ID, error: undefined });
+    const failed = parseHeadlessOutput('claude', `{"type":"result","subtype":"success","is_error":true,"result":"Invalid API key · Please run /login","session_id":"${ID}"}`, 1, ID);
+    expect(failed.ok).toBe(false);
+    expect(looksUnauthenticated(failed.error)).toBe(true);
   });
   it('reads Gemini JSON; a failed first run proves no session', () => {
     expect(parseHeadlessOutput('gemini', `{"session_id":"${ID}","response":"ok"}`, 0, ID)).toEqual({ ok: true, threadId: ID, error: undefined });

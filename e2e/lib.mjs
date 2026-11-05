@@ -62,7 +62,8 @@ export function setupVault() {
   fs.cpSync(path.join(ROOT, 'e2e', 'fixtures'), vault, { recursive: true });
 
   fs.mkdirSync(HARNESS_BIN, { recursive: true });
-  const fakes = { claude: 'exit 0', codex: `exec "${process.execPath}" "${path.join(ROOT, 'e2e', 'fake-codex.mjs')}" "$@"` };
+  const fake = (f) => `exec "${process.execPath}" "${path.join(ROOT, 'e2e', f)}" "$@"`;
+  const fakes = { claude: fake('fake-claude.mjs'), codex: fake('fake-codex.mjs') };
   for (const [bin, body] of Object.entries(fakes)) {
     fs.writeFileSync(path.join(HARNESS_BIN, bin), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
   }

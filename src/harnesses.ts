@@ -2,7 +2,9 @@
  * Agent CLIs ("harnesses") a plugin-created member can run on.
  *
  * - Claude Code opens in a terminal with the letter as its first message; later
- *   letters reach the running session through its hooks (hookInstaller.ts).
+ *   letters reach the running session through its inbox or hooks (hookInstaller.ts).
+ *   Where the plugin cannot open a terminal (Linux, Windows) a closed Claude member
+ *   answers like Codex: one headless `claude -p` run per letter, in its own session.
  * - Codex and Gemini CLI have no way to receive a letter mid-session, so every
  *   letter is answered by one headless run that resumes the member's session.
  *   The user can still open that session in a terminal and keep talking.
@@ -148,8 +150,15 @@ export interface HeadlessOpts {
   extraDir?: string;
 }
 
-/** argv for one letter. The prompt goes on stdin for Codex and as `-p` for Gemini. */
+/** argv for one letter. The prompt goes on stdin for Codex and Claude Code, and as `-p` for Gemini. */
 export function headlessArgs(h: HarnessId, o: HeadlessOpts, prompt: string): string[] {
+  if (h === 'claude') {
+    // acceptEdits: may edit files under cwd (+ the vault); whatever else it would ask for is refused
+    // in print mode, which also skips the folder-trust dialog. `threadId` = its transcript exists.
+    const common = ['-p', '--output-format', 'json', '--permission-mode', 'acceptEdits'];
+    if (o.extraDir) common.push('--add-dir', o.extraDir);
+    return [...common, ...(o.threadId ? ['--resume', o.threadId] : ['--session-id', o.sessionId])];
+  }
   if (h === 'codex') {
     // workspace-write: may edit files under cwd (+ the vault), never asks for approval in exec mode
     const common = ['--json', '--skip-git-repo-check', '-c', 'sandbox_mode="workspace-write"'];
@@ -186,6 +195,15 @@ export function parseHeadlessOutput(h: HarnessId, stdout: string, code: number |
       if (ev.type === 'turn.failed') error = ev.error?.message ?? 'turn failed';
       else if (ev.type === 'error' && ev.message && !/^Reconnecting/.test(ev.message)) error = ev.message;
     }
+  } else if (h === 'claude') {
+    // One result object: { type: 'result', subtype, is_error, result, session_id }
+    const start = stdout.indexOf('{');
+    try {
+      const out = JSON.parse(stdout.slice(start)) as { session_id?: string; is_error?: boolean; result?: string; subtype?: string };
+      threadId = out.session_id;
+      if (out.is_error) error = (out.result || out.subtype || 'error').trim();
+    } catch { /* not JSON: fall back to the exit code */ }
+    if (!threadId && code === 0) threadId = sessionId;
   } else {
     const start = stdout.indexOf('{');
     try {

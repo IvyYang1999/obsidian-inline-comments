@@ -197,10 +197,9 @@ function newSessionHint(name: string, harness: HarnessId | null, signedIn = true
   const h = harness ? HARNESSES.find((x) => x.id === harness) : undefined;
   if (!h) return t('本机没找到 Claude Code、Codex 或 Gemini CLI');
   if (!signedIn) return t('会用 {0} 开「{1}」，但 {0} 好像还没登录', [h.label, name]);
-  if (h.mode !== 'terminal') return t('用 {0} 在后台开「{1}」回复，之后 @{1} 都接着它聊', [h.label, name]);
-  return canOpenTerminal()
-    ? t('用 {0} 在终端里开「{1}」，之后 @{1} 都接着它聊', [h.label, name])
-    : t('给你一条启动「{1}」的命令，在终端里用 {0} 运行；之后 @{1} 都接着它聊', [h.label, name]);
+  // Without a terminal the plugin can open (Linux, Windows), Claude Code answers in the background too
+  if (h.mode !== 'terminal' || !canOpenTerminal()) return t('用 {0} 在后台开「{1}」回复，之后 @{1} 都接着它聊', [h.label, name]);
+  return t('用 {0} 在终端里开「{1}」，之后 @{1} 都接着它聊', [h.label, name]);
 }
 
 const LEVEL_CLS: Record<Reach['level'], string> = { now: 'online', later: 'idle', none: 'offline' };

@@ -372,7 +372,8 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
         name: c.name, sessionId: c.sessionId, harness: c.harness, letter: letterPath, state: 'sending',
       });
     }
-    const inbox = harness?.id === 'claude' ? await this.handToClaudeInbox(c, letterPath, key) : 'closed';
+    // While its background run is going, that run is the session: the next letter queues behind it
+    const inbox = harness?.id === 'claude' && !this.headlessRuns.has(c.sessionId) ? await this.handToClaudeInbox(c, letterPath, key) : 'closed';
     if (inbox === 'handed') { this.logDelivery(key, { state: 'handed', route: 'inbox' }); return; }
     const file = relPath.split('/').pop();
     if (inbox === 'held') {
@@ -385,9 +386,8 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       this.notifyDesktop(t('评论区有新留言给 {0}', [c.name]), t('{0} · 它开着，但留言没能直接送进它的会话（收信口没开或不见了）；它下一次说话/收尾时会看到', [file]));
       return; // running already: nothing to start
     }
-    if (harness?.mode === 'headless' && !c.autoStart) this.logDelivery(key, { state: 'mailbox', reason: 'not-autostart' });
-    // headless members answer right away and say so themselves
-    if (!(c.autoStart && harness?.mode === 'headless')) {
+    // background answers say so themselves
+    if (!(harness && this.answersInBackground(c, harness))) {
       this.notifyDesktop(t('评论区有新留言给 {0}', [c.name]), t('{0} · 它下一次说话/收尾时会看到', [file]));
     }
     await this.maybeAutoStart(c, letterPath, key);
@@ -438,10 +438,10 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
     await this.resumeInTerminal(c.sessionId, c.cwd, c.harness, c.threadId);
   }
 
-  /** Open a terminal where the user signs the Codex / Gemini CLI in */
+  /** Open a terminal where the user signs the CLI in (Codex: `codex login`; Claude Code / Gemini: the CLI itself) */
   async openHarnessLogin(harness: string | undefined): Promise<void> {
     const h = harnessDef(harness);
-    if (!h || h.mode !== 'headless' || !Platform.isDesktop) return;
+    if (!h || !Platform.isDesktop) return;
     // The user is signing in now: a run turned away earlier no longer says they aren't
     if (this.settings.harnessSignedIn?.[h.id] === false) {
       const { [h.id]: _was, ...rest } = this.settings.harnessSignedIn;
@@ -521,16 +521,27 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
   }
 
   /**
-   * A letter was delivered to a member that asked to be auto-started: if its
-   * session is not running, start (new) or resume (known) it in a terminal with
-   * the letter as the first message. The letter is marked as handed over so the
-   * hook does not inject it a second time.
+   * Does this member answer with one background run per letter? Codex / Gemini always (they never
+   * look at a mailbox); a plugin-created Claude Code member where the plugin cannot open a terminal.
+   */
+  private answersInBackground(c: Pick<Candidate, 'autoStart'>, harness: HarnessDef): boolean {
+    return harness.mode === 'headless' || (harness.id === 'claude' && !!c.autoStart && !canOpenTerminal());
+  }
+
+  /**
+   * A letter was delivered to a member and no running session took it. Codex / Gemini
+   * members (and, without a terminal, plugin-created Claude members) answer it in the
+   * background. A plugin-created Claude member is started (new) or resumed (known) in a
+   * terminal with the letter as its first message; the letter is marked as handed over
+   * so the hook does not inject it a second time.
    */
   async maybeAutoStart(c: Candidate, letterPath: string, key?: string): Promise<void> {
     if (!Platform.isDesktop) return; // letters are still written; a desktop session picks them up
     const harness = harnessDef(c.harness);
-    if (!c.autoStart || !harness) return;
-    if (harness.mode === 'headless') {
+    if (!harness) return;
+    if (this.answersInBackground(c, harness)) {
+      // A Claude session the user has open is theirs (its inbox was tried already): the letter waits for it
+      if (harness.id === 'claude' && !this.headlessRuns.has(c.sessionId) && (await runningClaudeIds()).has(c.sessionId.toLowerCase())) return;
       // One run at a time per member: the next letter resumes the session the previous run created
       this.logDelivery(key, { state: 'handed', route: 'background' });
       const next = (this.headlessRuns.get(c.sessionId) ?? Promise.resolve()).then(() => this.answerHeadless(c, harness, letterPath, key));
@@ -538,6 +549,7 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       void next.finally(() => { if (this.headlessRuns.get(c.sessionId) === next) this.headlessRuns.delete(c.sessionId); });
       return;
     }
+    if (!c.autoStart) return;
     const started = LETTER_STARTED;
     try {
       const running = await runningClaudeIds();
@@ -545,12 +557,6 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       const adapter = this.app.vault.adapter;
       const raw = await adapter.read(letterPath);
       if (!raw.includes('status: 未读')) return; // already handed over by the hook
-      if (!canOpenTerminal()) {
-        // Nothing can be started from here: the card offers the start command, the letter waits until then
-        this.logDelivery(key, { state: 'mailbox', reason: 'no-terminal' });
-        new Notice(t('「{0}」没开着。在评论卡片上点「复制启动命令」，粘到终端里运行，它就会收到这条', [c.name]), 10000);
-        return;
-      }
       await adapter.write(letterPath, raw.replace('status: 未读', started));
       const plan = await this.startPlan(c, raw);
       const r = await launchInTerminal(plan);
@@ -579,9 +585,10 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
   }
 
   /**
-   * The card's 「复制启动命令」 where no terminal can be opened: the command that starts the session
-   * with this letter goes on the clipboard, and the letter counts as handed over, so the hook
-   * does not inject it a second time when that session starts.
+   * 「复制启动命令」 on cards from beta.9–10, where a closed Claude member without a terminal waited for
+   * the user: the command that starts the session with this letter goes on the clipboard, and the
+   * letter counts as handed over, so the hook does not inject it a second time. Newer letters to
+   * such a member are answered in the background instead.
    */
   private async copyStartCommand(c: Candidate, rec: DeliveryRecord): Promise<void> {
     let raw: string;
@@ -599,9 +606,9 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
   }
 
   /**
-   * Codex / Gemini: answer one letter with a headless run that resumes the
-   * member's session (or starts it). The reply lands in the note like any other;
-   * failures are reported and the letter goes back to unread.
+   * Codex / Gemini (and Claude Code without a terminal): answer one letter with a headless
+   * run that resumes the member's session (or starts it). The reply lands in the note like
+   * any other; failures are reported and the letter goes back to unread.
    */
   private async answerHeadless(c: Candidate, harness: HarnessDef, letterPath: string, key?: string): Promise<void> {
     const adapter = this.app.vault.adapter;
@@ -620,8 +627,13 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       await adapter.write(letterPath, raw.replace('status: 未读', handed));
       this.logDelivery(key, { state: 'handed', route: 'background' });
 
-      // Read the thread id now, not from the candidate: the previous run may have just stored it
-      const threadId = (await readRegistry(this.app)).agents.find((a) => a.sessionId === c.sessionId)?.threadId;
+      // Read the thread id now, not from the candidate: the previous run may have just stored it.
+      // A member the plugin did not create (added from the list, /comment-join) is the CLI's own
+      // session: its id is the thread. A Claude member resumes once its transcript exists.
+      const entry = (await readRegistry(this.app)).agents.find((a) => a.sessionId === c.sessionId);
+      const threadId = harness.id === 'claude'
+        ? (await sessionFileExists(c.sessionId) ? c.sessionId : undefined)
+        : entry?.threadId ?? (entry && !entry.autoStart ? c.sessionId : undefined);
       const vault = this.vaultBasePath();
       const cwd = c.cwd || vault || process.cwd();
       const rel = vault ? nodePath().relative(cwd, vault) : '';
@@ -634,9 +646,9 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       const res = await runHeadless(harness.id, {
         bin, path, cwd, logFile, sessionId: c.sessionId,
         args: headlessArgs(harness.id, { sessionId: c.sessionId, threadId, extraDir }, prompt),
-        stdin: harness.id === 'codex' ? prompt : undefined,
+        stdin: harness.id === 'gemini' ? undefined : prompt,
       });
-      if (res.threadId && res.threadId !== threadId) await setAgentThread(this.app, c.sessionId, res.threadId);
+      if (harness.id !== 'claude' && res.threadId && res.threadId !== threadId) await setAgentThread(this.app, c.sessionId, res.threadId);
       if (res.ok) { await this.noteSignedIn(harness.id, true); return; } // the reply shows up in the panel when the note changes
 
       console.error('[ilc] headless run failed', harness.id, res.error, logFile);
@@ -1254,6 +1266,9 @@ function formatProcessError(error: unknown): string {
 // ─── Settings tab ─────────────────────────────────────────────────────────────
 
 class ILCSettingTab extends PluginSettingTab {
+  /** 「AI 作者的头像」 stays open across re-renders (adding an avatar redraws the page) */
+  private avatarsOpen = false;
+
   constructor(app: App, private plugin: InlineCommentsPlugin) {
     super(app, plugin);
   }
@@ -1336,16 +1351,20 @@ class ILCSettingTab extends PluginSettingTab {
     renderAgentRegistrySection(containerEl, this.app);
 
     // ── AI agents: how AI authors look (and the older 「请它回应」) — not who can be @-ed ──
-    new Setting(containerEl).setName(t('AI 作者的头像')).setHeading();
-    containerEl.createEl('p', {
+    // Folded: it only sets how AI authors look; next to 「评论 @ 成员」 it read as a second list of who to @
+    const avatars = containerEl.createEl('details', { cls: 'ilc-settings-fold' });
+    avatars.open = this.avatarsOpen;
+    avatars.addEventListener('toggle', () => { this.avatarsOpen = avatars.open; });
+    avatars.createEl('summary', { text: t('AI 作者的头像'), cls: 'setting-item-heading ilc-settings-fold-summary' });
+    avatars.createEl('p', {
       text: t('评论作者名和这里的名字一样时，显示这里的头像和颜色；填了 Claude 会话 ID 的，评论里提到它时会出现「请它回应」。在评论里 @ 谁，用的是上面的「评论 @ 成员」，和这里无关。'),
       cls: 'setting-item-description',
     });
 
-    const agentsEl = containerEl.createEl('div', { cls: 'ilc-settings-list' });
+    const agentsEl = avatars.createEl('div', { cls: 'ilc-settings-list' });
     this.renderAgentsList(agentsEl);
 
-    new Setting(containerEl).addButton((btn) =>
+    new Setting(avatars).addButton((btn) =>
       btn.setButtonText(t('+ 添加 AI 助手')).onClick(async () => {
         this.plugin.settings.aiAgents.push({
           id: `agent-${Date.now()}`,
@@ -1359,7 +1378,7 @@ class ILCSettingTab extends PluginSettingTab {
     );
 
     // ── Default AI agent ──
-    new Setting(containerEl)
+    new Setting(avatars)
       .setName(t('默认 AI 助手'))
       .setDesc(t('点击「请 AI 回应」时，默认请求哪个 AI'))
       .addDropdown((drop) => {

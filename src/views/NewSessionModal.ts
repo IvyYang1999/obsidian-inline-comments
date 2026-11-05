@@ -73,7 +73,8 @@ export class NewSessionModal extends Modal {
   private cwd: string;
   private harness: HarnessId | null = null;
 
-  constructor(app: App, private onCreated: (entry: RosterEntry) => void, initialName = '') {
+  /** `submitLabel`: 「创建并 @」 from a comment, 「创建」 from the members dialog */
+  constructor(app: App, private onCreated: (entry: RosterEntry) => void, initialName = '', private submitLabel = t('创建并 @')) {
     super(app);
     this.name = initialName;
     this.cwd = defaultSessionCwd(app);
@@ -127,7 +128,7 @@ export class NewSessionModal extends Modal {
       .addButton((b) => b.setButtonText(t('取消')).onClick(() => this.close()))
       .addButton((b) => {
         createBtn = b;
-        b.setButtonText(t('创建并 @')).setCta().setDisabled(!this.harness).onClick(() => void this.submit());
+        b.setButtonText(this.submitLabel).setCta().setDisabled(!this.harness).onClick(() => void this.submit());
       });
 
     window.setTimeout(() => nameInput?.focus(), 50);
@@ -142,11 +143,10 @@ export class NewSessionModal extends Modal {
       return;
     }
     this.harness = preferred ?? installed[0];
-    const describe = (id: HarnessId) => setting.setDesc(HARNESSES.find((h) => h.id === id)?.mode !== 'terminal'
+    // Without a terminal the plugin can open (Linux, Windows), Claude Code answers in the background too
+    const describe = (id: HarnessId) => setting.setDesc(HARNESSES.find((h) => h.id === id)?.mode !== 'terminal' || !canOpenTerminal()
       ? t('在后台回复，每封留言都接着同一个会话；想接着聊，在成员列表里点它的 ⋯ →「在终端里接着聊」')
-      : canOpenTerminal()
-        ? t('在终端里打开，之后可以继续在终端或评论里跟它聊')
-        : t('插件在这台电脑上打不开终端：@ 它以后，在卡片上复制启动命令，到终端里运行'));
+      : t('在终端里打开，之后可以继续在终端或评论里跟它聊'));
     describe(this.harness);
     setting.addDropdown((d) => {
       for (const id of installed) d.addOption(id, HARNESSES.find((h) => h.id === id)!.label);

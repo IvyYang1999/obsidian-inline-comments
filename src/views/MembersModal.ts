@@ -8,6 +8,7 @@ import { DEFAULT_MAILBOX_ROOT } from '../mentionDelivery.ts';
 import { harnessDef } from '../harnesses.ts';
 import { claudeInboxHolds, findClaudeSession } from '../claudeInbox.ts';
 import { canOpenTerminal } from '../sessionLauncher.ts';
+import { NewSessionModal } from './NewSessionModal.ts';
 
 const STATUS_CLS: Record<string, string> = { '在线': 'online', '闲置': 'idle', '离线': 'offline' };
 const LEVEL_CLS: Record<Reach['level'], string> = { now: 'online', later: 'idle', none: 'offline' };
@@ -54,6 +55,15 @@ export class MembersModal extends Modal {
     const s1 = contentEl.createEl('section', { cls: 'ilc-members-section' });
     const h1 = s1.createEl('div', { cls: 'ilc-members-section-head' });
     h1.createEl('h3', { text: t('可以 @ 的成员') });
+    // The shortest way to a first member: a new session, no list to read through
+    const create = h1.createEl('button', { cls: 'ilc-members-new mod-cta', text: t('+ 新会话') });
+    create.setAttribute('title', t('新建一个 Claude Code / Codex 会话作为成员，@ 它时插件会把留言交给它'));
+    create.addEventListener('click', () => {
+      new NewSessionModal(this.app, (entry) => {
+        new Notice(t('「{0}」已加入：在评论里输入 @{0} 就能点名它', [entry.name]));
+        void Promise.all([this.renderMembers(), this.renderSessions()]);
+      }, '', t('创建')).open();
+    });
     this.membersEl = s1.createEl('div', { cls: 'ilc-members-list' });
 
     // ── Local sessions
@@ -138,7 +148,7 @@ export class MembersModal extends Modal {
     el.empty();
     const entries = (await loadRoster(this.app)).filter((e) => !e.isAction);
     if (entries.length === 0) {
-      el.createEl('div', { cls: 'ilc-members-empty', text: t('还没有成员。在下面选一个会话，起个名字，点「加入」。') });
+      el.createEl('div', { cls: 'ilc-members-empty', text: t('还没有成员。点「+ 新会话」新建一个；或在下面选一个已有的会话，起个名字，点「加入」。') });
       return;
     }
     const reach = await memberReach(this.app, entries);
@@ -158,14 +168,14 @@ export class MembersModal extends Modal {
     const line1 = main.createEl('div', { cls: 'ilc-members-line' });
     line1.createEl('span', { cls: 'ilc-at-name', text: e.name });
     if (e.harness) line1.createEl('span', { cls: 'ilc-at-source', text: harnessDef(e.harness)?.label ?? e.harness });
-    const headless = e.autoStart && harnessDef(e.harness)?.mode === 'headless';
+    const headless = harnessDef(e.harness)?.mode === 'headless';
+    // A plugin-created Claude member where no terminal can be opened answers in the background too
+    const background = headless || (!!e.autoStart && harnessDef(e.harness)?.id === 'claude' && !canOpenTerminal());
     if (e.autoStart) {
       const tag = line1.createEl('span', { cls: 'ilc-at-source ilc-at-source-muted', text: t('自动启动') });
-      tag.setAttribute('title', headless
+      tag.setAttribute('title', background
         ? t('有留言时，插件在后台接着这个会话回复')
-        : canOpenTerminal()
-          ? t('有留言且它没在运行时，插件会在终端里启动/恢复这个会话并把留言交给它')
-          : t('有留言且它没在运行时，卡片上会给你一条启动命令，到终端里运行就把留言交给它'));
+        : t('有留言且它没在运行时，插件会在终端里启动/恢复这个会话并把留言交给它'));
     }
     const status = reach?.text ?? statusLabel(e.status);
     line1.createEl('span', { cls: 'ilc-members-status', text: status, attr: { title: status } });
@@ -185,7 +195,7 @@ export class MembersModal extends Modal {
       });
     }
     // Opening its session and removing it are occasional: behind ⋯, so the row keeps one button at most
-    const canOpen = headless && !!e.threadId;
+    const canOpen = headless ? !!e.threadId : background;
     if (canOpen || e.source === 'registry') {
       const more = row.createEl('button', { cls: 'clickable-icon ilc-members-more', attr: { 'aria-label': t('更多操作') } });
       setIcon(more, 'more-horizontal');
@@ -279,11 +289,12 @@ export class MembersModal extends Modal {
       for (const s of here) render(list, s);
     }
     if (elsewhere.length === 0) return;
+    // Other projects' sessions stay folded (open while searching): on a first visit they buried 「+ 新会话」
     const box = el.createEl('details', { cls: 'ilc-members-elsewhere' });
-    box.open = here.length === 0 || !!q;
+    box.open = !!q;
     box.createEl('summary', {
       cls: 'ilc-members-subhead',
-      text: here.length > 0 ? t('其他文件夹里的会话（{0}）', [elsewhere.length]) : t('这个 vault 里没有会话，下面是其他文件夹里的（{0}）', [elsewhere.length]),
+      text: here.length > 0 ? t('其他文件夹里的会话（{0}）', [elsewhere.length]) : t('这个 vault 里还没有会话 · 其他文件夹里的会话（{0}）', [elsewhere.length]),
     });
     const list = box.createEl('div', { cls: 'ilc-members-list' });
     for (const s of elsewhere) render(list, s);
@@ -348,7 +359,11 @@ export class MembersModal extends Modal {
       const name = input.value.trim();
       btn.disabled = true;
       try {
-        const res = await upsertAgent(this.app, { name, sessionId: s.sessionId, harness: s.harness });
+        // Its folder, to resume it there; a Codex session's id is its thread, so letters continue that very session
+        const res = await upsertAgent(this.app, {
+          name, sessionId: s.sessionId, harness: s.harness, cwd: s.cwd,
+          threadId: harnessDef(s.harness)?.mode === 'headless' ? s.sessionId : undefined,
+        });
         if (!res.ok) { fail(res.error); return; }
       } catch (e) {
         fail(t('没能加入：{0}', [String((e as Error)?.message ?? e)]));

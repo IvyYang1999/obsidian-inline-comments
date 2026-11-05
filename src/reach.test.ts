@@ -22,9 +22,11 @@ describe('decideReach: Claude Code', () => {
     expect(decideReach(claude({ autoStart: true, cliInstalled: true }))).toMatchObject({ level: 'now' });
     expect(decideReach(claude({ autoStart: true, cliInstalled: false })).level).not.toBe('now');
   });
-  it('where no terminal can be opened, the start command is offered instead (even without the hook)', () => {
-    expect(decideReach(claude({ autoStart: true, cliInstalled: true, canOpenTerminal: false }))).toMatchObject({ level: 'later', text: expect.stringContaining('复制启动命令') });
+  it('where no terminal can be opened, it answers in the background (even without the hook)', () => {
+    expect(decideReach(claude({ autoStart: true, cliInstalled: true, canOpenTerminal: false }))).toMatchObject({ level: 'now', text: expect.stringContaining('后台回复') });
     expect(decideReach(claude({ autoStart: true, cliInstalled: true, canOpenTerminal: false })).fix).toBeUndefined();
+    // a session the user added from the list is theirs: the plugin does not start it
+    expect(decideReach(claude({ cliInstalled: true, canOpenTerminal: false, hookInstalled: true }))).toMatchObject({ level: 'later' });
   });
   it('bypass or closed sessions wait for the hook', () => {
     expect(decideReach(claude({ open: true, holds: true, hookInstalled: true }))).toMatchObject({ level: 'later', text: expect.stringContaining('跳过了权限确认') });
@@ -48,7 +50,9 @@ describe('decideReach: Codex / Gemini', () => {
   it('says what is missing', () => {
     expect(decideReach(codex({ loggedIn: false }))).toMatchObject({ level: 'none', fix: 'login' });
     expect(decideReach(codex({ cliInstalled: false }))).toMatchObject({ level: 'none', text: expect.stringContaining('没找到 Codex') });
-    expect(decideReach(codex({ autoStart: false }))).toMatchObject({ level: 'none', text: expect.stringContaining('不会自己看信箱') });
+  });
+  it('a session added from the list (not created by the plugin) is answered in the background too', () => {
+    expect(decideReach(codex({ autoStart: false }))).toMatchObject({ level: 'now', text: '在后台回复' });
   });
 });
 

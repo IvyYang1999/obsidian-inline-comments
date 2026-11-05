@@ -141,7 +141,8 @@ async function walk(dir: string, depth: number, acc: string[]): Promise<void> {
 }
 
 async function discoverCodex(codexRunning: boolean, now: number): Promise<LocalSession[]> {
-  const root = nodePath().join(nodeOs().homedir(), '.codex', 'sessions');
+  // Codex keeps its sessions under CODEX_HOME when that is set
+  const root = nodePath().join(process.env.CODEX_HOME || nodePath().join(nodeOs().homedir(), '.codex'), 'sessions');
   const files: string[] = [];
   await walk(root, 4, files);
   const out: LocalSession[] = [];

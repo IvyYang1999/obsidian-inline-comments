@@ -30,7 +30,7 @@ export interface ReachFacts {
   /** Harness display name (Claude Code, Codex, …) */
   label: string;
   headless: boolean;
-  /** Plugin-created member: started / answered by the plugin when a letter arrives */
+  /** Plugin-created Claude member: started (terminal) or answered (background) by the plugin when a letter arrives */
   autoStart: boolean;
   /** Claude: the session is running */
   open?: boolean;
@@ -53,7 +53,8 @@ export const REACH_ORDER: Record<ReachLevel, number> = { now: 0, later: 1, none:
 
 export function decideReach(f: ReachFacts): Reach {
   if (f.headless) {
-    if (!f.autoStart) return { level: 'none', text: t('收不到：{0} 会话不会自己看信箱', [f.label]) };
+    // Codex / Gemini never look at a mailbox: every member on them is answered in the background,
+    // however it joined (New session, the session list, /comment-join)
     if (!f.cliInstalled) return { level: 'none', text: t('收不到：本机没找到 {0}', [f.label]) };
     if (!f.loggedIn) return { level: 'none', text: t('收不到：{0} 好像还没登录', [f.label]), fix: 'login' };
     return { level: 'now', text: t('在后台回复') };
@@ -70,8 +71,8 @@ export function decideReach(f: ReachFacts): Reach {
   }
   if (f.open && !f.holds) return { level: 'now', text: f.desktop ? t('开着（Claude 客户端），直接送进去') : t('开着（终端），直接送进去') };
   if (!f.open && f.autoStart && f.cliInstalled && f.canOpenTerminal) return { level: 'now', text: t('没开着，@ 时会在终端里打开它') };
-  // No terminal the plugin can open (Linux, Windows): the card hands the user the start command
-  if (!f.open && f.autoStart && f.cliInstalled) return { level: 'later', text: t('没开着：@ 后在卡片上复制启动命令，到终端里运行它就会收到') };
+  // No terminal the plugin can open (Linux, Windows): it answers in the background, like Codex
+  if (!f.open && f.autoStart && f.cliInstalled) return { level: 'now', text: t('没开着，@ 时在后台回复') };
   // A session that skips permission prompts holds letters from other programs; switching its
   // mode takes effect at once (no restart), so the text says so
   if (f.hookInstalled) return { level: 'later', text: f.open ? t('它跳过了权限确认，要等它下次说话；换个权限模式就能直接送到') : t('没开着，下次打开它时会看到') };
