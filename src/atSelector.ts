@@ -8,6 +8,7 @@ import { HARNESSES, detectHarnesses, harnessDef, type HarnessId } from './harnes
 import { claudeInboxHolds, findClaudeSession } from './claudeInbox.ts';
 import { REACH_ORDER, decideReach, harnessLoggedIn, legacyReach, levelHint, unknownHarnessReach, type Reach } from './reach.ts';
 import { canOpenTerminal } from './sessionLauncher.ts';
+import type InlineCommentsPlugin from '../main.ts';
 
 export { REGISTRY_PATH };
 
@@ -142,11 +143,11 @@ export function parseRosterContent(content: string): RosterEntry[] {
 
 // ─── How each member gets a letter ───────────────────────────────────────────
 
-/* eslint-disable @typescript-eslint/no-explicit-any -- the plugin instance is looked up through Obsidian's untyped registry */
-const pluginOf = (app: App): any => (app as any).plugins?.plugins?.['inline-comments'];
+/** Describe only our plugin's entry in Obsidian's internal registry. */
+type AppWithCommentPlugin = App & { plugins?: { plugins?: { 'inline-comments'?: InlineCommentsPlugin } } };
+const pluginOf = (app: App) => (app as AppWithCommentPlugin).plugins?.plugins?.['inline-comments'];
 /** The plugin's answer (it remembers what the last background run showed); the file check without it */
-const signedIn = (app: App, id: HarnessId): Promise<boolean> => (pluginOf(app)?.harnessSignedIn?.(id) as Promise<boolean> | undefined) ?? harnessLoggedIn(id);
-/* eslint-enable @typescript-eslint/no-explicit-any -- end of the plugin lookup */
+const signedIn = (app: App, id: HarnessId): Promise<boolean> => pluginOf(app)?.harnessSignedIn?.(id) ?? harnessLoggedIn(id);
 
 /** How each member would get a letter right now, by name (desktop only: empty on mobile) */
 export async function memberReach(app: App, entries: RosterEntry[]): Promise<Map<string, Reach>> {
@@ -154,7 +155,7 @@ export async function memberReach(app: App, entries: RosterEntry[]): Promise<Map
   if (!Platform.isDesktopApp) return out;
   const plugin = pluginOf(app);
   const [hookInstalled, { bins }] = await Promise.all([
-    (plugin?.refreshHookState?.() as Promise<boolean> | undefined)?.catch(() => false) ?? false,
+    plugin?.refreshHookState?.()?.catch(() => false) ?? false,
     detectHarnesses(),
   ]);
   await Promise.all(entries.map(async (e) => {
