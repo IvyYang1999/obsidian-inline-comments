@@ -78,3 +78,46 @@
   w.addEventListener('popstate', view);
   w.addEventListener('storage', () => { if (!allowed()) w['ga-disable-' + id] = true; });
 })();
+
+/* Dark Console: explicit public-site click categories; no text, queries, email or form values. */
+(() => {
+  const w=window,d=document,s=d.currentScript||d.querySelector('script[data-ga-id]');
+  if(!s||w.__dcSiteClicks)return;
+  const {gaId,site,hosts=''}=s.dataset;
+  if(!/^G-[A-Z0-9]+$/.test(gaId||'')||!/^[a-z0-9-]+$/.test(site||''))return;
+  const allowed=()=>{
+    if(!hosts.split(',').includes(w.location.hostname)||w.navigator.doNotTrack==='1'||w.doNotTrack==='1'||w.navigator.globalPrivacyControl===true)return false;
+    try{const c=JSON.parse(w.localStorage.getItem('dc-analytics-consent-v1')||'null');return c!=='denied'&&c?.value!=='denied'&&c?.status!=='denied'}catch{return false}
+  };
+  if(!allowed())return;
+  w.__dcSiteClicks=true;
+  const products=new Set(['yytyyf.com','darkconstant.com','feisou.app','long2text.com','opentrends.io','swob.app','keykeeper.dev','myhalo.dev','naviboard.yytyyf.com','agent-comments.yytyyf.com','manufold.yytyyf.com']);
+  const explicit=new Set(['product_click','download_click','github_click','contact_click','signup_click','login_click']);
+  let count=0;
+  d.addEventListener('click',event=>{
+    if(!allowed()||count>=100)return;
+    const a=event.target instanceof Element?event.target.closest('a,button[data-ga-click]'):null;
+    if(!a)return;
+    let name=explicit.has(a.dataset.gaClick)?a.dataset.gaClick:null,target=name?'button':null;
+    if(a instanceof HTMLAnchorElement){
+      const raw=a.getAttribute('href')||'';
+      if(/^mailto:/i.test(raw)){name='contact_click';target='email'}
+      else {let u;try{u=new URL(raw,w.location.href)}catch{return}
+        if(!['https:','http:'].includes(u.protocol))return;
+        const h=u.hostname.toLowerCase().replace(/^www\./,'');
+        if(a.hasAttribute('download')||/\.(dmg|pkg|zip|exe|msi|appimage|apk)$/i.test(u.pathname)){name='download_click';target='download'}
+        else if(h==='github.com'){name='github_click';target='github'}
+        else if(h===w.location.hostname&&/\/(sign-?up|register)(\/|$)/i.test(u.pathname)){name='signup_click';target='signup'}
+        else if(h===w.location.hostname&&/\/(log-?in|sign-?in)(\/|$)/i.test(u.pathname)){name='login_click';target='login'}
+        else if(products.has(h)&&h!==w.location.hostname.replace(/^www\./,'')){name='product_click';target=h}
+      }
+    }
+    if(!name)return;
+    const placement=a.closest('nav,header')?'nav':a.closest('footer')?'footer':a.closest('.hero')?'hero':'body';
+    w.dataLayer=w.dataLayer||[];if(w.dataLayer.length>=100)return;
+    count++;
+    // gtag consumes array-like commands; do not wait for it or block navigation.
+    function tag(){w.dataLayer.push(arguments)}
+    tag('event',name,{send_to:gaId,site,product_id:site,target,placement});
+  },{capture:true});
+})();
