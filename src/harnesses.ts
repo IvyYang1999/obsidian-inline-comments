@@ -125,7 +125,10 @@ async function detect(): Promise<InstalledHarnesses> {
   const override = process.env.ILC_HARNESS_PATH;
   const searchPath = override ?? [await loginShellPath(), process.env.PATH ?? ''].filter(Boolean).join(sep);
   const dirs = [...new Set(searchPath.split(sep).filter(Boolean))];
-  const exts = process.platform === 'win32' ? ['.cmd', '.exe', ''] : [''];
+  // On Windows, prefer a native .exe over the npm-generated .cmd shim.
+  // Node's child_process.spawn cannot launch an absolute .cmd path without
+  // `shell: true` (throws EINVAL), while .exe works in both cases.
+  const exts = process.platform === 'win32' ? ['.exe', '.cmd', ''] : [''];
   const home = nodeOs().homedir();
   const bins: InstalledHarnesses['bins'] = {};
   for (const h of HARNESSES) {
@@ -232,6 +235,28 @@ export function resumeShell(h: HarnessId, cwd: string, threadId: string): string
 }
 
 /**
+ * Options for spawning a headless CLI.
+ *
+ * Windows cannot execute an absolute path to a `.cmd`/`.bat` via
+ * `child_process.spawn` without a shell: Node throws `EINVAL` synchronously
+ * (a bare command on PATH works, since Node resolves it through ComSpec).
+ * npm installs CLIs as `.cmd` shims, so this is the common Windows case.
+ * Only that path gets `shell: true`; native `.exe` runs keep the plain,
+ * argument-safe behaviour (shell would mangle quoted args such as Codex's
+ * `-c sandbox_mode="workspace-write"`).
+ */
+export function spawnOpts(bin: string, cwd: string, path: string, platform = process.platform) {
+  const needsShell = platform === 'win32' && /\.(cmd|bat)$/i.test(bin);
+  return {
+    cwd,
+    env: { ...process.env, PATH: path },
+    ...(needsShell ? { shell: true as const } : {}),
+  };
+}
+
+export const spawnOptsFor = (bin: string, cwd: string, path: string) => spawnOpts(bin, cwd, path);
+
+/**
  * Run one headless turn. Output is appended to `logFile` (kept for debugging);
  * the run is killed after `timeoutMs`.
  */
@@ -243,7 +268,7 @@ export function runHeadless(
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
-    const child = nodeCp().spawn(run.bin, run.args, { cwd: run.cwd, env: { ...process.env, PATH: run.path } });
+    const child = nodeCp().spawn(run.bin, run.args, spawnOptsFor(run.bin, run.cwd, run.path));
     const timer = window.setTimeout(() => child.kill('SIGTERM'), timeoutMs);
     child.stdout?.on('data', (d: Buffer) => { stdout += d.toString('utf8'); });
     child.stderr?.on('data', (d: Buffer) => { stderr += d.toString('utf8'); });

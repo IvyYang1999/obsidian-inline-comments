@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { harnessDef, headlessArgs, looksUnauthenticated, parseHeadlessOutput, resumeShell } from './harnesses.ts';
+import { harnessDef, headlessArgs, looksUnauthenticated, parseHeadlessOutput, resumeShell, spawnOpts } from './harnesses.ts';
 
 const ID = '3f1c2b9a-1111-4222-8333-444455556666';
 
@@ -73,6 +73,31 @@ describe('parseHeadlessOutput', () => {
     expect(failed.ok).toBe(false);
     expect(failed.threadId).toBeUndefined();
     expect(looksUnauthenticated(failed.error)).toBe(true);
+  });
+});
+
+describe('spawnOpts', () => {
+  const path = '/usr/bin';
+
+  it('uses a shell for .cmd shims on Windows (otherwise Node throws EINVAL)', () => {
+    expect(spawnOpts('C:\\npm\\claude.cmd', 'C:\\vault', path, 'win32').shell).toBe(true);
+    expect(spawnOpts('C:\\npm\\codex.bat', 'C:\\vault', path, 'win32').shell).toBe(true);
+  });
+
+  it('keeps native .exe and extensionless bins shell-free on Windows, to preserve quoted argv', () => {
+    expect(spawnOpts('C:\\bin\\claude.exe', 'C:\\vault', path, 'win32').shell).toBeUndefined();
+    expect(spawnOpts('claude', 'C:\\vault', path, 'win32').shell).toBeUndefined();
+  });
+
+  it('never uses a shell off Windows', () => {
+    expect(spawnOpts('/usr/bin/claude', '/vault', path, 'darwin').shell).toBeUndefined();
+    expect(spawnOpts('/usr/bin/claude.cmd', '/vault', path, 'linux').shell).toBeUndefined();
+  });
+
+  it('passes cwd and the discovered PATH through in every case', () => {
+    const o = spawnOpts('C:\\npm\\claude.cmd', 'C:\\vault', path, 'win32');
+    expect(o.cwd).toBe('C:\\vault');
+    expect(o.env.PATH).toBe(path);
   });
 });
 
