@@ -13,6 +13,7 @@ import {
   deleteAnnotation,
   deleteCommentEntry,
   applySuggestion,
+  editCommentEntry,
   setEntryType,
   isResolved,
   parseReaction,
@@ -1105,6 +1106,8 @@ export class CommentPanel extends ItemView {
 
     card.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest('.ilc-reply-input-row')) return;
+      // Don't hijack the click when the user has selected text to copy.
+      if (globalThis.getSelection && String(globalThis.getSelection()).length) return;
       this.bringPassageToCard(ann);
       this.highlightCard(ann.id);
     });
@@ -1367,6 +1370,7 @@ export class CommentPanel extends ItemView {
       }
     } else if (comment.text) {
       const body = entry.createEl('div', { cls: 'ilc-entry-body' });
+      body.dataset.entryIndex = String(entryIndex);
       this.renderCommentText(body, comment.text, file.path);
     }
     this.renderDeliveryLines(entry, comment, ann, entryIndex, file);
@@ -1559,6 +1563,16 @@ export class CommentPanel extends ItemView {
     const menu = new Menu();
     const isOnly = ann.comments.length === 1;
 
+    // Edit own text in place. Suggestion bodies are structural (old→new widget),
+    // so editing there would be misleading — offer it only for text/reply entries.
+    const editType = ann.comments[entryIndex]?.type;
+    if (editType !== 'suggest' && editType !== 'accepted' && editType !== 'declined' && editType !== 'react') {
+      menu.addItem((item) =>
+        item.setTitle(t('编辑此条')).setIcon('pencil')
+          .onClick(() => this.startEditingEntry(ann, entryIndex, file)),
+      );
+    }
+
     if (isOnly) {
       // Only one entry — deleting it removes the whole annotation
       menu.addItem((item) =>
@@ -1573,6 +1587,55 @@ export class CommentPanel extends ItemView {
       );
     }
     menu.showAtMouseEvent(e);
+  }
+
+  /** Replace one entry's rendered body with a textarea for in-place editing. */
+  private startEditingEntry(ann: Annotation, entryIndex: number, file: TFile): void {
+    const card = this.cardEls.get(ann.id);
+    if (!card) return;
+    const body = card.querySelector<HTMLElement>(`.ilc-entry-body[data-entry-index="${entryIndex}"]`);
+    const entry = ann.comments[entryIndex];
+    if (!body || !entry) return;
+
+    const original = entry.text;
+    const editor = document.createElement('textarea');
+    editor.className = 'ilc-entry-edit-input';
+    editor.value = original;
+    editor.rows = Math.max(2, Math.min(12, original.split('\n').length + 1));
+    editor.setAttribute('aria-label', t('编辑评论'));
+
+    const controls = document.createElement('div');
+    controls.className = 'ilc-entry-edit-controls';
+    const cancel = controls.createEl('button', { cls: 'ilc-entry-edit-cancel', text: t('取消') });
+    const save = controls.createEl('button', { cls: 'ilc-entry-edit-save mod-cta', text: t('保存') });
+
+    body.empty();
+    body.appendChild(editor);
+    body.appendChild(controls);
+    editor.focus();
+    editor.setSelectionRange(editor.value.length, editor.value.length);
+
+    let done = false;
+    const finish = () => { if (!done) { done = true; void this.refresh(); } };
+    const onKey = (ke: KeyboardEvent) => {
+      if (ke.key === 'Escape') { ke.preventDefault(); ke.stopPropagation(); finish(); }
+      else if ((ke.metaKey || ke.ctrlKey) && ke.key === 'Enter') { ke.preventDefault(); ke.stopPropagation(); void commit(); }
+    };
+    const commit = async () => {
+      if (done) return;
+      const next = editor.value.trim();
+      done = true;
+      if (next === original) { await this.refresh(); return; }
+      const content = await this.app.vault.read(file);
+      const updated = editCommentEntry(content, ann.from, entryIndex, next);
+      if (updated !== content) await this.app.vault.modify(file, updated);
+      await this.refresh();
+    };
+
+    cancel.addEventListener('click', (ev) => { ev.stopPropagation(); finish(); });
+    save.addEventListener('click', (ev) => { ev.stopPropagation(); void commit(); });
+    editor.addEventListener('keydown', onKey);
+    editor.addEventListener('click', (ev) => ev.stopPropagation());
   }
 
   private async deleteWholeAnnotation(ann: Annotation, file: TFile): Promise<void> {

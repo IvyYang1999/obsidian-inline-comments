@@ -395,4 +395,7 @@ const EN: Record<string, string> = {
   "创建": "Create",
   "还没有成员。点「+ 新会话」新建一个；或在下面选一个已有的会话，起个名字，点「加入」。": "No members yet. Click “+ New session” to make one, or pick an existing session below, give it a name and click “Add”.",
   "这个 vault 里还没有会话 · 其他文件夹里的会话（{0}）": "No sessions in this vault yet · Sessions in other folders ({0})",
+  "编辑此条": "Edit this comment",
+  "编辑评论": "Edit comment",
+  "保存": "Save",
 };

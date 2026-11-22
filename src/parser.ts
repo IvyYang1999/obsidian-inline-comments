@@ -244,6 +244,27 @@ function rewriteAnnotation(
   return null;
 }
 
+/**
+ * Replace the body text of one comment entry, keeping its author/date/type.
+ * Used by the panel's "edit this comment" action. `<<` / `>>` are escaped so
+ * edited text cannot break the CriticMarkup block structure.
+ */
+export function editCommentEntry(
+  content: string,
+  annotationFrom: number,
+  entryIndex: number,
+  newText: string,
+): string {
+  const out = rewriteAnnotation(content, annotationFrom, (highlight, blocks) => {
+    const raw = blocks[entryIndex];
+    if (!raw) return null;
+    const meta = parseMeta(raw.slice(3, -3));
+    blocks[entryIndex] = `{>>${meta.author}|${meta.date}|${meta.type}: ${escapeBody(newText.trim())}<<}`;
+    return { highlight, blocks };
+  });
+  return out ?? content;
+}
+
 /** Change the type of one entry (e.g. suggest → declined) */
 export function setEntryType(
   content: string,
