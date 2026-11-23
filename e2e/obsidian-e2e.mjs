@@ -1728,6 +1728,30 @@ async function run() {
       check('笔记开着时 agent 追加带列表的回复：编辑器不崩，角标变 3，卡片里看得到', afterAgent.file === '多行-回复.md' && afterAgent.badge === '3' && !afterAgent.raw && afterAgent.cardHasList, JSON.stringify(afterAgent));
       check('多行评论全程没有「Decorations that replace line breaks」报错', lineErrors.length === 0, JSON.stringify(lineErrors));
       page.off('console', onConsole);
+
+      // On the card: the body is rendered Markdown, so the newlines Obsidian leaves between <p>, <ul>
+      // and <li> (and after each <br>) must not show up as extra blank lines
+      await page.evaluate(async (D) => {
+        const f = await app.vault.create('多行-卡片.md', `一 {==段落==}{>>yyt|${D}|note: 第一段。\n\n第二段。<<}\n\n二 {==列表==}{>>yyt|${D}|note: 要点：\n- 一\n- 二<<}\n\n三 {==单换行==}{>>yyt|${D}|note: 甲行\n乙行<<}\n`);
+        await app.workspace.getLeaf(false).openFile(f, { state: { mode: 'source', source: false } });
+      }, D);
+      await sleep(1500);
+      const gaps = await page.evaluate(() => {
+        const bodies = [...document.querySelectorAll('.ilc-panel .ilc-card .ilc-entry-body')];
+        const find = (s) => bodies.find((b) => b.textContent.includes(s));
+        const lh = parseFloat(getComputedStyle(bodies[0]).lineHeight);
+        const ps = find('第一段')?.querySelectorAll('p') ?? [];
+        const lis = find('要点')?.querySelectorAll('li') ?? [];
+        const br = find('甲行');
+        const gap = (a, b) => Math.round(b.getBoundingClientRect().top - a.getBoundingClientRect().bottom);
+        return {
+          lh: Math.round(lh),
+          paraGap: ps.length === 2 ? gap(ps[0], ps[1]) : null,
+          liGap: lis.length === 2 ? gap(lis[0], lis[1]) : null,
+          brLines: br ? Math.round((br.getBoundingClientRect().height / lh) * 10) / 10 : null,
+        };
+      });
+      check('卡片里的多行回复不多空行：段落间距不到半行，列表项紧挨，单个换行只占两行', gaps.paraGap !== null && gaps.paraGap < gaps.lh / 2 && gaps.liGap !== null && gaps.liGap <= 2 && gaps.brLines !== null && gaps.brLines <= 2.2, JSON.stringify(gaps));
       await page.evaluate(() => app.workspace.openLinkText('sample', '', false));
       await sleep(600);
     }

@@ -365,7 +365,9 @@ body {
   font-size: var(--ilc-font-body);
   color: var(--text-normal);
   line-height: 1.6;
-  white-space: pre-wrap;
+  /* The body is rendered Markdown: line breaks come out as <br>, and the newlines
+     Obsidian leaves between <p>, <ul> and <li> must not show as blank lines */
+  white-space: normal;
   word-break: break-word;
 }
 .ilc-entry-footer {
