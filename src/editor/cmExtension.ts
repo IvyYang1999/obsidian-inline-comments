@@ -98,6 +98,57 @@ function highlightClass(ann: Annotation): string {
   return TYPE_CLASS[firstType] ?? 'ilc-hl-note';
 }
 
+// ─── Where each annotation's pieces sit ──────────────────────────────────────
+
+interface AnnotationParts {
+  ann: Annotation;
+  /** After `{==` */
+  hlStart: number;
+  /** At the closing `==` */
+  hlEnd: number;
+  /** After `==` — the `}{>>...<<}` the badge replaces starts here */
+  badgeStart: number;
+  markupEnd: number;
+}
+
+/**
+ * Annotations in document order, minus any that overlap the previous one (RangeSetBuilder
+ * must never see overlapping replace ranges — one malformed/nested annotation would
+ * otherwise throw and CM6 would disable every decoration in the file).
+ */
+function annotationParts(content: string): AnnotationParts[] {
+  if (!content.includes('{>>')) return [];
+  const anns = parseAnnotations(content).sort((a, b) => a.from - b.from);
+  const out: AnnotationParts[] = [];
+  let lastEnd = -1;
+  for (const ann of anns) {
+    if (ann.from < lastEnd) continue; // overlaps the previous annotation — skip, don't crash
+    const eqIdx = content.slice(ann.from, ann.to).indexOf('==}');
+    if (eqIdx < 0) continue;
+    const hlStart = ann.from + 3; // skip {==
+    const hlEnd = ann.from + eqIdx;
+    const markupEnd = ann.to;
+    if (hlEnd < hlStart || markupEnd < hlEnd) continue;
+    out.push({ ann, hlStart, hlEnd, badgeStart: hlEnd + 2, markupEnd });
+    lastEnd = markupEnd;
+  }
+  return out;
+}
+
+/**
+ * A comment body may hold line breaks (a reply typed with Enter, an agent writing
+ * paragraphs). CodeMirror refuses a replace decoration that hides a line break when it
+ * comes from a view plugin — it throws and the note fails to open — so those badges come
+ * from `multilineBadgeField` instead.
+ */
+function badgeCrossesLine(content: string, p: AnnotationParts): boolean {
+  return content.slice(p.badgeStart, p.markupEnd).includes('\n');
+}
+
+function badgeWidget(ann: Annotation, onClick: (annotationId: string) => void): CommentBadgeWidget {
+  return new CommentBadgeWidget(ann.comments.filter((c) => c.type !== 'resolve' && c.type !== 'react').length, ann.id, onClick);
+}
+
 // ─── Main ViewPlugin class ───────────────────────────────────────────────────
 
 class CommentViewPlugin implements PluginValue {
@@ -204,28 +255,12 @@ class CommentViewPlugin implements PluginValue {
   private buildDecorations(view: EditorView): DecorationSet {
     const builder = new RangeSetBuilder<Decoration>();
     const content = view.state.doc.toString();
-    const anns = parseAnnotations(content);
-
-    // RangeSetBuilder requires ranges to be added in document order and must
-    // never see overlapping replace ranges — one malformed/nested annotation
-    // would otherwise throw and CM6 would disable every decoration in the file.
-    anns.sort((a, b) => a.from - b.from);
     const onBadgeClick = (id: string) => {
       try { this.host.onBadgeClick?.(id); } catch { /* panel may not be ready */ }
     };
 
-    let lastEnd = -1;
-    for (const ann of anns) {
-      if (ann.from < lastEnd) continue; // overlaps the previous annotation — skip, don't crash
-      const raw = content.slice(ann.from, ann.to);
-
-      const hlStart    = ann.from + 3;                         // skip {==
-      const eqIdx      = raw.indexOf('==}');
-      if (eqIdx < 0) continue;
-      const hlEnd      = ann.from + eqIdx;                     // end of highlight text
-      const markupEnd  = ann.to;
-      if (hlEnd < hlStart || markupEnd < hlEnd) continue;
-
+    for (const p of annotationParts(content)) {
+      const { ann, hlStart, hlEnd, badgeStart, markupEnd } = p;
       const cls = highlightClass(ann) + (isResolved(ann) ? ' ilc-hl-resolved' : '');
       const bg = isResolved(ann) ? null : this.host.highlightBg?.(ann.comments[0]?.type ?? 'note');
 
@@ -246,18 +281,11 @@ class CommentViewPlugin implements PluginValue {
         // badge. Live preview hides that `==` too; a badge range overlapping it got
         // clipped by CM and then dropped on the next incremental redraw (Obsidian
         // 1.13: every badge after the edited line vanished after a reply).
-        const badgeStart = hlEnd + 2;
+        // A badge range that crosses a line break is left to `multilineBadgeField`.
         builder.add(hlEnd, badgeStart, Decoration.replace({}));
-        if (badgeStart < markupEnd) {
-          builder.add(
-            badgeStart,
-            markupEnd,
-            Decoration.replace({
-              widget: new CommentBadgeWidget(ann.comments.filter((c) => c.type !== 'resolve' && c.type !== 'react').length, ann.id, onBadgeClick),
-            }),
-          );
+        if (badgeStart < markupEnd && !badgeCrossesLine(content, p)) {
+          builder.add(badgeStart, markupEnd, Decoration.replace({ widget: badgeWidget(ann, onBadgeClick) }));
         }
-        lastEnd = markupEnd;
       } catch {
         // malformed range — skip this annotation only
       }
@@ -302,6 +330,26 @@ export const draftRangeField = StateField.define<DecorationSet>({
   provide: (f) => EditorView.decorations.from(f),
 });
 
+// ─── Badges for comments that span lines ─────────────────────────────────────
+
+/** See `badgeCrossesLine`: only a state field may hide a line break */
+function multilineBadgeField(host: ICommentHost) {
+  const onBadgeClick = (id: string) => {
+    try { host.onBadgeClick?.(id); } catch { /* panel may not be ready */ }
+  };
+  const build = (content: string): DecorationSet => {
+    const ranges = annotationParts(content)
+      .filter((p) => p.badgeStart < p.markupEnd && badgeCrossesLine(content, p))
+      .map((p) => Decoration.replace({ widget: badgeWidget(p.ann, onBadgeClick) }).range(p.badgeStart, p.markupEnd));
+    return ranges.length ? Decoration.set(ranges, true) : Decoration.none;
+  };
+  return StateField.define<DecorationSet>({
+    create: (state) => build(state.doc.toString()),
+    update: (deco, tr) => (tr.docChanged ? build(tr.newDoc.toString()) : deco),
+    provide: (f) => EditorView.decorations.from(f),
+  });
+}
+
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
 export function buildCommentExtension(host: ICommentHost) {
@@ -310,6 +358,7 @@ export function buildCommentExtension(host: ICommentHost) {
       (view) => new CommentViewPlugin(view, host),
       { decorations: (v) => v.decorations },
     ),
+    multilineBadgeField(host),
     draftRangeField,
   ];
 }

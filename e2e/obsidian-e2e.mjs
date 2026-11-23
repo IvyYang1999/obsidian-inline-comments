@@ -1657,6 +1657,81 @@ async function run() {
       await sleep(600);
     }
 
+    // ── A comment body with line breaks (Enter in the reply box, an agent writing paragraphs or a
+    // list). CodeMirror throws when a view plugin hides a line break, and such a note used to fail to
+    // open at all; in reading view the comment is split over several Markdown sections.
+    {
+      const lineErrors = [];
+      const onConsole = (m) => { if (/line break|RangeError/.test(m.text())) lineErrors.push(m.text().split('\n')[0].slice(0, 120)); };
+      page.on('console', onConsole);
+      const D = '2026-11-22';
+      const one = (body) => `前文 {==划线==}{>>yyt|${D}|question: 问题<<}{>>助手|${D}|reply: ${body}<<} 后文。\n\n结尾。\n`;
+      const shapes = {
+        换行: one('第一行\n第二行'),
+        空行分段: one('第一段。\n\n第二段。'),
+        列表: one('要点如下：\n- 第一点\n- 第二点'),
+        三段: one('第一段。\n\n第二段。\n\n第三段。'),
+        混排: `前 {==甲==}{>>yyt|${D}|note: 单行<<} 中 {==乙==}{>>yyt|${D}|question: 问<<}{>>助手|${D}|reply: 一段。\n\n二段。<<}{>>yyt|${D}|reply: 好<<} 后 {==丙==}{>>yyt|${D}|note: 丙评论<<} 尾。\n\n结尾。\n`,
+      };
+      const out = [];
+      for (const [name, text] of Object.entries(shapes)) {
+        for (const mode of ['source', 'preview']) {
+          out.push(await page.evaluate(async ([name, text, mode]) => {
+            const p = `多行-${name}-${mode}.md`;
+            await app.vault.create(p, text);
+            const leaf = app.workspace.getLeaf(true);
+            try { await leaf.setViewState({ type: 'markdown', state: { file: p, mode, source: false }, active: true }); } catch { return { name, mode, opened: false }; }
+            await new Promise((r) => setTimeout(r, 1200));
+            const el = leaf.view.containerEl.querySelector(mode === 'source' ? '.cm-content' : '.markdown-preview-view');
+            const r = { name, mode, opened: leaf.view.file?.path === p, raw: /\{>>|<<\}|\{==|==\}/.test(el?.innerText ?? ''), hl: el?.querySelectorAll('.ilc-highlight').length ?? 0, badges: el?.querySelectorAll('.ilc-badge').length ?? 0 };
+            leaf.detach();
+            return r;
+          }, [name, text, mode]));
+        }
+      }
+      const fine = (r) => r.opened && !r.raw && r.hl === (r.name === '混排' ? 3 : 1) && r.badges === r.hl;
+      check('评论正文带换行 / 空行 / 列表：编辑和阅读视图都能打开，不露原始标记，一条评论一个角标', out.every(fine), JSON.stringify(out.filter((r) => !fine(r))));
+
+      // The real paths: a two-paragraph reply typed in the reply box, then an agent appending a list,
+      // both while the note is open
+      await page.evaluate(async (t) => {
+        const f = await app.vault.create('多行-回复.md', t);
+        await app.workspace.getLeaf(true).openFile(f, { state: { mode: 'source', source: false } });
+      }, `开头 {==要回复的话==}{>>yyt|${D}|question: 怎么看？<<} 后面。\n`);
+      await sleep(1200);
+      await page.locator('.ilc-panel .ilc-card').first().click();
+      await page.waitForSelector('.ilc-card-active .ilc-reply-input', { state: 'visible', timeout: 5000 });
+      await page.locator('.ilc-card-active .ilc-reply-input').fill('第一段回复。\n\n第二段回复。');
+      await page.locator('.ilc-card-active .ilc-reply-submit').click();
+      await sleep(1500);
+      const afterTyped = await page.evaluate(async () => {
+        const doc = await app.vault.adapter.read('多行-回复.md');
+        const md = app.workspace.getMostRecentLeaf()?.view;
+        const cm = md?.containerEl.querySelector('.cm-content');
+        return { saved: doc.includes('第一段回复。\n\n第二段回复。'), file: md?.file?.path ?? null, badge: cm?.querySelector('.ilc-badge')?.textContent ?? null, raw: /\{>>|<<\}/.test(cm?.innerText ?? '') };
+      });
+      check('回复框里打两段回复：存进笔记，笔记照常显示（角标变 2，不露标记）', afterTyped.saved && afterTyped.file === '多行-回复.md' && afterTyped.badge === '2' && !afterTyped.raw, JSON.stringify(afterTyped));
+
+      await page.evaluate(async (D) => {
+        const f = app.vault.getAbstractFileByPath('多行-回复.md');
+        const doc = await app.vault.read(f);
+        const i = doc.lastIndexOf('<<}') + 3;
+        await app.vault.modify(f, doc.slice(0, i) + `{>>助手|${D}|reply: 要点：\n- 一\n- 二<<}` + doc.slice(i));
+      }, D);
+      await sleep(1500);
+      const afterAgent = await page.evaluate(() => {
+        const md = app.workspace.getMostRecentLeaf()?.view;
+        const cm = md?.containerEl.querySelector('.cm-content');
+        const card = document.querySelector('.ilc-panel .ilc-card')?.innerText ?? '';
+        return { file: md?.file?.path ?? null, badge: cm?.querySelector('.ilc-badge')?.textContent ?? null, raw: /\{>>|<<\}/.test(cm?.innerText ?? ''), cardHasList: card.includes('要点') && card.includes('二') };
+      });
+      check('笔记开着时 agent 追加带列表的回复：编辑器不崩，角标变 3，卡片里看得到', afterAgent.file === '多行-回复.md' && afterAgent.badge === '3' && !afterAgent.raw && afterAgent.cardHasList, JSON.stringify(afterAgent));
+      check('多行评论全程没有「Decorations that replace line breaks」报错', lineErrors.length === 0, JSON.stringify(lineErrors));
+      page.off('console', onConsole);
+      await page.evaluate(() => app.workspace.openLinkText('sample', '', false));
+      await sleep(600);
+    }
+
     await shot(page, '06-full-window');
   } finally {
     const failed = results.filter((r) => !r.ok);
