@@ -398,4 +398,5 @@ const EN: Record<string, string> = {
   "编辑此条": "Edit this comment",
   "编辑评论": "Edit comment",
   "保存": "Save",
+  "这条评论刚被改动或删除，你的修改没有保存，已复制到剪贴板": "This comment was just changed or deleted, so your edit wasn't saved. It's on your clipboard.",
 };

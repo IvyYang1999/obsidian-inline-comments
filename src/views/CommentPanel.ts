@@ -1,5 +1,5 @@
 import { getLocale, t } from '../i18n.ts';
-import { ItemView, MarkdownRenderer, MarkdownView, Menu, Notice, Platform, TFile, WorkspaceLeaf, setIcon } from 'obsidian';
+import { ItemView, MarkdownRenderer, MarkdownView, Menu, Notice, Platform, Scope, TFile, WorkspaceLeaf, setIcon } from 'obsidian';
 import { EditorView } from '@codemirror/view';
 import type { Annotation, CommentEntry } from '../types.ts';
 import { COMMENT_TYPE_META, UNREAD_TYPES } from '../types.ts';
@@ -14,6 +14,7 @@ import {
   deleteCommentEntry,
   applySuggestion,
   editCommentEntry,
+  findEntryAgain,
   setEntryType,
   isResolved,
   parseReaction,
@@ -59,6 +60,20 @@ interface DraftState {
   selectedType:   string;
   typeChanged:    boolean;
   onPost:         (markup: string) => void | Promise<void>;
+}
+
+/** An entry being edited in place. Kept on the panel so a redraw reopens it with the typed text */
+interface EditState {
+  path:          string;
+  annId:         string;
+  highlightText: string;
+  entryIndex:    number;
+  /** The entry as it was when editing began: how it is found again after the note changes */
+  entry:         CommentEntry;
+  text:          string;
+  /** Whether the box had focus, and where the caret was, when the panel last redrew */
+  focused:       boolean;
+  caret:         [number, number];
 }
 
 /** Accent colors for built-in types (fallback when settings carry no color) */
@@ -115,6 +130,9 @@ export class CommentPanel extends ItemView {
   private draftEl: HTMLElement | null = null;
   private draftInputEl: HTMLTextAreaElement | null = null;
   private clickAwayHandler: ((e: MouseEvent) => void) | null = null;
+  private editing: EditState | null = null;
+  /** Pushed while the edit box has focus, so Mod+Enter and Esc reach it before Obsidian's hotkeys */
+  private editScope: Scope | null = null;
 
   private currentFilePath: string | null = null;
   /** Bumped by every refresh(); a refresh that finds it moved on drops its result */
@@ -218,6 +236,7 @@ export class CommentPanel extends ItemView {
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
     this.cancelDraft();
+    this.releaseEditScope();
     this.panelContainer.empty();
   }
 
@@ -339,6 +358,11 @@ export class CommentPanel extends ItemView {
     if (gen !== this.refreshGen) return;
     this.clearCards();
     this.annotations = parseAnnotations(content);
+    // An edit in progress survives the redraw (an agent's reply landing, a layout change, a visit
+    // to another note): find its entry again and keep that thread unfolded so the box isn't clipped
+    const editHere = this.editing?.path === file.path ? this.editing : null;
+    const editTarget = editHere ? findEntryAgain(this.annotations, editHere) : null;
+    if (editTarget) this.expanded.add(editTarget.id);
 
     if (this.annotations.length === 0 && !this.draft) this.renderEmptyHint();
 
@@ -356,6 +380,15 @@ export class CommentPanel extends ItemView {
     if (this.draft) {
       this.renderDraftCardEl();
     }
+    if (editHere) {
+      if (editTarget && this.cardEls.has(editTarget.id)) {
+        editHere.annId = editTarget.id;
+        this.openEntryEditor(editTarget, file);
+      } else {
+        this.editing = null;
+        this.keepUnsavedEdit(editHere);
+      }
+    }
     this.noteNewReplies(file);
 
     // Compute positions directly from the editor (don't wait for async CM6 callback)
@@ -370,6 +403,12 @@ export class CommentPanel extends ItemView {
   }
 
   private clearCards(): void {
+    const box = this.cardsZone.querySelector<HTMLTextAreaElement>('.ilc-entry-edit-input');
+    if (this.editing && box) {
+      this.editing.focused = box === box.ownerDocument.activeElement;
+      this.editing.caret = [box.selectionStart, box.selectionEnd];
+    }
+    this.releaseEditScope(); // a removed edit box may get no blur
     this.cardsZone.empty();
     this.cardEls.clear();
     this.deliverySlots.clear();
@@ -1106,8 +1145,10 @@ export class CommentPanel extends ItemView {
 
     card.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest('.ilc-reply-input-row')) return;
-      // Don't hijack the click when the user has selected text to copy.
-      if (globalThis.getSelection && String(globalThis.getSelection()).length) return;
+      // Don't hijack the click when the user has selected text in this card to copy.
+      // (A selection in the note itself mustn't stop a click on the card from working.)
+      const sel = card.win.getSelection();
+      if (sel && !sel.isCollapsed && sel.anchorNode && card.contains(sel.anchorNode)) return;
       this.bringPassageToCard(ann);
       this.highlightCard(ann.id);
     });
@@ -1589,53 +1630,112 @@ export class CommentPanel extends ItemView {
     menu.showAtMouseEvent(e);
   }
 
-  /** Replace one entry's rendered body with a textarea for in-place editing. */
+  /** Start editing one entry in place (from the entry's ⋯ menu) */
   private startEditingEntry(ann: Annotation, entryIndex: number, file: TFile): void {
-    const card = this.cardEls.get(ann.id);
-    if (!card) return;
-    const body = card.querySelector<HTMLElement>(`.ilc-entry-body[data-entry-index="${entryIndex}"]`);
     const entry = ann.comments[entryIndex];
-    if (!body || !entry) return;
+    if (!entry || !this.cardEls.has(ann.id)) return;
+    this.editing = {
+      path: file.path, annId: ann.id, highlightText: ann.highlightText, entryIndex,
+      entry: { ...entry }, text: entry.text, focused: true, caret: [entry.text.length, entry.text.length],
+    };
+    this.openEntryEditor(ann, file);
+  }
 
-    const original = entry.text;
-    const editor = document.createElement('textarea');
-    editor.className = 'ilc-entry-edit-input';
-    editor.value = original;
-    editor.rows = Math.max(2, Math.min(12, original.split('\n').length + 1));
-    editor.setAttribute('aria-label', t('编辑评论'));
+  /** Replace the edited entry's body with a textarea holding the text typed so far */
+  private openEntryEditor(ann: Annotation, file: TFile): void {
+    const ed = this.editing;
+    if (!ed) return;
+    const card = this.cardEls.get(ann.id);
+    const body = card?.querySelector<HTMLElement>(`.ilc-entry-body[data-entry-index="${ed.entryIndex}"]`);
+    if (!card || !body) {
+      this.editing = null;
+      this.keepUnsavedEdit(ed);
+      return;
+    }
+    // A clamped or folded thread would clip the edit box
+    const wrap = card.querySelector<HTMLElement>(':scope > .ilc-thread-wrap');
+    if (wrap) this.expandThread(card, wrap, ann.id);
 
-    const controls = document.createElement('div');
-    controls.className = 'ilc-entry-edit-controls';
+    body.empty();
+    const editor = body.createEl('textarea', { cls: 'ilc-entry-edit-input', attr: { 'aria-label': t('编辑评论') } });
+    editor.value = ed.text;
+    editor.rows = Math.max(2, Math.min(12, ed.text.split('\n').length + 1));
+    const controls = body.createDiv({ cls: 'ilc-entry-edit-controls' });
     const cancel = controls.createEl('button', { cls: 'ilc-entry-edit-cancel', text: t('取消') });
     const save = controls.createEl('button', { cls: 'ilc-entry-edit-save mod-cta', text: t('保存') });
 
-    body.empty();
-    body.appendChild(editor);
-    body.appendChild(controls);
-    editor.focus();
-    editor.setSelectionRange(editor.value.length, editor.value.length);
-
     let done = false;
-    const finish = () => { if (!done) { done = true; void this.refresh(); } };
-    const onKey = (ke: KeyboardEvent) => {
-      if (ke.key === 'Escape') { ke.preventDefault(); ke.stopPropagation(); finish(); }
-      else if ((ke.metaKey || ke.ctrlKey) && ke.key === 'Enter') { ke.preventDefault(); ke.stopPropagation(); void commit(); }
+    const close = () => {
+      done = true;
+      if (this.editing === ed) this.editing = null;
+      this.releaseEditScope();
+    };
+    const cancelEdit = () => {
+      if (done) return;
+      close();
+      void this.refresh();
     };
     const commit = async () => {
       if (done) return;
+      close();
       const next = editor.value.trim();
-      done = true;
-      if (next === original) { await this.refresh(); return; }
+      if (next === ed.entry.text.trim()) { await this.refresh(); return; }
+      // Write into the note as it is now: the entry may have moved since the card was drawn
       const content = await this.app.vault.read(file);
-      const updated = editCommentEntry(content, ann.from, entryIndex, next);
+      const target = findEntryAgain(parseAnnotations(content), ed);
+      if (!target) {
+        this.keepUnsavedEdit({ ...ed, text: next });
+        await this.refresh();
+        return;
+      }
+      const updated = editCommentEntry(content, target.from, ed.entryIndex, next);
       if (updated !== content) await this.app.vault.modify(file, updated);
       await this.refresh();
     };
 
-    cancel.addEventListener('click', (ev) => { ev.stopPropagation(); finish(); });
-    save.addEventListener('click', (ev) => { ev.stopPropagation(); void commit(); });
-    editor.addEventListener('keydown', onKey);
+    // Obsidian's hotkeys see keys before the textarea does: while the note is the active pane,
+    // Mod+Enter is "Open link in new tab" and never reaches it. A scope pushed while the box
+    // has focus gets Mod+Enter and Esc first; every other key falls through to the app's.
+    const scope = new Scope(this.app.scope);
+    scope.register(['Mod'], 'Enter', () => { void commit(); return false; });
+    scope.register([], 'Escape', () => { cancelEdit(); return false; });
+    editor.addEventListener('focus', () => {
+      this.releaseEditScope();
+      this.editScope = scope;
+      this.app.keymap.pushScope(scope);
+    });
+    editor.addEventListener('blur', () => { if (this.editScope === scope) this.releaseEditScope(); });
+    // The same keys on the textarea itself, in case it has focus without the scope
+    editor.addEventListener('keydown', (ke) => {
+      if (ke.key === 'Escape') { ke.preventDefault(); ke.stopPropagation(); cancelEdit(); }
+      else if ((ke.metaKey || ke.ctrlKey) && ke.key === 'Enter') { ke.preventDefault(); ke.stopPropagation(); void commit(); }
+    });
+    editor.addEventListener('input', () => {
+      ed.text = editor.value;
+      window.requestAnimationFrame(() => this.layoutCards());
+    });
     editor.addEventListener('click', (ev) => ev.stopPropagation());
+    cancel.addEventListener('click', (ev) => { ev.stopPropagation(); cancelEdit(); });
+    save.addEventListener('click', (ev) => { ev.stopPropagation(); void commit(); });
+
+    if (ed.focused) {
+      editor.focus();
+      editor.setSelectionRange(ed.caret[0], ed.caret[1]);
+    }
+    window.requestAnimationFrame(() => this.layoutCards());
+  }
+
+  private releaseEditScope(): void {
+    if (!this.editScope) return;
+    this.app.keymap.popScope(this.editScope);
+    this.editScope = null;
+  }
+
+  /** The entry being edited was changed or removed under it: don't lose what was typed */
+  private keepUnsavedEdit(ed: EditState): void {
+    if (ed.text.trim() === ed.entry.text.trim()) return;
+    void navigator.clipboard.writeText(ed.text).catch(() => {});
+    new Notice(t('这条评论刚被改动或删除，你的修改没有保存，已复制到剪贴板'), 8000);
   }
 
   private async deleteWholeAnnotation(ann: Annotation, file: TFile): Promise<void> {

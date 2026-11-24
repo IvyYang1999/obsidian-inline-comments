@@ -265,6 +265,26 @@ export function editCommentEntry(
   return out ?? content;
 }
 
+/**
+ * Find the annotation that still holds an entry after the note changed: the same one if it
+ * hasn't moved, else the only one with the same passage and that entry at the same index.
+ * Ids are offsets, so a reply added above shifts them. Returns null if the entry was changed or removed.
+ */
+export function findEntryAgain(
+  annotations: Annotation[],
+  was: { annId: string; highlightText: string; entryIndex: number; entry: CommentEntry },
+): Annotation | null {
+  const holds = (a: Annotation) => {
+    const c = a.comments[was.entryIndex];
+    return !!c && a.highlightText === was.highlightText && c.author === was.entry.author
+      && c.date === was.entry.date && c.type === was.entry.type && c.text === was.entry.text;
+  };
+  const same = annotations.find((a) => a.id === was.annId);
+  if (same && holds(same)) return same;
+  const matches = annotations.filter(holds);
+  return matches.length === 1 ? matches[0] : null;
+}
+
 /** Change the type of one entry (e.g. suggest → declined) */
 export function setEntryType(
   content: string,

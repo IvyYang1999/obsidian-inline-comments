@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendReply, parseAnnotations, editCommentEntry } from './parser.ts';
+import { appendReply, parseAnnotations, editCommentEntry, findEntryAgain } from './parser.ts';
 
 describe('appendReply', () => {
   it('escapes every comment delimiter pair in reply text', () => {
@@ -69,5 +69,47 @@ describe('editCommentEntry', () => {
 
     expect(comments[1]).toMatchObject({ author: 'Session3', type: 'reply', text: 'short answer' });
     expect(comments[0].text).toBe('question');
+  });
+});
+
+describe('findEntryAgain', () => {
+  const note = 'a {==one==}{>>me|2026-01-01|note: first<<} b {==two==}{>>me|2026-01-02|question: why?<<} c';
+  const was = (content: string, i: number, entryIndex = 0) => {
+    const a = parseAnnotations(content)[i];
+    return { annId: a.id, highlightText: a.highlightText, entryIndex, entry: { ...a.comments[entryIndex] } };
+  };
+
+  it('finds the same annotation when nothing moved', () => {
+    const w = was(note, 1);
+    expect(findEntryAgain(parseAnnotations(note), w)?.id).toBe(w.annId);
+  });
+
+  it('follows the entry when a reply above it shifts the offsets', () => {
+    const w = was(note, 1);
+    const first = parseAnnotations(note)[0];
+    const after = appendReply(note, first.from, { author: 'Agent', date: '2026-01-03', type: 'reply', text: 'a longer reply' });
+    const found = findEntryAgain(parseAnnotations(after), w);
+    expect(found?.highlightText).toBe('two');
+    expect(found?.id).not.toBe(w.annId);
+  });
+
+  it('still finds it after a reply lands in the same thread', () => {
+    const w = was(note, 1);
+    const ann = parseAnnotations(note)[1];
+    const after = appendReply(note, ann.from, { author: 'Agent', date: '2026-01-03', type: 'reply', text: 'because' });
+    expect(findEntryAgain(parseAnnotations(after), w)?.comments).toHaveLength(2);
+  });
+
+  it('gives up when the entry was changed or removed', () => {
+    const w = was(note, 1);
+    const ann = parseAnnotations(note)[1];
+    expect(findEntryAgain(parseAnnotations(editCommentEntry(note, ann.from, 0, 'how?')), w)).toBeNull();
+    expect(findEntryAgain(parseAnnotations('a {==one==}{>>me|2026-01-01|note: first<<} c'), w)).toBeNull();
+  });
+
+  it('does not guess between two identical entries that both moved', () => {
+    const twin = 'x {==p==}{>>me|2026-01-01|note: same<<} y {==p==}{>>me|2026-01-01|note: same<<}';
+    const w = { ...was(twin, 0), annId: 'ann-999' };
+    expect(findEntryAgain(parseAnnotations(twin), w)).toBeNull();
   });
 });
