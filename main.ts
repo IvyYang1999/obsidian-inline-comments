@@ -24,7 +24,7 @@ import { HOOK_SCRIPT_NAME } from './src/hookScript.ts';
 import { buildLaunchPlan, buildLaunchPrompt, canOpenTerminal, launchInTerminal, openExternalUrl, runningClaudeIds, sessionFileExists, writePromptFile, type LaunchPlan } from './src/sessionLauncher.ts';
 import type { Candidate } from './src/mentionDelivery.ts';
 import { renderAgentRegistrySection } from './src/settings/agentRegistrySection.ts';
-import { type HarnessDef, type HarnessId, codexSignedIn, detectHarnesses, harnessDef, headlessArgs, looksUnauthenticated, resumeShell, runHeadless } from './src/harnesses.ts';
+import { type HarnessDef, type HarnessId, codexSignedIn, detectHarnesses, harnessDef, headlessArgs, looksUnauthenticated, promptOnStdin, resumeShell, runHeadless } from './src/harnesses.ts';
 import { harnessLoggedIn } from './src/reach.ts';
 import { readRegistry, setAgentThread } from './src/registry.ts';
 import { HOLD_MS, type ClaudeInbox, claudeInboxGate, claudeInboxQueued, findClaudeSession, sendToClaudeInbox } from './src/claudeInbox.ts';
@@ -643,10 +643,11 @@ export default class InlineCommentsPlugin extends Plugin implements ICommentHost
       const logFile = nodePath().join(nodeOs().tmpdir(), 'ilc-runs', `${c.shortId}.log`);
 
       new Notice(t('「{0}」（{1}）正在回复…', [c.name, harness.label]));
+      const onStdin = promptOnStdin(harness.id, bin);
       const res = await runHeadless(harness.id, {
         bin, path, cwd, logFile, sessionId: c.sessionId,
-        args: headlessArgs(harness.id, { sessionId: c.sessionId, threadId, extraDir }, prompt),
-        stdin: harness.id === 'gemini' ? undefined : prompt,
+        args: headlessArgs(harness.id, { sessionId: c.sessionId, threadId, extraDir, promptOnStdin: onStdin }, prompt),
+        stdin: onStdin ? prompt : undefined,
       });
       if (harness.id !== 'claude' && res.threadId && res.threadId !== threadId) await setAgentThread(this.app, c.sessionId, res.threadId);
       if (res.ok) { await this.noteSignedIn(harness.id, true); return; } // the reply shows up in the panel when the note changes

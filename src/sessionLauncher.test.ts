@@ -21,4 +21,9 @@ describe('buildLaunchPrompt', () => {
     expect(s).toContain('{>>日记助理|2026-09-03|reply: 你的回复<<}');
     expect(s).toContain('- 留言内容：hi');
   });
+
+  it('asks for short paragraphs in both languages so long replies stay readable', () => {
+    expect(buildLaunchPrompt('A', 'hi', '2026-01-01', 'zh')).toContain('务必分段写');
+    expect(buildLaunchPrompt('A', 'hi', '2026-01-01', 'en')).toContain('WRITE IN SHORT PARAGRAPHS');
+  });
 });

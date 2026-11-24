@@ -50,6 +50,7 @@ How to reply: open the note named in the letter, find the comment block for the 
 To change the highlighted passage itself, append a suggestion (body = the replacement text only; explanation goes in a separate reply):
 {>>${NAME:-YourName}|$TODAY|suggest: replacement text<<}
 The passage only changes when the user clicks Accept — never edit {==passage==} yourself.
+FORMAT: the reply panel preserves line breaks, so WRITE IN SHORT PARAGRAPHS. Separate paragraphs with a blank line, use dash bullets (- ) or numbered lists (1. ) for multiple points, and keep each paragraph to 1-3 sentences. Never write a long answer as one single dense block — it is unreadable in the side panel. A plain newline inside the reply is fine; just never put << or >> in your text.
 Rules: do not delete or alter existing comments or the {==passage==}; avoid consecutive << or >> in your text; read the note first if you need context. Once written, the user sees your reply in the comments panel."
 else
 MSG="📬 Obsidian 评论区有 $N 封新留言给你${NAME:+（你在评论区的名字：$NAME）}。$OUT
@@ -59,6 +60,7 @@ MSG="📬 Obsidian 评论区有 $N 封新留言给你${NAME:+（你在评论区�
 要修改划线原文时，另外追加一条建议（正文只放替换后的原文，不要解释，解释写在 reply 里）：
 {>>${NAME:-你的名字}|$TODAY|suggest: 替换后的原文<<}
 用户在面板里点「采纳」原文才会变，你自己不要直接改 {==原文==}。
+排版要求：评论面板会保留换行，所以务必分段写——段落之间空一行，多个要点用短横线(-)或数字(1.)列表，每段控制在 1-3 句。绝不要把长回复写成一整段密集文字，那样在侧栏里完全没法读。回复正文里正常换行没问题，但绝对不能出现 << 或 >>。
 规则：不要删改已有评论和 {==原文==}；回复正文里不要出现连续的 << 或 >>；需要上下文就先读文档。回复写进文档后，用户会在评论面板里看到。"
 fi
 

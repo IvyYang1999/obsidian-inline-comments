@@ -86,7 +86,8 @@ export function codexSignedIn(): Promise<boolean> {
   const signedIn = detectHarnesses().then(({ bins, path }) => new Promise<boolean>((resolve) => {
     if (!bins.codex) { resolve(false); return; }
     try {
-      nodeCp().execFile(bins.codex, ['login', 'status'], { timeout: 8000, env: { ...process.env, PATH: path } }, (err) => resolve(!err)).stdin?.end();
+      const c = spawnCommand(bins.codex, ['login', 'status']);
+      nodeCp().execFile(c.command, c.args, { timeout: 8000, env: { ...process.env, PATH: path }, windowsVerbatimArguments: c.windowsVerbatimArguments }, (err) => resolve(!err)).stdin?.end();
     } catch {
       resolve(false);
     }
@@ -125,7 +126,10 @@ async function detect(): Promise<InstalledHarnesses> {
   const override = process.env.ILC_HARNESS_PATH;
   const searchPath = override ?? [await loginShellPath(), process.env.PATH ?? ''].filter(Boolean).join(sep);
   const dirs = [...new Set(searchPath.split(sep).filter(Boolean))];
-  const exts = process.platform === 'win32' ? ['.cmd', '.exe', ''] : [''];
+  // On Windows, prefer a native .exe over the npm-generated .cmd shim.
+  // Node's child_process.spawn cannot launch an absolute .cmd path without
+  // `shell: true` (throws EINVAL), while .exe works in both cases.
+  const exts = process.platform === 'win32' ? ['.exe', '.cmd', ''] : [''];
   const home = nodeOs().homedir();
   const bins: InstalledHarnesses['bins'] = {};
   for (const h of HARNESSES) {
@@ -148,9 +152,11 @@ export interface HeadlessOpts {
   threadId?: string;
   /** Vault folder, when the session works elsewhere and still has to edit the note */
   extraDir?: string;
+  /** Gemini only: the letter goes on stdin instead of `-p` (see promptOnStdin) */
+  promptOnStdin?: boolean;
 }
 
-/** argv for one letter. The prompt goes on stdin for Codex and Claude Code, and as `-p` for Gemini. */
+/** argv for one letter. The prompt goes on stdin for Codex and Claude Code, and as `-p` for Gemini unless `promptOnStdin`. */
 export function headlessArgs(h: HarnessId, o: HeadlessOpts, prompt: string): string[] {
   if (h === 'claude') {
     // acceptEdits: may edit files under cwd (+ the vault); whatever else it would ask for is refused
@@ -170,7 +176,8 @@ export function headlessArgs(h: HarnessId, o: HeadlessOpts, prompt: string): str
     const common = ['--approval-mode', 'auto_edit', '--skip-trust', '-o', 'json'];
     if (o.extraDir) common.push('--include-directories', o.extraDir);
     const session = o.threadId ? ['--resume', o.threadId] : ['--session-id', o.sessionId];
-    return [...session, ...common, '-p', prompt];
+    // Without -p, Gemini reads the prompt from stdin (not a terminal) and still runs headless
+    return o.promptOnStdin ? [...session, ...common] : [...session, ...common, '-p', prompt];
   }
   throw new Error(`no headless mode for ${h}`);
 }
@@ -231,6 +238,54 @@ export function resumeShell(h: HarnessId, cwd: string, threadId: string): string
   return `cd ${q(cwd)} && ${cmd}`;
 }
 
+// ─── Starting a CLI on Windows ───────────────────────────────────────────────
+
+/** A `.cmd`/`.bat` on Windows: npm installs CLIs as these shims, and they only run through cmd.exe */
+export function runsThroughCmd(bin: string, platform = process.platform): boolean {
+  return platform === 'win32' && /\.(cmd|bat)$/i.test(bin);
+}
+
+/** Characters cmd.exe treats specially; a `^` in front makes it take them literally */
+const CMD_META = /([()\][%!^"`<>&|;, *?])/g;
+
+/**
+ * One argument for a shim's command line, as cross-spawn writes it: quoted the way the program
+ * splits its command line (backslashes before a quote doubled, quotes escaped), then every cmd.exe
+ * metacharacter escaped with `^` twice: cmd.exe reads the line once, and the shim's `%*` hands the
+ * arguments to cmd.exe a second time.
+ */
+export function cmdArg(arg: string): string {
+  let a = arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, '$1$1');
+  a = `"${a}"`;
+  return a.replace(CMD_META, '^$1').replace(CMD_META, '^$1');
+}
+
+/**
+ * How to start `bin` with `args`. Elsewhere that is `bin` itself, with the arguments untouched.
+ *
+ * On Windows a `.cmd`/`.bat` can't be started directly (Node throws EINVAL since CVE-2024-27980),
+ * and `shell: true` only joins the arguments with spaces: a space in a path splits it, and `&`, `|`
+ * or `>` in an argument runs as a command. So a shim runs as `cmd.exe /d /s /c "<line>"` with the
+ * path quoted and each argument escaped by `cmdArg`, passed verbatim. A line break can't be passed
+ * through cmd.exe at all: such text has to go on stdin, and an argument holding one is refused.
+ */
+export function spawnCommand(
+  bin: string,
+  args: string[],
+  platform = process.platform,
+  comspec = process.env.ComSpec || process.env.COMSPEC || 'cmd.exe',
+): { command: string; args: string[]; windowsVerbatimArguments?: true } {
+  if (!runsThroughCmd(bin, platform)) return { command: bin, args };
+  if (args.some((a) => /[\r\n]/.test(a))) throw new Error('an argument with a line break cannot be passed through cmd.exe');
+  const line = [`"${bin}"`, ...args.map(cmdArg)].join(' ');
+  return { command: comspec, args: ['/d', '/s', '/c', `"${line}"`], windowsVerbatimArguments: true };
+}
+
+/** Whether the letter goes on stdin. Gemini takes it as `-p`, except through cmd.exe, which can't carry its line breaks */
+export function promptOnStdin(h: HarnessId, bin: string, platform = process.platform): boolean {
+  return h !== 'gemini' || runsThroughCmd(bin, platform);
+}
+
 /**
  * Run one headless turn. Output is appended to `logFile` (kept for debugging);
  * the run is killed after `timeoutMs`.
@@ -243,7 +298,15 @@ export function runHeadless(
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
-    const child = nodeCp().spawn(run.bin, run.args, { cwd: run.cwd, env: { ...process.env, PATH: run.path } });
+    let child: ReturnType<ReturnType<typeof nodeCp>['spawn']>;
+    try {
+      const c = spawnCommand(run.bin, run.args);
+      child = nodeCp().spawn(c.command, c.args, { cwd: run.cwd, env: { ...process.env, PATH: run.path }, windowsVerbatimArguments: c.windowsVerbatimArguments });
+    } catch (err) {
+      // Node throws (rather than emitting 'error') for some bad spawns, e.g. EINVAL on Windows
+      resolve({ ok: false, error: String((err as Error)?.message ?? err) });
+      return;
+    }
     const timer = window.setTimeout(() => child.kill('SIGTERM'), timeoutMs);
     child.stdout?.on('data', (d: Buffer) => { stdout += d.toString('utf8'); });
     child.stderr?.on('data', (d: Buffer) => { stderr += d.toString('utf8'); });
