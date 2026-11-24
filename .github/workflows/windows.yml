@@ -1,0 +1,39 @@
+name: Windows
+
+# Starts the agent CLIs the way the plugin does on Windows, through the .cmd shims npm
+# installs, and checks what they receive (src/windows.test.ts). Then the same with the real
+# Codex and Gemini CLIs, which are not signed in here: they only have to start and ask for
+# a sign-in.
+
+on:
+  push:
+    branches: [master, 'ci/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci --legacy-peer-deps
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Install the real Codex and Gemini CLIs
+        run: npm install -g --no-audit --no-fund --prefix "$env:RUNNER_TEMP\real clis 测试" @openai/codex @google/gemini-cli
+
+      - name: Real CLIs start through their npm shims
+        env:
+          ILC_REAL_CLIS: ${{ runner.temp }}\real clis 测试
+        run: npx vitest run src/windows.test.ts
