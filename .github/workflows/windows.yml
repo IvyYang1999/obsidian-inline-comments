@@ -27,8 +27,10 @@ jobs:
 
       - run: npm ci --legacy-peer-deps
 
+      # claudeInbox talks to a running Claude Code session over a Unix socket file. Windows
+      # has none, and findClaudeInbox only accepts a socket, so that delivery is off there.
       - name: Unit tests
-        run: npm test
+        run: npx vitest run --exclude src/claudeInbox.test.ts
 
       - name: Install the real Codex and Gemini CLIs
         run: npm install -g --no-audit --no-fund --prefix "$env:RUNNER_TEMP\real clis 测试" @openai/codex @google/gemini-cli
