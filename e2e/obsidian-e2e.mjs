@@ -1756,6 +1756,69 @@ async function run() {
       await sleep(600);
     }
 
+    // ── Editing a comment in place (⋯ → 编辑此条) ──
+    {
+      const P = '编辑-原地.md';
+      const D = '2026-11-24';
+      await page.evaluate(async ([P, D]) => {
+        const f = await app.vault.create(P, `甲 {==上面一段==}{>>yyt|${D}|question: 上面的问题<<}\n\n乙 {==要改的话==}{>>yyt|${D}|note: 原来的文字<<}\n`);
+        await app.workspace.getLeaf(false).openFile(f, { state: { mode: 'source', source: false } });
+      }, [P, D]);
+      await sleep(1500);
+      const read = () => page.evaluate((P) => app.vault.adapter.read(P), P);
+      const box = page.locator('.ilc-panel .ilc-entry-edit-input');
+      const openEdit = async (hasText) => {
+        const card = page.locator('.ilc-panel .ilc-card', { hasText }).first();
+        await card.hover();
+        await card.locator('.ilc-entry-more-btn').first().click({ force: true });
+        await page.locator('.menu .menu-item', { hasText: '编辑此条' }).first().click();
+        await box.waitFor({ timeout: 5000 });
+      };
+      // Obsidian's own Mod+Enter ("Open link in new tab") fires whenever the note is the active pane
+      const noteActive = () => page.evaluate((P) => {
+        const leaf = app.workspace.getLeavesOfType('markdown').find((l) => l.view.file?.path === P);
+        if (leaf) app.workspace.setActiveLeaf(leaf, { focus: false });
+      }, P);
+
+      await openEdit('原来的文字');
+      await box.fill('改好的文字');
+      await noteActive();
+      await box.press(process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter');
+      await sleep(1200);
+      const byKey = { open: await box.count(), doc: await read() };
+      check('原地编辑：笔记是当前窗格时按 Cmd+Enter 也能保存，别的评论不动', byKey.open === 0 && byKey.doc.includes('note: 改好的文字<<}') && byKey.doc.includes('question: 上面的问题<<}'), JSON.stringify(byKey));
+
+      // An agent replies to the passage above while the edit is half typed: the panel redraws and the
+      // edited comment moves down the note, but the box stays open with the typed text and the caret
+      await openEdit('改好的文字');
+      await box.fill('改到一半');
+      await page.evaluate(async ([P, D]) => {
+        const f = app.vault.getAbstractFileByPath(P);
+        const doc = await app.vault.read(f);
+        const i = doc.indexOf('<<}') + 3;
+        await app.vault.modify(f, doc.slice(0, i) + `{>>助手|${D}|reply: 上面这段的回答，写得长一点。<<}` + doc.slice(i));
+      }, [P, D]);
+      await sleep(1500);
+      const kept = await page.evaluate(() => {
+        const b = document.querySelector('.ilc-panel .ilc-entry-edit-input');
+        return { open: !!b, value: b?.value ?? null, focused: !!b && b === document.activeElement, inCard: b?.closest('.ilc-card')?.innerText.includes('要改的话') ?? false, replyShown: document.querySelector('.ilc-panel')?.innerText.includes('上面这段的回答') ?? false };
+      });
+      check('原地编辑到一半时 agent 回复了别处：编辑框还在，打的字和焦点都在', kept.open && kept.value === '改到一半' && kept.focused && kept.inCard && kept.replyShown, JSON.stringify(kept));
+      await page.locator('.ilc-panel .ilc-entry-edit-save').click();
+      await sleep(1200);
+      const saved = await read();
+      check('……接着点保存：改的是挪了位置的那条，agent 的回复还在', saved.includes('note: 改到一半<<}') && saved.includes('reply: 上面这段的回答') && !saved.includes('改好的文字'), JSON.stringify(saved));
+
+      await openEdit('改到一半');
+      await box.fill('不要了');
+      await box.press('Escape');
+      await sleep(800);
+      const esc = { open: await box.count(), doc: await read() };
+      check('原地编辑按 Esc：放弃修改，笔记不变', esc.open === 0 && esc.doc === saved, JSON.stringify({ open: esc.open, same: esc.doc === saved }));
+      await page.evaluate(() => app.workspace.openLinkText('sample', '', false));
+      await sleep(600);
+    }
+
     await shot(page, '06-full-window');
   } finally {
     const failed = results.filter((r) => !r.ok);

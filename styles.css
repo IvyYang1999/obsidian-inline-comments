@@ -369,6 +369,10 @@ body {
      Obsidian leaves between <p>, <ul> and <li> must not show as blank lines */
   white-space: normal;
   word-break: break-word;
+  /* Keep reply text selectable/copyable even under themes that disable
+     selection on cursor:pointer panels. */
+  user-select: text;
+  -webkit-user-select: text;
 }
 .ilc-entry-footer {
   display: flex;
@@ -424,6 +428,31 @@ body {
 }
 .ilc-reply-input { resize: vertical; }
 .ilc-draft-input { resize: none; }
+
+/* In-place editing of an existing comment entry */
+.ilc-entry-edit-input {
+  width: 100%;
+  min-height: 56px;
+  font-size: var(--ilc-font-body);
+  line-height: 1.6;
+  border-radius: 8px;
+  border: 1px solid var(--ilc-hairline-strong) !important;
+  background: var(--ilc-surface-sunken) !important;
+  box-shadow: none !important;
+  color: var(--text-normal);
+  padding: 8px 10px;
+  box-sizing: border-box;
+  font-family: inherit;
+  resize: vertical;
+}
+.ilc-entry-edit-input:focus { outline: none; box-shadow: none !important; }
+.ilc-entry-edit-controls {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+.ilc-entry-edit-controls button { cursor: pointer; }
 .ilc-panel .ilc-reply-input:focus,
 .ilc-panel .ilc-draft-input:focus {
   outline: none;
