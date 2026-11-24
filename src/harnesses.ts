@@ -190,7 +190,7 @@ export interface HeadlessResult {
 }
 
 /** Read a finished run: Codex prints JSON lines, Gemini one JSON object */
-export function parseHeadlessOutput(h: HarnessId, stdout: string, code: number | null, sessionId: string): HeadlessResult {
+export function parseHeadlessOutput(h: HarnessId, stdout: string, code: number | null, sessionId: string, stderr = ''): HeadlessResult {
   let threadId: string | undefined;
   let error: string | undefined;
   if (h === 'codex') {
@@ -212,12 +212,17 @@ export function parseHeadlessOutput(h: HarnessId, stdout: string, code: number |
     } catch { /* not JSON: fall back to the exit code */ }
     if (!threadId && code === 0) threadId = sessionId;
   } else {
-    const start = stdout.indexOf('{');
-    try {
-      const out = JSON.parse(stdout.slice(start)) as { session_id?: string; error?: { message?: string } };
-      threadId = out.session_id;
-      if (out.error) error = out.error.message ?? 'error';
-    } catch { /* not JSON: fall back to the exit code */ }
+    // One JSON object, on stdout; a run that fails before it starts (not signed in) prints it on stderr
+    for (const text of [stdout, stderr]) {
+      const start = text.indexOf('{');
+      if (start < 0) continue;
+      try {
+        const out = JSON.parse(text.slice(start)) as { session_id?: string; error?: { message?: string } };
+        threadId = out.session_id;
+        if (out.error) error = out.error.message ?? 'error';
+        break;
+      } catch { /* not JSON: fall back to the exit code */ }
+    }
     // A failed first run saves nothing, so only a clean run proves the session exists
     if (!threadId && code === 0) threadId = sessionId;
   }
@@ -320,7 +325,7 @@ export function runHeadless(
         .then(() => nodeFsp().appendFile(run.logFile, log, 'utf8'))
         .catch(() => {});
       if (spawnError) { resolve({ ok: false, error: spawnError }); return; }
-      const res = parseHeadlessOutput(h, stdout, code, run.sessionId);
+      const res = parseHeadlessOutput(h, stdout, code, run.sessionId, stderr);
       if (!res.ok) res.error ??= stderr.trim().split('\n').pop() || `exit ${code}`;
       resolve(res);
     };

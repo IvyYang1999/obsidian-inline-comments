@@ -165,8 +165,10 @@ describe.runIf(onWindows && !!process.env.ILC_REAL_CLIS)('on Windows, the real C
     process.env.ILC_HARNESS_PATH = process.env.ILC_REAL_CLIS;
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     delete process.env.ILC_HARNESS_PATH;
+    // runHeadless appends to its log without waiting
+    await new Promise((r) => setTimeout(r, 500));
     if (fs.existsSync(logFile)) console.log(fs.readFileSync(logFile, 'utf8'));
   });
 

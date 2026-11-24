@@ -74,6 +74,14 @@ describe('parseHeadlessOutput', () => {
     expect(failed.threadId).toBeUndefined();
     expect(looksUnauthenticated(failed.error)).toBe(true);
   });
+  it('reads the error Gemini prints on stderr when it is not signed in (0.57)', () => {
+    const stderr = `{\n  "session_id": "${ID}",\n  "error": {\n    "type": "Error",\n    "message": "Please set an Auth method in your settings.json or specify one of the following environment variables before running: GEMINI_API_KEY",\n    "code": 41\n  }\n}\n`;
+    const failed = parseHeadlessOutput('gemini', '', 41, ID, stderr);
+    expect(failed.ok).toBe(false);
+    expect(failed.threadId).toBeUndefined();
+    expect(failed.error).toMatch(/^Please set an Auth method/);
+    expect(looksUnauthenticated(failed.error)).toBe(true);
+  });
 });
 
 /**
